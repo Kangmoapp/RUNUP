@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "119763044034",
+    "project_id": "runup-cd64f",
+    "storage_bucket": "runup-cd64f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:119763044034:android:eca37f49b9a447b5799d5b",
+        "android_client_info": {
+          "package_name": "com.example.runup"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmbkreo5S9kiAI20tLIUKFvSKC5RBIhQI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
