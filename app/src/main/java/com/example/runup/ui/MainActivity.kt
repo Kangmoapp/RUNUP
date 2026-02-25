@@ -1,4 +1,4 @@
-package com.example.runup.ui.main
+package com.example.runup.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
