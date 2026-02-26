@@ -10,7 +10,9 @@ import androidx.compose.runtime.getValue
 import com.example.runup.viewmodel.AppViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runup.ui.navigation.Screen
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,14 +32,20 @@ fun RunUpApp(
     when (currentScreen) {
 
         Screen.TUTORIAL -> TutorialScreen(
-            onYesClick = { viewModel.navigateTo(Screen.SIGNUP) },
+            onYesClick = { viewModel.navigateTo(Screen.SIGNUPEMAIL) },
             onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
         )
         Screen.LOGIN -> LoginScreen(
-            onLoginClick = {viewModel.navigateTo(Screen.TEST)}
+            onLoginClick = {viewModel.navigateTo(Screen.TEST)},
+            onSignUpClick = {viewModel.navigateTo(Screen.SIGNUPEMAIL)}
         )
-        Screen.SIGNUP -> SignupScreen(
-            onContinueClick = {viewModel.navigateTo(Screen.TEST)}
+        Screen.SIGNUPEMAIL -> SignupEmailScreen(
+            onContinueClick = {viewModel.navigateTo(Screen.SIGNUPPASSWORD)},
+            onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
+        )
+        Screen.SIGNUPPASSWORD -> SignupPassWordScreen (
+            onContinueClick = {viewModel.navigateTo(Screen.TEST)},
+            onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
         Screen.TEST -> TestScreen()
     }

@@ -7,6 +7,7 @@ import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
 import javax.inject.Inject
 
+
 class UserRepositoryImpl @Inject constructor(
     private val userdatasource: UserDataSource
 ) : UserRepository {

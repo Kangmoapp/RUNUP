@@ -23,7 +23,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.runup.ui.components.IntroButton
+import com.example.runup.ui.components.BorderButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.PointColor
@@ -66,14 +66,14 @@ fun TutorialScreen(
             Row(
                 horizontalArrangement = Arrangement.spacedBy(30.dp)
             ) {
-                IntroButton(
+                BorderButton(
                     text = "예",
                     onClick = onYesClick,
                     modifier = Modifier
                         .width(140 .dp)
                         .height(77.dp)
                 )
-                IntroButton(
+                BorderButton(
                     text="아니요",
                     onClick = onNoClick,
                     modifier = Modifier
