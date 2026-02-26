@@ -1,15 +1,13 @@
 package com.example.runup.data.repositoryimpl
 
+import com.example.runup.data.source.remote.user.UserDataSourceImpl
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import javax.inject.Inject
 
 class UserRepositoryImpl @Inject constructor (
-    private val firebaseAuth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val userremotedatasource: UserDataSourceImpl
 ) : UserRepository {
 
     // 1. 이메일 중복 체크 구현
