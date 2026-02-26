@@ -8,13 +8,7 @@ import javax.inject.Inject
 class LoginUseCase @Inject constructor(
     private val userrepository: UserRepository
 ) {
-    suspend operator fun invoke(userlogininfo: UserLoginInfo): AuthResult<Unit> {
-        val e = userlogininfo.userEmail.trim()
-        val p = userlogininfo.userPw
-
-        if (e.isBlank() || p.isBlank()) {
-            return AuthResult.Fail("이메일/비밀번호를 입력해 주세요.")
-        }
-        return userrepository.login(e, p)
+    suspend operator fun invoke(userlogininfo: UserLoginInfo) : AuthResult<Boolean>{
+        return userrepository.login(userlogininfo.userEmail, userlogininfo.userPw)
     }
 }

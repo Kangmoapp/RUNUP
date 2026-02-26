@@ -4,21 +4,24 @@ import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 
 interface UserRepository {
-    suspend fun checkuserid (useremail : String) : Boolean
-    //이메일  중복체크
+    // 1. 이메일 중복 체크
+    suspend fun checkuseremail(useremail: String): AuthResult<Boolean>
 
-    suspend fun saveUserlogininfo(useremail:String, userpw: String) : Boolean
-    //이메일 ,pw 저장
+    // 2. 이메일, pw 저장 (회원가입)
+    suspend fun saveUserlogininfo(useremail: String, userpw: String): AuthResult<Boolean>
 
-    suspend fun login(useremail: String, userpw: String): AuthResult<Unit>
-    //로그인 일치하면 UserLoginInfo, 아니면 에러메시지
+    // 3. 로그인 (일치 여부 확인)
+    suspend fun login(useremail: String, userpw: String): AuthResult<Boolean>
 
-    suspend fun saveRunRecord(userid: String, record: RunRecord) : Boolean
-    //달리기 기록 저장
+    // 4. 사용자 이름 업데이트
+    suspend fun updateUserName(useremail: String, username: String): AuthResult<Boolean>
 
-    suspend fun getGoal(userid: String, goaldistance: Int, goaltime: Int) : Boolean
-    //달리기 목표 저장
+    // 5. 나의 달리기 목표 저장
+    suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean>
 
-    suspend fun getAllUserData(userid: String) : UserData
-    //해당 아이디의 사용자 모든 데이터 반환 (마이페이지에서 사용)
+    // 6. 나의 달리기 기록 저장
+    suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean>
+
+    // 7. 현재 로그인 된 사용자의 모든 데이터 반환 (마이페이지)
+    suspend fun getMyUserData(): AuthResult<UserData>
 }
