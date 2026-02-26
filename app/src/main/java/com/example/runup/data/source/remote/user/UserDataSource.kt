@@ -8,6 +8,6 @@ interface UserDataSource {
 
     //현재 로그인된 사용자의 상세 정보 가져오기
     suspend fun getMyUserData(): UserData?
-
+    suspend fun loginUser(email: String, pw: String): Unit
     suspend fun isEmailAlreadyRegistered(email: String): Boolean
 }

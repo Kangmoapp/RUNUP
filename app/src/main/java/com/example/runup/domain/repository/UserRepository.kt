@@ -1,4 +1,5 @@
 package com.example.runup.domain.repository
+import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 
@@ -9,7 +10,7 @@ interface UserRepository {
     suspend fun saveUserlogininfo(useremail:String, userpw: String) : Boolean
     //이메일 ,pw 저장
 
-    suspend fun <T> login(useremail: String, userpw: String): T
+    suspend fun login(useremail: String, userpw: String): AuthResult<Unit>
     //로그인 일치하면 UserLoginInfo, 아니면 에러메시지
 
     suspend fun saveRunRecord(userid: String, record: RunRecord) : Boolean

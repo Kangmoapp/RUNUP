@@ -64,7 +64,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-
+    implementation("androidx.hilt:hilt-navigation-compose:1.3.0")
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(platform(libs.firebase.bom))

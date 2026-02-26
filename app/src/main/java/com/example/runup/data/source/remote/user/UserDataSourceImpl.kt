@@ -73,4 +73,8 @@ class UserDataSourceImpl @Inject constructor(
             false
         }
     }
+
+    override suspend fun loginUser(email: String, pw: String): Unit {
+        firebaseAuth.signInWithEmailAndPassword(email, pw).await()
+    }
 }

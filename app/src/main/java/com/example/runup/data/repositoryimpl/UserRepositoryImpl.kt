@@ -1,13 +1,14 @@
 package com.example.runup.data.repositoryimpl
 
-import com.example.runup.data.source.remote.user.UserDataSourceImpl
+import com.example.runup.data.source.remote.user.UserDataSource
+import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
 import javax.inject.Inject
 
 class UserRepositoryImpl @Inject constructor (
-    private val userremotedatasource: UserDataSourceImpl
+    private val userremotedatasource: UserDataSource
 ) : UserRepository {
 
     // 1. 이메일 중복 체크 구현
@@ -24,9 +25,13 @@ class UserRepositoryImpl @Inject constructor (
 
     // 3. 로그인 구현
     // T는 UseCase에서 기대하는 타입(예: UserLoginInfo 또는 String)에 따라 결정됩니다.
-    override suspend fun <T> login(useremail: String, userpw: String): T {
-        // TODO: 로그인 확인 후 성공 시 사용자 정보 반환, 실패 시 Exception 발생
-        throw Exception("Not yet implemented")
+    override suspend fun login(useremail: String, userpw: String): AuthResult<Unit> {
+        return try {
+            userremotedatasource.loginUser(useremail, userpw)
+            AuthResult.Success(Unit)
+        } catch (e: Exception) {
+            AuthResult.Fail(message = e.message ?: "로그인 실패", throwable = e)
+        }
     }
 
     // 4. 달리기 기록 저장 구현
