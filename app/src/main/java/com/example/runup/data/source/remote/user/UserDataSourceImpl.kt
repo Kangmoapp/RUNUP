@@ -112,8 +112,4 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Fail("사용자 정보 로드 실패", e)
         }
     }
-
-    override suspend fun loginUser(email: String, pw: String): Unit {
-        firebaseAuth.signInWithEmailAndPassword(email, pw).await()
-    }
 }
