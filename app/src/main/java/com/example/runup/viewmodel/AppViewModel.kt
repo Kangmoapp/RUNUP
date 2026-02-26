@@ -1,7 +1,7 @@
 package com.example.runup.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.example.runup.ui.Screen
+import com.example.runup.ui.navigation.Screen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
