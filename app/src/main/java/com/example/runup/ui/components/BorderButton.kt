@@ -1,8 +1,6 @@
 package com.example.runup.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -18,7 +16,7 @@ import com.example.runup.ui.theme.White
 
 
 @Composable
-fun IntroButton(
+fun BorderButton(
     text:String,
     onClick:()->Unit,
     fontSize: TextUnit = 30.sp,
