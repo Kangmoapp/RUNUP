@@ -1,24 +1,15 @@
-package com.example.runup.ui
+package com.example.runup.ui.screens
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.runup.ui.theme.RunUpTheme
 import com.example.runup.viewmodel.AppViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.runup.ui.navigation.Screen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,10 +30,15 @@ fun RunUpApp(
     when (currentScreen) {
 
         Screen.TUTORIAL -> TutorialScreen(
-            onYesClick = { viewModel.navigateTo(Screen.LOGIN) },
-            onNoClick = { viewModel.navigateTo(Screen.SIGNUP) },
+            onYesClick = { viewModel.navigateTo(Screen.SIGNUP) },
+            onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
         )
-        Screen.LOGIN -> LoginScreen()
-        Screen.SIGNUP -> SignupScreen()
+        Screen.LOGIN -> LoginScreen(
+            onLoginClick = {viewModel.navigateTo(Screen.TEST)}
+        )
+        Screen.SIGNUP -> SignupScreen(
+            onContinueClick = {viewModel.navigateTo(Screen.TEST)}
+        )
+        Screen.TEST -> TestScreen()
     }
 }

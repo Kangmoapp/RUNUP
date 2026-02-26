@@ -17,3 +17,5 @@ val Black = Color(0xFF1C1C1C)
 val BackGroudColor = Color(0xFF171717)
 
 val Gray = Color(0xFFD9D9D9)
+
+val PlaceholderTextColor = Color(0xFFBDBDBD)
