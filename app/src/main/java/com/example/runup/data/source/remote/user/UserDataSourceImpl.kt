@@ -1,5 +1,7 @@
 package com.example.runup.data.source.remote.user
 
+import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -7,70 +9,107 @@ import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 class UserDataSourceImpl @Inject constructor(
-    private val firebaseAuth: FirebaseAuth,
+    private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) : UserDataSource {
-    //email, pw 로 계정생성 후 데이터베이스에 등록
-    override suspend fun registerUser(email: String, pw: String): Boolean {
+
+    //1. 이메일 확인
+    override suspend fun isEmailAlreadyRegistered(email: String): AuthResult<Boolean> {
         return try {
-            //파이어베이스 인증(Auth)에 계정 생성
-            val authResult = firebaseAuth.createUserWithEmailAndPassword(email, pw).await()
-            val uid = authResult.user?.uid ?: return false
-
-            //생성된 고유 UID를 문서 ID로 사용하여 Firestore에 저장
-            val userMap = mapOf(
-                "userId" to uid,
-                "userEmail" to email,
-                "userName" to "name",
-                "goalDistance" to 0, // 초기값
-                "goalTime" to 0      // 초기값
-            )
-
-            firestore.collection("users")
-                .document(uid)
-                .set(userMap)
-                .await()
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    //현재 로그인된 사용자의 상세 정보 가져오기
-    override suspend fun getMyUserData(): UserData? {
-        return try {
-            // 현재 로그인된 사용자의 UID 가져오기
-            val uid = firebaseAuth.currentUser?.uid ?: return null
-
-            // Firestore의 'users' 컬렉션에서 해당 UID 문서 가져오기
-            val document = firestore.collection("users")
-                .document(uid)
-                .get()
-                .await()
-
-            // 가져온 문서를 UserData 클래스 형태로 변환 (기본 생성자 필요)
-            document.toObject(UserData::class.java)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    override suspend fun isEmailAlreadyRegistered(email: String): Boolean {
-        return try {
-            // 'users' 컬렉션에서 'userEmail' 필드가 입력받은 email과 일치하는 문서가 있는지 검색
             val querySnapshot = firestore.collection("users")
                 .whereEqualTo("userEmail", email)
                 .get()
                 .await()
 
-            // 결과가 비어있지 않다면 이미 등록된 이메일임
-            !querySnapshot.isEmpty
+            if (querySnapshot.isEmpty) {
+                // 1. 중복이 없음 -> 사용 가능한 이메일 (Success)
+                AuthResult.Success(true)
+            } else {
+                // 2. 중복이 있음 -> 이미 가입된 이메일 (Fail로 던짐)
+                AuthResult.Fail("이미 등록된 이메일입니다.")
+            }
         } catch (e: Exception) {
-            // 에러 발생 시 안전하게 true(이미 있다고 가정) 혹은 false를 반환하도록 처리
-            e.printStackTrace()
-            false
+            // 3. 네트워크 오류 등 물리적 에러
+            AuthResult.Fail("이메일 확인 중 네트워크 오류가 발생했습니다.", e)
+        }
+    }
+
+    //2. 사용자 등록
+    override suspend fun registerUser(email: String, pw: String): AuthResult<Boolean> {
+        return try {
+            val authResult = auth.createUserWithEmailAndPassword(email, pw).await()
+            val uid = authResult.user?.uid ?: return AuthResult.Fail("UID 생성 실패")
+
+            val userMap = mapOf(
+                "userId" to uid,
+                "userEmail" to email,
+                "userName" to "Runner",
+                "goalDistance" to 0,
+                "goalTime" to 0
+            )
+
+            firestore.collection("users").document(uid).set(userMap).await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("회원가입 실패: ${e.localizedMessage}", e)
+        }
+    }
+
+    //3. 로그인
+    override suspend fun loginUser(email: String, pw: String): AuthResult<Boolean> {
+        return try {
+            val result = auth.signInWithEmailAndPassword(email, pw).await()
+            if (result.user != null) AuthResult.Success(true)
+            else AuthResult.Fail("사용자 정보가 없습니다.")
+        } catch (e: Exception) {
+            AuthResult.Fail("로그인 실패: 이메일 또는 비밀번호를 확인하세요.", e)
+        }
+    }
+
+    //4. 사용자 이름 등록
+    override suspend fun updateUserName(userid: String, name: String): AuthResult<Boolean> {
+        return try {
+            firestore.collection("users").document(userid)
+                .update("userName", name).await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("이름 업데이트 실패", e)
+        }
+    }
+
+    //5. 사용자 목표 업데이트
+    override suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean> {
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+            val updates = mapOf("goalDistance" to goalDistance, "goalTime" to goalTime)
+            firestore.collection("users").document(userid).update(updates).await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("목표 설정 실패", e)
+        }
+    }
+
+    //6. 사용자 러닝 기록 저장
+    override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+            firestore.collection("users").document(userid)
+                .collection("runs").document().set(record).await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("러닝 기록 저장 실패", e)
+        }
+    }
+
+    //7. 사용자 데이터 불러오기
+    override suspend fun getMyUserData(): AuthResult<UserData> {
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+            val document = firestore.collection("users").document(userid).get().await()
+            val userData = document.toObject(UserData::class.java) ?: UserData()
+            AuthResult.Success(userData)
+        } catch (e: Exception) {
+            AuthResult.Fail("사용자 정보 로드 실패", e)
         }
     }
 }
