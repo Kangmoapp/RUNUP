@@ -71,4 +71,7 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.kotlinx.coroutines.play.services)
+
+    //구글맵 의존성
+    implementation("com.google.maps.android:maps-compose:4.4.1")
 }
