@@ -15,7 +15,7 @@ interface UserDataSource {
     suspend fun loginUser(email: String, pw: String): AuthResult<Boolean>
 
     // 4. 사용자 이름 추가/수정
-    suspend fun updateUserName(userid: String, name: String): AuthResult<Boolean>
+    suspend fun updateUserName(name: String): AuthResult<Boolean>
 
     // 5. 현재 로그인된 사용자 목표(거리, 시간) 추가
     suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean>
