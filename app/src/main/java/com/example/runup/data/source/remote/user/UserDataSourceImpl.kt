@@ -1,5 +1,6 @@
 package com.example.runup.data.source.remote.user
 
+import android.util.Log
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
@@ -16,7 +17,7 @@ class UserDataSourceImpl @Inject constructor(
     //1. 이메일 확인
     override suspend fun isEmailAlreadyRegistered(email: String): AuthResult<Boolean> {
         return try {
-            val querySnapshot = firestore.collection("users")
+            val querySnapshot = firestore.collection("UserData")
                 .whereEqualTo("userEmail", email)
                 .get()
                 .await()
@@ -43,12 +44,13 @@ class UserDataSourceImpl @Inject constructor(
             val userMap = mapOf(
                 "userId" to uid,
                 "userEmail" to email,
+                "userPassword" to pw,
                 "userName" to "Runner",
                 "goalDistance" to 0,
                 "goalTime" to 0
             )
 
-            firestore.collection("users").document(uid).set(userMap).await()
+            firestore.collection("UserData").document(uid).set(userMap).await()
             AuthResult.Success(true)
         } catch (e: Exception) {
             AuthResult.Fail("회원가입 실패: ${e.localizedMessage}", e)
@@ -67,9 +69,11 @@ class UserDataSourceImpl @Inject constructor(
     }
 
     //4. 사용자 이름 등록
-    override suspend fun updateUserName(userid: String, name: String): AuthResult<Boolean> {
+    override suspend fun updateUserName(name: String): AuthResult<Boolean> {
         return try {
-            firestore.collection("users").document(userid)
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+            Log.d("UseCaseTest", "성공! 사용 가능 여부: ${userid}")
+            firestore.collection("UserData").document(userid)
                 .update("userName", name).await()
             AuthResult.Success(true)
         } catch (e: Exception) {
@@ -82,7 +86,8 @@ class UserDataSourceImpl @Inject constructor(
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
             val updates = mapOf("goalDistance" to goalDistance, "goalTime" to goalTime)
-            firestore.collection("users").document(userid).update(updates).await()
+            firestore.collection("UserData").document(userid).update(updates).await()
+            Log.d("UseCaseTest", "성공! 사용 가능 여부: ${auth.currentUser?.uid}")
             AuthResult.Success(true)
         } catch (e: Exception) {
             AuthResult.Fail("목표 설정 실패", e)
@@ -93,7 +98,7 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-            firestore.collection("users").document(userid)
+            firestore.collection("UserData").document(userid)
                 .collection("runs").document().set(record).await()
             AuthResult.Success(true)
         } catch (e: Exception) {
@@ -105,7 +110,7 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-            val document = firestore.collection("users").document(userid).get().await()
+            val document = firestore.collection("UserData").document(userid).get().await()
             val userData = document.toObject(UserData::class.java) ?: UserData()
             AuthResult.Success(userData)
         } catch (e: Exception) {

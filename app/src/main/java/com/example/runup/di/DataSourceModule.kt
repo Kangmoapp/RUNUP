@@ -1,5 +1,7 @@
 package com.example.runup.di
 
+import com.example.runup.data.source.remote.course.CourseDataSource
+import com.example.runup.data.source.remote.course.CourseDataSourceImpl
 import com.example.runup.data.source.remote.user.UserDataSource
 import com.example.runup.data.source.remote.user.UserDataSourceImpl
 import dagger.Binds
@@ -17,4 +19,10 @@ abstract class DataSourceModule {
     abstract fun bindUserDataSource(
         impl: UserDataSourceImpl
     ): UserDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindCourseDataSource(
+        courseDataSourceImpl: CourseDataSourceImpl
+    ): CourseDataSource // <-- 인터페이스와 구현체 연결
 }

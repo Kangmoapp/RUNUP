@@ -24,8 +24,8 @@ class UserRepositoryImpl @Inject constructor(
         return userdatasource.loginUser(useremail, userpw)
     }
     // 4. 사용자 이름 업데이트
-    override suspend fun updateUserName(useremail: String, username: String): AuthResult<Boolean> {
-        return userdatasource.updateUserName(useremail, username)
+    override suspend fun updateUserName(username: String): AuthResult<Boolean> {
+        return userdatasource.updateUserName(username)
     }
     // 5. 달리기 목표 저장
     override suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean> {
