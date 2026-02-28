@@ -4,7 +4,10 @@ import android.util.Log
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -35,7 +38,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //2. 사용자 등록
+    //2. 사용자 회원가입
     override suspend fun registerUser(email: String, pw: String): AuthResult<Boolean> {
         return try {
             val authResult = auth.createUserWithEmailAndPassword(email, pw).await()
@@ -61,10 +64,20 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun loginUser(email: String, pw: String): AuthResult<Boolean> {
         return try {
             val result = auth.signInWithEmailAndPassword(email, pw).await()
-            if (result.user != null) AuthResult.Success(true)
-            else AuthResult.Fail("사용자 정보가 없습니다.")
+            if (result.user != null) {
+                AuthResult.Success(true)
+            } else {
+                AuthResult.Fail("사용자 정보가 없습니다.")
+            }
+        } catch (e: FirebaseAuthInvalidUserException) {
+            // 1. 이메일 자체가 등록되지 않은 경우
+            AuthResult.Fail("등록되지 않은 이메일입니다.", e)
+        } catch (e: FirebaseAuthInvalidCredentialsException) {
+            // 2. 이메일은 맞지만 비밀번호가 틀렸거나, 형식이 잘못된 경우
+            AuthResult.Fail("비밀번호가 틀렸습니다.", e)
         } catch (e: Exception) {
-            AuthResult.Fail("로그인 실패: 이메일 또는 비밀번호를 확인하세요.", e)
+            // 3. 그 외 (네트워크 오류 등)
+            AuthResult.Fail("로그인 실패: ${e.localizedMessage}", e)
         }
     }
 
@@ -72,7 +85,6 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun updateUserName(name: String): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-            Log.d("UseCaseTest", "성공! 사용 가능 여부: ${userid}")
             firestore.collection("UserData").document(userid)
                 .update("userName", name).await()
             AuthResult.Success(true)
@@ -87,7 +99,6 @@ class UserDataSourceImpl @Inject constructor(
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
             val updates = mapOf("goalDistance" to goalDistance, "goalTime" to goalTime)
             firestore.collection("UserData").document(userid).update(updates).await()
-            Log.d("UseCaseTest", "성공! 사용 가능 여부: ${auth.currentUser?.uid}")
             AuthResult.Success(true)
         } catch (e: Exception) {
             AuthResult.Fail("목표 설정 실패", e)
@@ -115,6 +126,30 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Success(userData)
         } catch (e: Exception) {
             AuthResult.Fail("사용자 정보 로드 실패", e)
+        }
+    }
+
+    //8. 회원 탈퇴
+    override suspend fun deleteUserAccount(password: String): AuthResult<Boolean> {
+        return try {
+            val user = auth.currentUser ?: return AuthResult.Fail("로그인이 필요합니다.")
+            val email = user.email ?: return AuthResult.Fail("사용자 이메일 정보를 찾을 수 없습니다.")
+
+            // 1. 보안을 위해 입력받은 비밀번호로 재인증을 진행합니다.
+            val credential = EmailAuthProvider.getCredential(email, password)
+            user.reauthenticate(credential).await()
+
+            // 2. Firestore에 있는 사용자 데이터를 먼저 삭제합니다. (선택 사항이지만 권장)
+            // 계정 삭제 후에는 UID 접근 권한이 없어질 수 있으므로 먼저 처리합니다.
+            firestore.collection("UserData").document(user.uid).delete().await()
+
+            // 3. Firebase Auth에서 계정을 삭제합니다.
+            user.delete().await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            // 비밀번호가 틀렸을 경우나 네트워크 오류 등
+            AuthResult.Fail("회원탈퇴가 실패하였습니다.", e)
         }
     }
 }

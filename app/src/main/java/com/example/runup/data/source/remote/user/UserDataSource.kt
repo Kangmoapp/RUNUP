@@ -25,4 +25,7 @@ interface UserDataSource {
 
     // 7. 현재 로그인된 사용자의 상세 정보 가져오기 (실패 시 에러 메시지 포함 가능)
     suspend fun getMyUserData(): AuthResult<UserData>
+
+    // 8. 회원 탈퇴(계정 삭제)
+    suspend fun deleteUserAccount(password: String): AuthResult<Boolean>
 }

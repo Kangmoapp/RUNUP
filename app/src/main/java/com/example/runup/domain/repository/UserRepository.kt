@@ -24,4 +24,7 @@ interface UserRepository {
 
     // 7. 현재 로그인 된 사용자의 모든 데이터 반환 (마이페이지)
     suspend fun getMyUserData(): AuthResult<UserData>
+
+    // 8. 회원 탈퇴
+    suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean>
 }
