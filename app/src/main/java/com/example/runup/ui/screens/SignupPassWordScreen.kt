@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,12 +25,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.BorderButton
 import com.example.runup.ui.components.RunupTextfield
 import com.example.runup.ui.components.SignupText
 import com.example.runup.ui.components.UnderlineButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.White
+import com.example.runup.viewmodel.SignUpViewModel
 
 @Preview
 @Composable
@@ -40,10 +43,10 @@ fun PreviewPassWord(){
 @Composable
 fun SignupPassWordScreen(
     onContinueClick:()->Unit,
-    onLoginClick:()->Unit
+    onLoginClick:()->Unit,
+    viewModel : SignUpViewModel = hiltViewModel()
 ){
-    var password by remember { mutableStateOf("") }
-    var confirmPassword by remember { mutableStateOf("") }
+    val uiState by viewModel.uiState.collectAsState()
     val passwordFocusRequester = remember { FocusRequester() }
 
     Surface(
@@ -58,8 +61,8 @@ fun SignupPassWordScreen(
         ){
             SignupText(text = "비밀번호 입력")
             RunupTextfield(
-                value = password,
-                onValueChange = {password = it},
+                value = uiState.password,
+                onValueChange = viewModel::onPasswordChange,
                 placeholderText = "6자리 이상 입력해 주세요",
                 textcolor = White,
                 placeholdercolor = White,
@@ -80,8 +83,8 @@ fun SignupPassWordScreen(
             )
             SignupText(text = "비밀번호 확인", modifier = Modifier.padding(top = 50.dp))
             RunupTextfield(
-                value = confirmPassword,
-                onValueChange = {confirmPassword = it},
+                value = uiState.confirmPassword,
+                onValueChange = viewModel::onConfirmPasswordChange,
                 placeholderText = "다시 한번 입력해 주세요",
                 textcolor = White,
                 placeholdercolor = White,
@@ -108,7 +111,9 @@ fun SignupPassWordScreen(
             ) {
                 BorderButton(
                     text = "계속하기",
-                    onClick = onContinueClick,
+                    onClick = {
+                        viewModel.signUp(onSuccess = onContinueClick)
+                    },
                     fontSize = 24.sp,
                     modifier = Modifier
                         .padding(top = 50.dp)
