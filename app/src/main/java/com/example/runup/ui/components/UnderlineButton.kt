@@ -30,11 +30,9 @@ fun UnderlineButton(
     Button(
         onClick = onClick,
         contentPadding = PaddingValues(start = 5.dp, end = 5.dp, top = 0.dp, bottom = 0.dp),
-        colors = ButtonDefaults.buttonColors(
-        containerColor = Color.Transparent
-    ),
-    shape = RectangleShape,
-    modifier = modifier
+        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+        shape = RectangleShape,
+        modifier = modifier
     ) {
         Text(
             text = text,

@@ -35,7 +35,7 @@ class LoginViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val userlogininfo= UserLoginInfo("", email, password)
+            val userlogininfo= UserLoginInfo(email, password)
             when (val result = loginUseCase(userlogininfo)) {
                 is AuthResult.Success -> {
                     _uiState.update { it.copy(isLoading = false) }
