@@ -39,4 +39,8 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return userdatasource.getMyUserData()
     }
+
+    override suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean> {
+        return userdatasource.deleteUserAccount(userpw)
+    }
 }
