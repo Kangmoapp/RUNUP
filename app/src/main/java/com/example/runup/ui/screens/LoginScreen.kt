@@ -1,16 +1,12 @@
 package com.example.runup.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,22 +19,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,29 +40,39 @@ import com.example.runup.ui.components.UnderlineButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.PointColor
-import com.example.runup.ui.theme.White
+import com.example.runup.viewmodel.LoginUiState
 import com.example.runup.viewmodel.LoginViewModel
-
-@Preview(showBackground = true)
-@Composable
-fun LoginPagePreview() {
-    LoginScreen({}, {})
-}
 
 @Composable
 fun LoginScreen(
-    onLoginClick:()->Unit,
-    onSignUpClick: ()->Unit,
+    onLoginClick: () -> Unit,
+    onSignUpClick: () -> Unit,
     viewModel: LoginViewModel = hiltViewModel()
-){
+) {
     val uiState by viewModel.uiState.collectAsState()
-    val keyboardController = LocalSoftwareKeyboardController.current
 
+    LoginContent(
+        uiState = uiState,
+        onEmailChange = viewModel::onEmailChange,
+        onPasswordChange = viewModel::onPasswordChange,
+        onLogin = { viewModel.login(onSuccess = onLoginClick) },
+        onSignUpClick = onSignUpClick
+    )
+}
+
+@Composable
+fun LoginContent(
+    uiState: LoginUiState,
+    onEmailChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onLogin: () -> Unit,
+    onSignUpClick: () -> Unit
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
     val passwordFocusRequester = remember { FocusRequester() }
 
     Surface(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         color = BackGroudColor
     ) {
         Column(
@@ -79,35 +80,35 @@ fun LoginScreen(
                 .fillMaxSize()
                 .padding(top = 160.dp),
             horizontalAlignment = Alignment.CenterHorizontally
-        ){
+        ) {
             Image(
                 painter = painterResource(id = R.drawable.yellow_shoes),
                 contentDescription = null,
-                contentScale = ContentScale.Crop, // 이미지가 꽉 차게 비율 조정
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(180.dp)
-                    .clip(CircleShape) // 원형으로 자르기
+                    .clip(CircleShape)
             )
+
             RunupTextfield(
                 value = uiState.email,
-                onValueChange = viewModel::onEmailChange,
+                onValueChange = onEmailChange,
                 placeholderText = "이메일",
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(
-                    onNext = {
-                        passwordFocusRequester.requestFocus()
-                    }
+                    onNext = { passwordFocusRequester.requestFocus() }
                 ),
                 modifier = Modifier
-                    .padding(top= 50.dp)
+                    .padding(top = 50.dp)
                     .height(52.dp)
                     .width(365.dp)
             )
+
             RunupTextfield(
                 value = uiState.password,
-                onValueChange = viewModel::onPasswordChange,
+                onValueChange = onPasswordChange,
                 placeholderText = "비밀번호",
                 isPassword = true,
                 keyboardOptions = KeyboardOptions(
@@ -116,24 +117,24 @@ fun LoginScreen(
                 keyboardActions = KeyboardActions(
                     onDone = {
                         keyboardController?.hide()
-                        viewModel.login(onSuccess = onLoginClick)
+                        onLogin()
                     }
                 ),
                 modifier = Modifier
-                    .padding(top= 10.dp)
+                    .padding(top = 10.dp)
                     .height(52.dp)
                     .width(365.dp)
                     .focusRequester(passwordFocusRequester)
             )
+
             Column(
-                modifier = Modifier
-                    .wrapContentWidth(),
+                modifier = Modifier.wrapContentWidth(),
                 horizontalAlignment = Alignment.End
             ) {
                 Button(
                     onClick = {
                         keyboardController?.hide()
-                        viewModel.login(onSuccess = onLoginClick)
+                        onLogin()
                     },
                     shape = RoundedCornerShape(5.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -151,6 +152,7 @@ fun LoginScreen(
                         fontSize = 20.sp
                     )
                 }
+
                 UnderlineButton(
                     text = "회원가입",
                     onClick = onSignUpClick
@@ -158,4 +160,21 @@ fun LoginScreen(
             }
         }
     }
+}
+
+@Preview(showBackground = true)
+@Composable
+fun LoginPagePreview() {
+    LoginContent(
+        uiState = LoginUiState(
+            email = "test@runup.com",
+            password = "password123",
+            isLoading = false,
+            errorMessage = null
+        ),
+        onEmailChange = {},
+        onPasswordChange = {},
+        onLogin = {},
+        onSignUpClick = {}
+    )
 }

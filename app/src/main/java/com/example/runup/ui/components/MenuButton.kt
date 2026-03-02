@@ -25,7 +25,7 @@ import com.example.runup.ui.theme.White
 @Composable
 fun ColumnScope.MenuButton (
     onClick:()->Unit,
-    modifier: Modifier = Modifier.padding(top = 18.dp, bottom = 15.dp)
+    modifier: Modifier = Modifier.padding(top = 22.dp, bottom = 15.dp, end = 18.dp)
 ){
     Button(
         shape = RectangleShape,
