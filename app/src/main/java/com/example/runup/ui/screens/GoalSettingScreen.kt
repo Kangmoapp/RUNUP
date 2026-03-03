@@ -1,19 +1,40 @@
 package com.example.runup.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -21,16 +42,20 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.components.RunupTextfield
 import com.example.runup.ui.theme.BackGroudColor
+import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.TextColor
+import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.GoalSettingUiState
 import com.example.runup.viewmodel.GoalSettingViewModel
 import com.example.runup.viewmodel.LoginUiState
 import com.example.runup.viewmodel.LoginViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun GoalSettingScreen(
@@ -68,6 +93,8 @@ fun GoalSettingContent(
             .fillMaxSize(),
         color = BackGroudColor
     ){
+        var showDistanceDialog by remember { mutableStateOf(false) }
+        var selectedDistance by remember { mutableStateOf(3) }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -81,32 +108,52 @@ fun GoalSettingContent(
                 text = "목표 러닝 거리",
                 fontsize = 32.sp
             )
+            ClickableText(text = "${selectedDistance} km", onClick = {showDistanceDialog = true})
 
-            RunupTextfield(
-                value = uiState.goalDistance.toString(),
-                onValueChange = { },
-                placeholderText = "거리 입력",
-                modifier = Modifier
-                    .height(52.dp)
-                    .width(365.dp)
-            )
+
             GoalSettingScreenText(
                 text = "목표 1km 페이스",
                 fontsize = 32.sp
             )
-            RunupTextfield(
-                value = uiState.goalPace.toString(),
-                onValueChange = { },
-                placeholderText = "거리 입력",
-                modifier = Modifier
-                    .height(52.dp)
-                    .width(365.dp)
-            )
+            ClickableText(text = "6\'30\"", onClick = {showDistanceDialog = true})
+
             GoalSettingScreenText(
                 text = "17분 25초 \n안에 들어와야 해요 ",
                 fontsize = 40.sp
             )
         }
+        if (showDistanceDialog) {
+            NumberPickerDialog(
+                range = 1..20,
+                onConfirm = {
+                    selectedDistance = it
+                    showDistanceDialog = false
+                },
+                onDismiss = {
+                    showDistanceDialog = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClickableText(
+    text: String,
+    onClick: () -> Unit
+){
+    Box(
+        modifier = Modifier
+            .size(width = 265.dp, height = 80.dp)
+            .background(color = White, shape = RoundedCornerShape(8.dp))
+            .clickable ( onClick = onClick ),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            fontSize = 75.sp,
+            color = Black
+        )
     }
 }
 
@@ -122,5 +169,110 @@ private fun GoalSettingScreenText(
         color = TextColor,
         textAlign = TextAlign.Center,
         modifier = modifier
+    )
+}
+
+@Preview
+@Composable 
+fun PreviewDistanceScrollBox(){
+    DistanceScrollBox({})
+}
+
+@Composable
+private fun DistanceScrollBox(onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(375.dp)
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .background(color = Color.Transparent)
+                        .fillMaxWidth()
+                        .width(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    repeat(10) {
+                        Text("Item $it", modifier = Modifier.padding(2.dp))
+                    }
+                }
+                TextButton(
+                    onClick = { onDismiss() },
+                    modifier = Modifier.padding(8.dp),
+                ) {
+                    Text("Confirm")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NumberPickerDialog(
+    range: IntRange,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    var selectedNumber by remember { mutableStateOf(range.first) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(selectedNumber)
+                }
+            ) {
+                Text("확인")
+            }
+        },
+        text = {
+
+            Box(
+                modifier = Modifier
+                    .height(200.dp)
+            ) {
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    items(range.count()) { index ->
+                        val number = range.first + index
+
+                        Text(
+                            text = number.toString(),
+                            fontSize = 30.sp,
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .clickable {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(index)
+                                    }
+                                }
+                        )
+                    }
+                }
+                // 현재 중앙값 계산
+                LaunchedEffect(listState.firstVisibleItemIndex) {
+                    selectedNumber = range.first + listState.firstVisibleItemIndex
+                }
+            }
+        }
     )
 }
