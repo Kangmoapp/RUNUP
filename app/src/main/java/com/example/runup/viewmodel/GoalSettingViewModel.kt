@@ -1,10 +1,12 @@
 package com.example.runup.viewmodel
 
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.UserLoginInfo
 import com.example.runup.domain.usecase.LoginUseCase
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.usecase.GoalSettingUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,19 +14,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class LoginUiState(
-    val email: String = "",
-    val password: String = "",
-    val isLoading: Boolean = false,
-    val errorMessage: String? = null
+data class GoalSettingUiState(
+    val goalDistance: Int = 0,
+    val goalPace: Int = 0
 )
 
 @HiltViewModel
-class LoginViewModel @Inject constructor(
-    private val loginUseCase: LoginUseCase
+class GoalSettingViewModel @Inject constructor(
+    private val goalsettingUseCase: GoalSettingUseCase
 ): ViewModel(){
-    private val _uiState = MutableStateFlow(LoginUiState())
-    val uiState: StateFlow<LoginUiState> = _uiState
+
+    private val _uiState = MutableStateFlow(GoalSettingUiState())
+    val uiState: StateFlow<GoalSettingUiState> = _uiState
+
+    /*
 
     fun onEmailChange(v: String) = _uiState.update { it.copy(email = v, errorMessage = null) }
     fun onPasswordChange(v: String) = _uiState.update { it.copy(password = v, errorMessage = null) }
@@ -47,4 +50,6 @@ class LoginViewModel @Inject constructor(
             }
         }
     }
+
+     */
 }

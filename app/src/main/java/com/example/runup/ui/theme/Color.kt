@@ -1,6 +1,7 @@
 package com.example.runup.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.Placeholder
 
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
@@ -18,4 +19,4 @@ val BackGroudColor = Color(0xFF171717)
 
 val Gray = Color(0xFFD9D9D9)
 
-val PlaceholderTextColor = Color(0xFFBDBDBD)
+val TextColor = Color(0xFFBDBDBD)
