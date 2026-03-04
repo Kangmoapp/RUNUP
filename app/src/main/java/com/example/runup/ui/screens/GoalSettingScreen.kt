@@ -2,6 +2,7 @@ package com.example.runup.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +59,19 @@ import com.example.runup.viewmodel.LoginUiState
 import com.example.runup.viewmodel.LoginViewModel
 import kotlinx.coroutines.launch
 
+
+@Preview
+@Composable
+fun PreviewGoalSettingContent(){
+    GoalSettingContent(
+        uiState = GoalSettingUiState(
+            goalDistance = 2500,
+            goalPace = 390
+        ),
+        {},{},{},{}
+    )
+}
+
 @Composable
 fun GoalSettingScreen(
     onMenuClick:()->Unit,
@@ -66,35 +81,26 @@ fun GoalSettingScreen(
 
     GoalSettingContent(
         uiState = uiState,
-        onMenuClick = onMenuClick
-    )
-}
-
-@Preview
-@Composable
-fun PreviewGoalSettingContent(){
-    GoalSettingContent(
-        uiState = GoalSettingUiState(
-            goalDistance = 3000,
-            goalPace = 390
-        ),
-        {}
+        onMenuClick = onMenuClick,
+        onDistanceClick = {viewModel.openDistanceDialog()},
+        onDistanceClose = {viewModel.closeDistanceDialog()},
+        onDistanceConfirm = {viewModel.confirmDistance(it)},
     )
 }
 
 @Composable
 fun GoalSettingContent(
     uiState: GoalSettingUiState,
-    onMenuClick:()->Unit
+    onMenuClick:()->Unit,
+    onDistanceClick:()->Unit,
+    onDistanceClose:()->Unit,
+    onDistanceConfirm:(Int)->Unit,
 ){
-
     Surface(
         modifier = Modifier
             .fillMaxSize(),
         color = BackGroudColor
     ){
-        var showDistanceDialog by remember { mutableStateOf(false) }
-        var selectedDistance by remember { mutableStateOf(3) }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -108,30 +114,25 @@ fun GoalSettingContent(
                 text = "목표 러닝 거리",
                 fontsize = 32.sp
             )
-            ClickableText(text = "${selectedDistance} km", onClick = {showDistanceDialog = true})
+            ClickableText(text = "${uiState.goalDistance.toDouble()/1000} km", onClick = onDistanceClick)
 
 
             GoalSettingScreenText(
                 text = "목표 1km 페이스",
                 fontsize = 32.sp
             )
-            ClickableText(text = "6\'30\"", onClick = {showDistanceDialog = true})
+            //ClickableText(text = "6\'30\"", onClick = {showDistanceDialog = true})
 
             GoalSettingScreenText(
                 text = "17분 25초 \n안에 들어와야 해요 ",
                 fontsize = 40.sp
             )
         }
-        if (showDistanceDialog) {
+        if (uiState.showDistanceDialog) {
             NumberPickerDialog(
-                range = 1..20,
-                onConfirm = {
-                    selectedDistance = it
-                    showDistanceDialog = false
-                },
-                onDismiss = {
-                    showDistanceDialog = false
-                }
+                range = 0..100,
+                onConfirm = onDistanceConfirm,
+                onDismiss = onDistanceClose
             )
         }
     }
@@ -158,6 +159,65 @@ private fun ClickableText(
 }
 
 @Composable
+fun NumberPickerDialog(
+    range: IntRange,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    var selectedNumber by remember { mutableStateOf(range.first) }
+    val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(selectedNumber) },
+                shape = RectangleShape
+            ) {
+                Text("확인")
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .height(150.dp)
+            ) {
+
+                LazyColumn(
+                    state = listState,
+                    flingBehavior = snapFlingBehavior,
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    items(range.count()) { index ->
+                        val number = range.first + index
+
+                        Text(
+                            text = (number.toDouble()/10).toString(),
+                            fontSize = 30.sp,
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .clickable {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(index)
+                                    }
+                                }
+                        )
+                    }
+                }
+                // 현재 중앙값 계산
+                LaunchedEffect(listState.firstVisibleItemIndex) {
+                    selectedNumber = range.first + listState.firstVisibleItemIndex+1
+                }
+            }
+        }
+    )
+}
+
+
+@Composable
 private fun GoalSettingScreenText(
     text:String,
     fontsize:TextUnit,
@@ -173,106 +233,11 @@ private fun GoalSettingScreenText(
 }
 
 @Preview
-@Composable 
+@Composable
 fun PreviewDistanceScrollBox(){
-    DistanceScrollBox({})
-}
-
-@Composable
-private fun DistanceScrollBox(onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(375.dp)
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Column(
-                    modifier = Modifier
-                        .background(color = Color.Transparent)
-                        .fillMaxWidth()
-                        .width(20.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    repeat(10) {
-                        Text("Item $it", modifier = Modifier.padding(2.dp))
-                    }
-                }
-                TextButton(
-                    onClick = { onDismiss() },
-                    modifier = Modifier.padding(8.dp),
-                ) {
-                    Text("Confirm")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun NumberPickerDialog(
-    range: IntRange,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-
-    var selectedNumber by remember { mutableStateOf(range.first) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(
-                onClick = {
-                    onConfirm(selectedNumber)
-                }
-            ) {
-                Text("확인")
-            }
-        },
-        text = {
-
-            Box(
-                modifier = Modifier
-                    .height(200.dp)
-            ) {
-
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    items(range.count()) { index ->
-                        val number = range.first + index
-
-                        Text(
-                            text = number.toString(),
-                            fontSize = 30.sp,
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .clickable {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(index)
-                                    }
-                                }
-                        )
-                    }
-                }
-                // 현재 중앙값 계산
-                LaunchedEffect(listState.firstVisibleItemIndex) {
-                    selectedNumber = range.first + listState.firstVisibleItemIndex
-                }
-            }
-        }
+    NumberPickerDialog(
+        range = 0..100,
+        onConfirm = {},
+        onDismiss = {}
     )
 }
