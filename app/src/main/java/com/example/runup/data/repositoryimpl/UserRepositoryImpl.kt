@@ -39,7 +39,7 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return userdatasource.getMyUserData()
     }
-
+    //8. 사용자 계정 삭제
     override suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean> {
         return userdatasource.deleteUserAccount(userpw)
     }
