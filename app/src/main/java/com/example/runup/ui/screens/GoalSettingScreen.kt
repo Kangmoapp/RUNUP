@@ -35,28 +35,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runup.ui.components.MenuButton
-import com.example.runup.ui.components.RunupTextfield
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.TextColor
 import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.GoalSettingUiState
 import com.example.runup.viewmodel.GoalSettingViewModel
-import com.example.runup.viewmodel.LoginUiState
-import com.example.runup.viewmodel.LoginViewModel
 import kotlinx.coroutines.launch
 
 
@@ -108,29 +100,42 @@ fun GoalSettingContent(
 
             GoalSettingScreenText(
                text = "이번 달리기는",
-                fontsize = 48.sp
+                fontsize = 48.sp,
+                modifier = Modifier.padding(top=30.dp)
             )
             GoalSettingScreenText(
                 text = "목표 러닝 거리",
-                fontsize = 32.sp
+                fontsize = 32.sp,
+                modifier = Modifier.padding(top=15.dp)
             )
-            ClickableText(text = "${uiState.goalDistance.toDouble()/1000} km", onClick = onDistanceClick)
+            ClickableText(
+                text = "${uiState.goalDistance.toDouble()/1000} km",
+                onClick = onDistanceClick,
+                modifier = Modifier.padding(top=15.dp)
+            )
 
 
             GoalSettingScreenText(
                 text = "목표 1km 페이스",
-                fontsize = 32.sp
+                fontsize = 32.sp,
+                modifier = Modifier.padding(top=15.dp)
             )
-            //ClickableText(text = "6\'30\"", onClick = {showDistanceDialog = true})
+            ClickableText(
+                text = "${uiState.goalDistance.toDouble()/1000} km",
+                onClick = onDistanceClick,
+                modifier = Modifier.padding(top=15.dp)
+            )
 
             GoalSettingScreenText(
                 text = "17분 25초 \n안에 들어와야 해요 ",
-                fontsize = 40.sp
+                fontsize = 40.sp,
+                modifier = Modifier.padding(top=15.dp)
             )
         }
         if (uiState.showDistanceDialog) {
             NumberPickerDialog(
-                range = 0..100,
+                range = 1..100,
+                startNumber = uiState.goalDistance/100,
                 onConfirm = onDistanceConfirm,
                 onDismiss = onDistanceClose
             )
@@ -141,11 +146,12 @@ fun GoalSettingContent(
 @Composable
 private fun ClickableText(
     text: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ){
     Box(
-        modifier = Modifier
-            .size(width = 265.dp, height = 80.dp)
+        modifier = modifier
+            .size(width = 280.dp, height = 80.dp)
             .background(color = White, shape = RoundedCornerShape(8.dp))
             .clickable ( onClick = onClick ),
         contentAlignment = Alignment.Center
@@ -161,10 +167,11 @@ private fun ClickableText(
 @Composable
 fun NumberPickerDialog(
     range: IntRange,
+    startNumber: Int = 0,
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startNumber)
     val coroutineScope = rememberCoroutineScope()
 
     var selectedNumber by remember { mutableStateOf(range.first) }
@@ -184,18 +191,24 @@ fun NumberPickerDialog(
                 modifier = Modifier
                     .height(150.dp)
             ) {
-
                 LazyColumn(
                     state = listState,
                     flingBehavior = snapFlingBehavior,
                     modifier = Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    item{
+                        Text(
+                            text = "",
+                            fontSize = 30.sp,
+                            modifier = Modifier
+                                .padding(16.dp)
+                        )
+                    }
                     items(range.count()) { index ->
                         val number = range.first + index
-
                         Text(
-                            text = (number.toDouble()/10).toString(),
+                            text = (number / 10.0).toString(),
                             fontSize = 30.sp,
                             modifier = Modifier
                                 .padding(16.dp)
@@ -206,10 +219,18 @@ fun NumberPickerDialog(
                                 }
                         )
                     }
+                    item{
+                        Text(
+                            text = "",
+                            fontSize = 30.sp,
+                            modifier = Modifier
+                                .padding(16.dp)
+                        )
+                    }
                 }
                 // 현재 중앙값 계산
                 LaunchedEffect(listState.firstVisibleItemIndex) {
-                    selectedNumber = range.first + listState.firstVisibleItemIndex+1
+                    selectedNumber = range.first + listState.firstVisibleItemIndex
                 }
             }
         }
