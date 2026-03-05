@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,16 +18,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.BorderButton
 import com.example.runup.ui.components.RunupTextfield
 import com.example.runup.ui.components.SignupText
 import com.example.runup.ui.components.UnderlineButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.White
+import com.example.runup.viewmodel.SignUpViewModel
 
 @Preview
 @Composable
@@ -37,9 +41,11 @@ fun PreviewSignupScreen(){
 @Composable
 fun SignupEmailScreen(
     onContinueClick:()->Unit,
-    onLoginClick:()->Unit
+    onLoginClick:()->Unit,
+    viewModel : SignUpViewModel = hiltViewModel()
 ){
-    var email by remember { mutableStateOf("") }
+    val uiState by viewModel.uiState.collectAsState()
+    val keyboardController = LocalSoftwareKeyboardController.current
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = BackGroudColor
@@ -52,8 +58,8 @@ fun SignupEmailScreen(
         ){
             SignupText(text = "달리기를 시작해\n 볼까요?")
             RunupTextfield(
-                value = email,
-                onValueChange = {email = it},
+                value = uiState.email,
+                onValueChange = viewModel::onEmailChange,
                 placeholderText = "이메일 주소를 입력해 주세요",
                 textcolor = White,
                 placeholdercolor = White,
@@ -79,7 +85,10 @@ fun SignupEmailScreen(
             ) {
                 BorderButton(
                     text = "계속하기",
-                    onClick = onContinueClick,
+                    onClick = {
+                        keyboardController?.hide()
+                        viewModel.checkEmail(onSuccess = onContinueClick)
+                    },
                     fontSize = 24.sp,
                     modifier = Modifier
                         .padding(top = 50.dp)

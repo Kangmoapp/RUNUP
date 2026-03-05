@@ -69,8 +69,9 @@ fun LoginScreen(
 
     val passwordFocusRequester = remember { FocusRequester() }
 
-    Surface(modifier = Modifier
-        .fillMaxSize(),
+    Surface(
+        modifier = Modifier
+            .fillMaxSize(),
         color = BackGroudColor
     ) {
         Column(

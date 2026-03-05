@@ -32,7 +32,8 @@ fun RunUpApp(
     when (currentScreen) {
 
         Screen.TUTORIAL -> TutorialScreen(
-            onYesClick = { viewModel.navigateTo(Screen.SIGNUPEMAIL) },
+            onYesClick = { viewModel.navigateTo(Screen.HOME) },
+            //onYesClick = { viewModel.navigateTo(Screen.SIGNUPEMAIL) },
             onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
         )
         Screen.LOGIN -> LoginScreen(
@@ -48,5 +49,9 @@ fun RunUpApp(
             onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
         Screen.TEST -> TestScreen()
+        Screen.HOME -> HomeScreen(
+            onMenuClick = {},
+            onRunClick = {viewModel.navigateTo(Screen.TEST)}
+        )
     }
 }
