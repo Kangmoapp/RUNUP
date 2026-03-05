@@ -1,7 +1,8 @@
 package com.example.runup.data.source.remote.course
 
-interface CourseDataSource {
-    suspend fun getCourseData() {
+import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.Course
 
-    }
+interface CourseDataSource {
+    suspend fun saveCourse(course: Course) : AuthResult<Boolean>
 }
