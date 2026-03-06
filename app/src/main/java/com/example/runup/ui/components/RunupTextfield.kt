@@ -9,11 +9,14 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.runup.ui.theme.Black
-import com.example.runup.ui.theme.PlaceholderTextColor
+import com.example.runup.ui.theme.TextColor
 import com.example.runup.ui.theme.White
 
 
@@ -25,14 +28,16 @@ fun RunupTextfield(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     textcolor: Color = Black,
-    placeholdercolor: Color = PlaceholderTextColor,
+    placeholdercolor: Color = TextColor,
     containercolor: Color = White,
     indicatorcolor: Color = Color.Transparent,
     isPassword: Boolean = false,
+    fontsize: TextUnit = 16.sp,
     modifier: Modifier = Modifier,
 ) {
     TextField(
         value = value,
+        textStyle = TextStyle(fontSize = fontsize),
         onValueChange = onValueChange,
         placeholder = { Text(placeholderText) },
         visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,

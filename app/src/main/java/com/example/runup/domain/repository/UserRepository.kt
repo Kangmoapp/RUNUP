@@ -28,6 +28,8 @@ interface UserRepository {
     // 8. 회원 탈퇴
     suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean>
 
+
     //9. 사용자 목표 가져오기
     suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
+
 }
