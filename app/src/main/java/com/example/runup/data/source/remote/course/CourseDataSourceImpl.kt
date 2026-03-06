@@ -172,17 +172,17 @@ class CourseDataSourceImpl @Inject constructor(
                 Math.pow(dLat, 2.0) + Math.pow(dLon, 2.0)
             }!!
 
-            // 2. [거리 계산] 찾은 '다음 점'과의 하버사인 거리 계산 (실제 거리용)
+            // [거리 계산] 찾은 '다음 점'과의 하버사인 거리 계산 (실제 거리용)
             val lat1 = Math.toRadians(current.latitude)
-            val lon1 = Math.toRadians(current.longitude)
             val lat2 = Math.toRadians(next.latitude)
-            val lon2 = Math.toRadians(next.longitude)
+            val dLat = Math.toRadians(next.latitude - current.latitude)
+            val dLon = Math.toRadians(next.longitude - current.longitude) // 여기서 한 번에 계산
 
-            val a = Math.sin(Math.toRadians(next.latitude - current.latitude) / 2).let { it * it } +
+            val a = Math.sin(dLat / 2).let { it * it } +
                     Math.cos(lat1) * Math.cos(lat2) *
-                    Math.sin(Math.toRadians(next.longitude - current.longitude) / 2).let { it * it }
-            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+                    Math.sin(dLon / 2).let { it * it }
 
+            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
             totalDistance += radius * c
 
             // 다음 스텝 준비
