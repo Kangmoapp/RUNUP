@@ -7,11 +7,13 @@ data class RunRecord(
     val time: Int = 1000000,
     val course: Course = Course()
 )
+
 data class Course(
+    val id: String = "1",
     val distance: Int = 500,
-    val locationPoints: List<GeoPoint> = listOf(
-        GeoPoint(35.8888, 128.6103), // 경북대 본관 근처
-        GeoPoint(35.8900, 128.6120), // 다른 지점 1
-        GeoPoint(35.8915, 128.6145)  // 다른 지점 2
-    )// LocationPoint 대신 GeoPoint 사용
+    val locationPoints: List<GeoPoint> = listOf(),
+    val minLat: Double = 0.0, // 최남단
+    val maxLat: Double = 0.0, // 최북단
+    val minLng: Double = 0.0, // 최서단
+    val maxLng: Double = 0.0, // 최동단
 )
