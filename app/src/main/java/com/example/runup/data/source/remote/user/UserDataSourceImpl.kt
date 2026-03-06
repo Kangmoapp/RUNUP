@@ -152,4 +152,27 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Fail("회원탈퇴가 실패하였습니다.", e)
         }
     }
+
+    //9. 사용자 목표 가져오기
+    override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>{
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+
+            // Firestore에서 사용자 문서 가져오기
+            val document = firestore.collection("UserData").document(userid).get().await()
+
+            if (document.exists()) {
+                // 필드 값을 읽어와서 UserGoal 객체로 변환
+                val goalDistance = document.getLong("goalDistance")?.toInt() ?: 0
+                val goalTime = document.getLong("goalTime")?.toInt() ?: 0
+
+                AuthResult.Success(Pair(goalDistance, goalTime))
+            } else {
+                // 문서가 아예 없는 경우 기본값 반환 혹은 실패 처리
+                AuthResult.Fail("사용자 목표 정보가 존재하지 않습니다.")
+            }
+        } catch (e: Exception) {
+            AuthResult.Fail("목표 정보를 가져오는 중 오류 발생", e)
+        }
+    }
 }
