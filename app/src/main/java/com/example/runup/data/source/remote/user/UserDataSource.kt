@@ -28,4 +28,7 @@ interface UserDataSource {
 
     // 8. 회원 탈퇴(계정 삭제)
     suspend fun deleteUserAccount(password: String): AuthResult<Boolean>
+
+    //9. 목표 가져오기
+    suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
 }
