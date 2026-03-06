@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.MenuButton
+import com.example.runup.ui.components.NumberPickerDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.TextColor
@@ -134,8 +135,9 @@ fun GoalSettingContent(
         }
         if (uiState.showDistanceDialog) {
             NumberPickerDialog(
-                range = 1..100,
-                startNumber = uiState.goalDistance/100,
+                range = 0..100,
+                startNumber = (uiState.goalDistance/100 + 1),
+                textMapper = { (it / 10.0).toString() },
                 onConfirm = onDistanceConfirm,
                 onDismiss = onDistanceClose
             )
@@ -164,79 +166,6 @@ private fun ClickableText(
     }
 }
 
-@Composable
-fun NumberPickerDialog(
-    range: IntRange,
-    startNumber: Int = 0,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startNumber)
-    val coroutineScope = rememberCoroutineScope()
-
-    var selectedNumber by remember { mutableStateOf(range.first) }
-    val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(selectedNumber) },
-                shape = RectangleShape
-            ) {
-                Text("확인")
-            }
-        },
-        text = {
-            Box(
-                modifier = Modifier
-                    .height(150.dp)
-            ) {
-                LazyColumn(
-                    state = listState,
-                    flingBehavior = snapFlingBehavior,
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    item{
-                        Text(
-                            text = "",
-                            fontSize = 30.sp,
-                            modifier = Modifier
-                                .padding(16.dp)
-                        )
-                    }
-                    items(range.count()) { index ->
-                        val number = range.first + index
-                        Text(
-                            text = (number / 10.0).toString(),
-                            fontSize = 30.sp,
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .clickable {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(index)
-                                    }
-                                }
-                        )
-                    }
-                    item{
-                        Text(
-                            text = "",
-                            fontSize = 30.sp,
-                            modifier = Modifier
-                                .padding(16.dp)
-                        )
-                    }
-                }
-                // 현재 중앙값 계산
-                LaunchedEffect(listState.firstVisibleItemIndex) {
-                    selectedNumber = range.first + listState.firstVisibleItemIndex
-                }
-            }
-        }
-    )
-}
-
 
 @Composable
 private fun GoalSettingScreenText(
@@ -258,6 +187,7 @@ private fun GoalSettingScreenText(
 fun PreviewDistanceScrollBox(){
     NumberPickerDialog(
         range = 0..100,
+        textMapper = { (it / 10.0).toString() },
         onConfirm = {},
         onDismiss = {}
     )
