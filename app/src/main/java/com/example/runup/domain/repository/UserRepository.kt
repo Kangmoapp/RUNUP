@@ -28,8 +28,16 @@ interface UserRepository {
     // 8. 회원 탈퇴
     suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean>
 
-
     //9. 사용자 목표 가져오기
     suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
 
+    //room DB
+    //1. 사용자 목표 저장
+    suspend fun saveUserGoalToRoom(goaldistance: Int, goaltime: Int): AuthResult<Boolean>
+
+    //2. 사용자 목표 가져오기
+    suspend fun getUserGoalFromRoom(): AuthResult<Pair<Int, Int>>
+
+    //3. 사용자 삭제
+    suspend fun deleteUserGoalFromRoom(): AuthResult<Boolean>
 }
