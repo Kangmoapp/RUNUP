@@ -74,4 +74,11 @@ dependencies {
 
     //구글맵 의존성
     implementation("com.google.maps.android:maps-compose:4.4.1")
+
+    val room_version = "2.6.1"
+
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
 }
