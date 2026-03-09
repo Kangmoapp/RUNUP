@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -32,8 +33,7 @@ fun RunupAlertDialog(
     startNumber: Int = 0,
     textMapper: (Int) -> String,
     onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit,
-    modifier:Modifier = Modifier
+    onDismiss: () -> Unit
 ) {
     var selectedNumber by remember { mutableStateOf(range.first) }
     AlertDialog(
@@ -53,7 +53,7 @@ fun RunupAlertDialog(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .height(155.dp)
+                    .wrapContentHeight()
                     .fillMaxWidth()
             ) {
                 RunupLazyColumn(
@@ -62,10 +62,7 @@ fun RunupAlertDialog(
                     textMapper = textMapper,
                     onSelectedNumberChange = { number ->
                         selectedNumber = number
-                    },
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(60.dp)
+                    }
                 )
                 Text(
                     text = "km",
