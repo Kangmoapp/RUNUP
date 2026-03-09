@@ -40,4 +40,10 @@ interface UserRepository {
 
     //3. 사용자 삭제
     suspend fun deleteUserGoalFromRoom(): AuthResult<Boolean>
+
+    //4. 사용자 로그인 상태 업데이트
+    suspend fun updateUserLoginStatus(loginStatus:Boolean): AuthResult<Boolean>
+
+    //5. 사용자 로그인 상태 가져오기
+    suspend fun getIsLogin(): AuthResult<Boolean>
 }
