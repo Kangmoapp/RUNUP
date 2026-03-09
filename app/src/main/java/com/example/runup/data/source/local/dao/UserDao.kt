@@ -16,4 +16,10 @@ interface UserDao {
 
     @Query("DELETE FROM user_table WHERE id = 0")
     suspend fun deleteUserById()
+
+    @Query("UPDATE user_table SET isLogin = :loginStatus WHERE id = 0")
+    suspend fun updateLoginStatus(loginStatus: Boolean)
+
+    @Query("SELECT isLogin FROM user_table WHERE id = 0")
+    suspend fun getIsLogin(): Boolean
 }

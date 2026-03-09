@@ -24,7 +24,8 @@ object DatabaseModule {
             context,
             UserDatabase::class.java,
             "runup_user_db" // DB 파일 이름
-        ).build()
+        ).fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
