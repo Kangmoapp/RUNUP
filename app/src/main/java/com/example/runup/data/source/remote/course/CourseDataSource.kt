@@ -7,8 +7,9 @@ import com.google.firebase.firestore.GeoPoint
 interface CourseDataSource {
     suspend fun saveCourse(course: Course) : AuthResult<Boolean>
 
-    suspend fun getNearCourse(
+    suspend fun getCourse(
         courseDistance: Int,
-        currentLocation: GeoPoint
-    ): AuthResult<List<Pair<Int, List<GeoPoint>>>>
+        currentLocation: GeoPoint,
+        featureIndex: Int
+    ): AuthResult<List<List<Pair<Int, List<GeoPoint>>>>>
 }
