@@ -234,46 +234,36 @@ class CourseDataSourceImpl @Inject constructor(
         )
     }
 
-    // #2. [거리에 맞게 가까운 코스 가져오는 함수]
-    override suspend fun getNearCourse(
+    /**
+     * 인자에 따라 거리순 또는 특징 점수순으로 코스를 탐색하여 반환합니다.
+     * @param courseDistance 목표 거리
+     * @param currentLocation 현재 위치
+     * @param featureIndex 0: 가까운 순서, 1: 밝기순, 2: 혼잡도순, 3: 난이도순
+     */
+    // #2. [조건에 맞게 코스 가져오는 함수]
+    override suspend fun getCourse(
         courseDistance: Int,
-        currentLocation: GeoPoint
-    ): AuthResult<List<Pair<Int, List<GeoPoint>>>> {
+        currentLocation: GeoPoint,
+        featureIndex: Int
+    ): AuthResult<List<List<Pair<Int, List<GeoPoint>>>>> {
         return try {
-            // 가장 가까운 시작점 찾기
-            val nearestData = findNearestStartPoint(currentLocation)
-                ?: return AuthResult.Fail("주변에 이용 가능한 코스가 없습니다.")
+            // 방법 선택 (0이면 거리순, 1~3이면 특징순)
+            val sourceCourses = if (featureIndex == 0) {
+                findNearestStartPoints(currentLocation)
+            } else {
+                // featureIndex가 1, 2, 3인 경우를 그대로 넘김
+                findFeatureStartPoints(currentLocation, featureIndex)
+            }
 
-            val (courseDocument, startPoint) = nearestData
-            val allPaths = mutableListOf<Pair<Double, List<GeoPoint>>>()
-            val visited = mutableSetOf<Pair<Double, Double>>()
-            visited.add(startPoint.latitude to startPoint.longitude)
+            if (sourceCourses.isEmpty()) return AuthResult.Fail("주변에 이용 가능한 코스가 없습니다.")
 
-            // DFS 경로 탐색 시작
-            searchRecursive(
-                currentPath = mutableListOf(startPoint),
-                currentDist = 0.0,
-                targetDist = courseDistance.toDouble(),
-                pointsPool = courseDocument.locationPoints,
-                visited = visited,
-                results = allPaths
-            )
+            // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
+            val recommendedResult = generatePathsFromSources(sourceCourses, courseDistance.toDouble())
 
-            if (allPaths.isEmpty()) { // 탐색되어 나온 적절한 코스가 없는 경우
+            if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
             } else {
-                // Double 거리를 Int로 변환하여 리스트 생성
-                val recommendedResult = allPaths.map { (dist, path) ->
-                    dist.toInt() to path
-                }
-
-                // 모든 코스 파이어베이스 'test' 컬렉션에 저장
-                recommendedResult.forEach { (distance, path) ->
-                    saveToTestCollection(distance, path)
-                }
-
-                // 탐색된 모든 코스 리스트를 Success에 담아 반환 (최대 5개)
-                return AuthResult.Success(recommendedResult)
+                AuthResult.Success(recommendedResult)
             }
         } catch (e: Exception) {
             AuthResult.Fail("코스 탐색 중 오류 발생: ${e.message}")
@@ -281,33 +271,126 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     // 사용자 위치와 가장 가까운 시작점 찾기
-    private suspend fun findNearestStartPoint(userLoc: GeoPoint): Pair<Course, GeoPoint>? {
-        var radius = 0.0005 // 50m
-        while (radius <= 0.005) { // 최대 500m까지 확인
-            val docs = firestore.collection("Course")
-                .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - radius)
-                .whereLessThanOrEqualTo("minLat", userLoc.latitude + radius)
-                .get().await()
+    private suspend fun findNearestStartPoints(userLoc: GeoPoint): List<Pair<Course, GeoPoint>> {
+        val maxRadius = 0.005 // 최대 500m
+        val docs = firestore.collection("Course")
+            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
+            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
+            .get().await()
 
-            val candidates = docs.toObjects(Course::class.java).filter {
-                it.maxLng >= userLoc.longitude - radius && it.minLng <= userLoc.longitude + radius
-            }
-            // 사용자 위치 기준으로 radius 정사각형 범위안에 코스의 부분이 조금이라도 겹치면 candidates에 넣음
-
-            if (candidates.isNotEmpty()) {
-                var minDistance = Double.MAX_VALUE
-                var bestStartPoint: Pair<Course, GeoPoint>? = null
-                candidates.forEach { candidate ->
-                    candidate.locationPoints.forEach { point ->
-                        val distance = calculateDistance(userLoc, point.locationPoint)
-                        if (distance < minDistance) { minDistance = distance; bestStartPoint = candidate to point.locationPoint }
-                    }
-                }
-                if (bestStartPoint != null) return bestStartPoint
-            }
-            radius += 0.0005 // 범위 안에 들어온 코스가 없었을 시 50m 늘려서 재탐색
+        val allCandidates = docs.toObjects(Course::class.java).filter {
+            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
         }
-        return null
+
+        //코스, 시작좌표, 내위치에서 시작점까지의 거리를 담는 리스트
+        val startPoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
+
+        allCandidates.forEach { course ->
+            course.locationPoints.forEach { node ->
+                val dist = calculateDistance(userLoc, node.locationPoint)
+                if (dist <= 500.0) { // 500m 이내인 모든 좌표 후보군
+                    startPoints.add(Triple(course, node.locationPoint, dist))
+                }
+            }
+        }
+
+        // 거리순 정렬 후, 동일 코스 내 중복 시작점 제거(가장 가까운 것만) 및 최대 5개 추출
+        return startPoints.sortedBy { it.third }
+            .distinctBy { it.first.id } // 한 코스당 가장 가까운 지점 1개만 선택
+            .take(5)
+            .map { it.first to it.second }
+    }
+
+    /**
+     * 특징(점수) 순으로 500m 이내의 코스와 시작점을 찾아 반환합니다.
+     * @param userLoc 사용자 위치
+     * @param featureIndex 1: 밝기(Bright), 2: 혼잡도(Crowded), 3: 난이도(Hard) 순 정렬
+     */
+    private suspend fun findFeatureStartPoints(
+        userLoc: GeoPoint,
+        featureIndex: Int
+    ): List<Pair<Course, GeoPoint>> {
+        val maxRadius = 0.005 // 최대 500m 범위
+        val docs = firestore.collection("Course")
+            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
+            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
+            .get().await()
+
+        val allCandidates = docs.toObjects(Course::class.java).filter {
+            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
+        }
+
+        // 코스, 시작점, 특징점수를 한꺼번에 담을 리스트
+        val featurePoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
+
+        allCandidates.forEach { course ->
+            course.locationPoints.forEach { node ->
+                val dist = calculateDistance(userLoc, node.locationPoint)
+                if (dist <= 500.0) { // 500m 이내인 코스만 대상으로 함
+                    // 인덱스에 따라 정렬 기준 점수(score)를 Triple의 세 번째 인자로 설정
+                    val targetScore = when (featureIndex) {
+                        1 -> course.scores.brightScore
+                        2 -> course.scores.crowdedScore
+                        3 -> course.scores.hardScore
+                        else -> 0.0
+                    }
+                    featurePoints.add(Triple(course, node.locationPoint, targetScore))
+                }
+            }
+        }
+
+        // 점수가 높은 순(descending)으로 정렬 후 중복 제거 및 최대 5개 추출
+        return featurePoints.sortedByDescending { it.third } // 점수가 높은 순
+            .distinctBy { it.first.id } // 동일 코스 내 중복 시작점 제거
+            .take(5)
+            .map { it.first to it.second }
+    }
+
+
+    // 공통 모듈: 여러 소스(Course)로부터 목표 거리에 맞는 경로들을 "그룹별로" 생성
+    private suspend fun generatePathsFromSources(
+        sources: List<Pair<Course, GeoPoint>>,
+        targetDist: Double
+    ): List<List<Pair<Int, List<GeoPoint>>>> { //[A_course[1,2,3],B_course[1,2],C_course[1,2,3]]
+        val allGroupsResult = mutableListOf<List<Pair<Int, List<GeoPoint>>>>()
+
+        sources.forEachIndexed { groupIndex, (course, startPoint) ->
+            val courseResults = mutableListOf<Pair<Double, List<GeoPoint>>>()
+            val visited = mutableSetOf<Pair<Double, Double>>()
+            visited.add(startPoint.latitude to startPoint.longitude)
+
+            // 각 코스(소스)마다 DFS 탐색 수행 (최대 3개)
+            searchRecursive(
+                currentPath = mutableListOf(startPoint),
+                currentDist = 0.0,
+                targetDist = targetDist,
+                pointsPool = course.locationPoints,
+                visited = visited,
+                results = courseResults,
+                maxPerSource = 3
+            )
+
+            // 탐색된 결과가 있다면 해당 코스의 그룹(SubGroup)으로 묶음
+            if (courseResults.isNotEmpty()) {
+                val subGroup = courseResults.mapIndexed { pathIndex, (dist, path) ->
+                    val distanceInt = dist.toInt()
+
+                    // 저장 로직을 여기서 처리하여 그룹/경로 인덱스를 정확히 기록
+                    saveToTestCollection(
+                        distance = distanceInt,
+                        path = path,
+                        originId = course.id,
+                        groupOrder = groupIndex, // A=0, B=1, C=2...
+                        subIndex = pathIndex + 1  // 1, 2, 3
+                    )
+
+                    distanceInt to path
+                }
+                allGroupsResult.add(subGroup)
+            }
+        }
+
+        return allGroupsResult
     }
 
     // --- 내부 알고리즘 함수 ---
@@ -318,8 +401,12 @@ class CourseDataSourceImpl @Inject constructor(
         targetDist: Double, // 사용자가 원하는 거리
         pointsPool: List<Node>, // 해당 코스에 포함되는 모든 좌표
         visited: MutableSet<Pair<Double, Double>>, // 방문한 좌표
-        results: MutableList<Pair<Double, List<GeoPoint>>> // Double(거리) 와 좌표 목록 을 리스트로 담음
+        results: MutableList<Pair<Double, List<GeoPoint>>>, // Double(거리) 와 좌표 목록 을 리스트로 담음
+        maxPerSource: Int // 추가된 인자
     ) {
+        // 해당 코스에서 이미 충분한 갈래(예: 3개)를 찾았다면 중단
+        if (results.size >= maxPerSource) return
+
         if (currentDist >= targetDist) {
             // 도달 시점의 누적 거리(currentDist)를 경로와 함께 저장
             results.add(currentDist to currentPath.toList())
@@ -379,25 +466,37 @@ class CourseDataSourceImpl @Inject constructor(
 
         // 탐색 진행
         for ((nextPt, d, _) in sortedNeighbors) {
-            if (results.size >= 5) break // 코스를 5개 이상 찾으면 종료
+            if (results.size >= maxPerSource) break // 코스를 5개 이상 찾으면 종료
             visited.add(nextPt.latitude to nextPt.longitude)
             currentPath.add(nextPt)
             // 누적 거리(currentDist + d)를 넘겨줌
-            searchRecursive(currentPath, currentDist + d, targetDist, pointsPool, visited, results)
+            searchRecursive(currentPath, currentDist + d, targetDist, pointsPool, visited, results, maxPerSource)
             currentPath.removeAt(currentPath.size - 1)
         }
     }
 
     // --- 유틸리티 함수 ---
 
-    // 파이어 베이스 테스트콜렉션에 저장 (추천된 경로 확인용)
-    private suspend fun saveToTestCollection(distance: Int, path: List<GeoPoint>) {
+    // [수정] 파이어베이스 저장 함수
+    private suspend fun saveToTestCollection(
+        distance: Int,
+        path: List<GeoPoint>,
+        originId: String,
+        groupOrder: Int,
+        subIndex: Int
+    ) {
         val testData = hashMapOf(
             "distance" to distance,
             "locationPoints" to path,
+            "originCourseId" to originId,
+            "groupOrder" to groupOrder, // 정렬용 필드
+            "subPathName" to "Group${groupOrder}_${originId}_Path${subIndex}", // 이름에 그룹 순서 명시
             "createdAt" to com.google.firebase.Timestamp.now()
         )
-        firestore.collection("test").add(testData).await()
+
+        // 문서 ID를 직접 지정해서 저장하면 콘솔에서 정렬된 상태로 보기 편합니다.
+        val docName = "test_G${groupOrder}_P${subIndex}_${System.currentTimeMillis()}"
+        firestore.collection("test").document(docName).set(testData).await()
     }
     // 두 좌표의 거리 계산 (지구 반지름 기반)
     private fun calculateDistance(p1: GeoPoint, p2: GeoPoint): Double {
