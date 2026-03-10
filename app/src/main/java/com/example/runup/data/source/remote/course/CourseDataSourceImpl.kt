@@ -2,6 +2,8 @@ package com.example.runup.data.source.remote.course
 
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
+import com.example.runup.domain.model.Node
+import com.example.runup.domain.model.Scores
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
@@ -34,11 +36,15 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private suspend fun mergeAndSaveCourse(newCourse: Course){
-        // 1. Bounding Box 계산 및 1차/2차 필터링 (이전 로직 동일)
-        val newMinLat = newCourse.locationPoints.minOf { it.latitude }
-        val newMaxLat = newCourse.locationPoints.maxOf { it.latitude }
-        val newMinLng = newCourse.locationPoints.minOf { it.longitude }
-        val newMaxLng = newCourse.locationPoints.maxOf { it.longitude }
+        val eps = 0.0003 // 30m
+        val margin = eps
+        val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
+
+        // Bounding Box 계산 및 1차/2차 필터링
+        val newMinLat = newCourse.locationPoints.minOf { it.locationPoint.latitude }
+        val newMaxLat = newCourse.locationPoints.maxOf { it.locationPoint.latitude }
+        val newMinLng = newCourse.locationPoints.minOf { it.locationPoint.longitude }
+        val newMaxLng = newCourse.locationPoints.maxOf { it.locationPoint.longitude }
 
         //위도로 1차필터링
         val candidates = firestore.collection("Course")
@@ -51,36 +57,36 @@ class CourseDataSourceImpl @Inject constructor(
             existing.maxLng >= (newMinLng - margin) && existing.minLng <= (newMaxLng + margin)
         }
 
-        // 2. [DBSCAN 핵심] 모든 좌표를 하나로 모아 클러스터링 준비
-        val allPoints = mutableListOf<GeoPoint>().apply {
+        // 모든 좌표를 하나로 모아 클러스터링 준비
+        val allNodes = mutableListOf<Node>().apply {
             addAll(newCourse.locationPoints)
             targetClusters.forEach { addAll(it.locationPoints) }
         }
 
-        // 3. Kotlin 버전 DBSCAN 실행
-        val clusters = performDBSCAN(allPoints, eps, minSamples)
+        // DBSCAN 실행
+        val clusters = performDBSCAN(allNodes, eps, minSamples)
 
-        // 4. Firestore 업데이트 (클러스터 단위로 문서 생성/삭제)
+        // Firestore 업데이트 (클러스터 단위로 문서 생성/삭제)
         firestore.runTransaction { transaction ->
-            // 1. 카운터 문서 참조 및 현재 번호 읽기
+            // 카운터 문서 참조 및 현재 번호 읽기
             val metaRef = firestore.collection("Metadata").document("courseInfo")
             val metaSnap = transaction.get(metaRef)
 
             // 문서가 없으면 0부터 시작
             var lastNum = if (metaSnap.exists()) metaSnap.getLong("lastCourseNumber") ?: 0L else 0L
 
-            // 2. 기존 병합 대상 문서 삭제
+            // 기존 병합 대상 문서 삭제
             targetClusters.forEach { oldCourse ->
                 transaction.delete(firestore.collection("Course").document(oldCourse.id))
             }
 
-            // 3. DBSCAN 결과로 나온 각 그룹을 새 번호로 저장
+            // DBSCAN 결과로 나온 각 그룹을 새 번호로 저장
             clusters.forEach { clusterPoints ->
                 if (clusterPoints.isNotEmpty()) {
                     lastNum++ // 번호 증가
                     val customId = "course$lastNum" // 예: course3
 
-                    val simplifiedPoints = gridSimplify(clusterPoints, 0.00005)
+                    val simplifiedPoints = gridSimplify(clusterPoints, 0.00005) // 5미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
                     val newDocRef = firestore.collection("Course").document(customId)
 
                     // finalCourse 객체 생성 시 id도 customId로 전달
@@ -89,33 +95,33 @@ class CourseDataSourceImpl @Inject constructor(
                 }
             }
 
-            // 4. 업데이트된 마지막 번호를 다시 저장
+            // 업데이트된 마지막 번호를 다시 저장
             transaction.set(metaRef, mapOf("lastCourseNumber" to lastNum))
         }.await()
     }
 
-    private fun performDBSCAN(points: List<GeoPoint>, eps: Double, minSamples: Int): List<List<GeoPoint>> {
+    private fun performDBSCAN(nodes: MutableList<Node>, eps: Double, minSamples: Int): List<List<Node>> {
         val visited = mutableSetOf<Int>()
-        val clusters = mutableListOf<List<GeoPoint>>()
+        val clusters = mutableListOf<List<Node>>()
         val noise = mutableSetOf<Int>()
 
-        for (i in points.indices) {
+        for (i in nodes.indices) {
             if (i in visited) continue //방문한 좌표이면 스킵,
             visited.add(i) //방문하지 않은 좌표면 방문한 좌표에 추가
 
-            val neighbors = findNeighbors(i, points, eps)
+            val neighbors = findNeighbors(i, nodes, eps)
             if (neighbors.size < minSamples) { //이웃이 두개가 안된다면(자기 자신) noise(혼자 있는 그룹) 에 추가
                 noise.add(i)
             } else {
                 val cluster = mutableListOf<Int>() //하나의 그룹에 들어가는 인덱스들 모음 리스트
-                expandCluster(i, neighbors, points, cluster, visited, eps, minSamples)
-                clusters.add(cluster.map { points[it] })
+                expandCluster(i, neighbors, nodes, cluster, visited, eps, minSamples)
+                clusters.add(cluster.map { nodes[it] })
             }
         }
         return clusters
     }
 
-    private fun expandCluster(root: Int, neighbors: List<Int>, points: List<GeoPoint>, cluster: MutableList<Int>, visited: MutableSet<Int>, eps: Double, minSamples: Int) {
+    private fun expandCluster(root: Int, neighbors: List<Int>, nodes: List<Node>, cluster: MutableList<Int>, visited: MutableSet<Int>, eps: Double, minSamples: Int) {
         cluster.add(root)
         val queue = neighbors.toMutableList()
         var idx = 0
@@ -123,67 +129,84 @@ class CourseDataSourceImpl @Inject constructor(
             val nextPointIdx = queue[idx++]
             if (nextPointIdx !in visited) { // 방문한 좌표 아니라면
                 visited.add(nextPointIdx) //방문좌표에 더해주고
-                val nextNeighbors = findNeighbors(nextPointIdx, points, eps)
+                val nextNeighbors = findNeighbors(nextPointIdx, nodes, eps)
                 if (nextNeighbors.size >= minSamples) {
                     queue.addAll(nextNeighbors.filter { it !in queue })
                 }
             }
-            if (cluster.none { it == nextPointIdx }) {
+            if (cluster.none { it == nextPointIdx }) { // 클러스터에 nextPointIdx가 이미 존재하지 않는다면 추가해줌
                 cluster.add(nextPointIdx)
             }
         }
     }
 
-    private fun findNeighbors(index: Int, points: List<GeoPoint>, eps: Double): List<Int> {
+    private fun findNeighbors(index: Int, points: List<Node>, eps: Double): List<Int> {
         val neighbors = mutableListOf<Int>() //index 좌표 주변에 있는 이웃좌표 목록
         val p1 = points[index] //현재좌표
         for (i in points.indices) {
             val p2 = points[i]
-            val dist = Math.sqrt(Math.pow(p1.latitude - p2.latitude, 2.0) + Math.pow(p1.longitude - p2.longitude, 2.0))
+            val dist = Math.sqrt(Math.pow(p1.locationPoint.latitude - p2.locationPoint.latitude, 2.0) + Math.pow(p1.locationPoint.longitude - p2.locationPoint.longitude, 2.0))
             if (dist <= eps) neighbors.add(i) //거리가 eps 이내면 이웃에 추가
         }
         return neighbors
     }
 
-    private fun gridSimplify(points: List<GeoPoint>, gridSize: Double): List<GeoPoint> {
-        return points.groupBy {
-            val latGrid = (it.latitude / gridSize).roundToInt()
-            val lngGrid = (it.longitude / gridSize).roundToInt()
+    private fun gridSimplify(nodes: List<Node>, gridSize: Double): List<Node> {
+        return nodes.groupBy {
+            // Node 내부의 locationPoint 좌표를 기준으로 그리드 그룹화
+            val latGrid = (it.locationPoint.latitude / gridSize).roundToInt()
+            val lngGrid = (it.locationPoint.longitude / gridSize).roundToInt()
             Pair(latGrid, lngGrid)
         }.map { (_, group) ->
-            GeoPoint(
-                group.map { it.latitude }.average(),
-                group.map { it.longitude }.average()
+            // 좌표 평균 계산
+            val avgLat = group.map { it.locationPoint.latitude }.average()
+            val avgLng = group.map { it.locationPoint.longitude }.average()
+
+            // 분위기 점수 평균 계산 (Long 타입이므로 평균 후 다시 Long으로 변환)
+            val avgBright = group.map { it.score.brightScore }.average()
+            val avgCrowded = group.map { it.score.crowdedScore }.average()
+            val avgHard = group.map { it.score.hardScore }.average()
+
+            // 평균값이 적용된 새로운 Node 반환
+            Node(
+                locationPoint = GeoPoint(avgLat, avgLng),
+                score = Scores(avgBright, avgCrowded, avgHard)
             )
         }
     }
 
-    private fun createCourseFromPoints(id: String, points: List<GeoPoint>): Course {
-        if (points.isEmpty()) return Course(id = id, locationPoints = emptyList()) // 예외 처리
+    private fun createCourseFromPoints(id: String, nodes: List<Node>): Course {
+        if (nodes.isEmpty()) return Course(id = id, locationPoints = emptyList()) // 예외 처리
 
         // 1. [순서 정렬] 가장 가까운 점을 찾아가며 경로 순서 재구성 (Greedy 정렬)
-        val sortedPoints = mutableListOf<GeoPoint>()
-        val remaining = points.toMutableList()
+        val sortedPoints = mutableListOf<Node>()
+        val remaining = nodes.toMutableList()
         var current = remaining.removeAt(0)
         sortedPoints.add(current)
 
         var totalDistance = 0.0
         val radius = 6371000.0 // 지구 반지름
 
+        // 모든 노드의 각 점수들을 합산한 뒤 평균을 내어 코스의 대표 점수로 설정합니다.
+        val avgBright = nodes.map { it.score.brightScore }.average()
+        val avgCrowded = nodes.map { it.score.crowdedScore }.average()
+        val avgHard = nodes.map { it.score.hardScore }.average()
+        val courseScores = Scores(avgBright, avgCrowded, avgHard)
+
         while (remaining.isNotEmpty()) {
             // 현재 점(current)에서 가장 가까운 다음 점 찾기
             val next = remaining.minByOrNull { p ->
-                val dLat = Math.toRadians(p.latitude - current.latitude)
-                val dLon = Math.toRadians(p.longitude - current.longitude)
+                val dLat = Math.toRadians(p.locationPoint.latitude - current.locationPoint.latitude)
+                val dLon = Math.toRadians(p.locationPoint.longitude - current.locationPoint.longitude)
                 // 성능을 위해 여기서는 단순 피타고라스 근사치로 비교 (정렬용)
                 Math.pow(dLat, 2.0) + Math.pow(dLon, 2.0)
             }!!
 
             // [거리 계산] 찾은 '다음 점'과의 하버사인 거리 계산 (실제 거리용)
-            val lat1 = Math.toRadians(current.latitude)
-            val lat2 = Math.toRadians(next.latitude)
-            val dLat = Math.toRadians(next.latitude - current.latitude)
-            val dLon = Math.toRadians(next.longitude - current.longitude) // 여기서 한 번에 계산
+            val lat1 = Math.toRadians(current.locationPoint.latitude)
+            val lat2 = Math.toRadians(next.locationPoint.latitude)
+            val dLat = Math.toRadians(next.locationPoint.latitude - current.locationPoint.latitude)
+            val dLon = Math.toRadians(next.locationPoint.longitude - current.locationPoint.longitude) // 여기서 한 번에 계산
 
             val a = Math.sin(dLat / 2).let { it * it } +
                     Math.cos(lat1) * Math.cos(lat2) *
@@ -202,11 +225,12 @@ class CourseDataSourceImpl @Inject constructor(
         return Course(
             id = id,
             locationPoints = sortedPoints, // 정렬된 좌표 저장
-            minLat = sortedPoints.minOf { it.latitude },
-            maxLat = sortedPoints.maxOf { it.latitude },
-            minLng = sortedPoints.minOf { it.longitude },
-            maxLng = sortedPoints.maxOf { it.longitude },
-            distance = Math.round(totalDistance).toInt()
+            minLat = sortedPoints.minOf { it.locationPoint.latitude },
+            maxLat = sortedPoints.maxOf { it.locationPoint.latitude},
+            minLng = sortedPoints.minOf { it.locationPoint.longitude },
+            maxLng = sortedPoints.maxOf { it.locationPoint.longitude },
+            distance = Math.round(totalDistance).toInt(),
+            scores = courseScores // 코스 전체 평균 점수 저장
         )
     }
 
@@ -275,8 +299,8 @@ class CourseDataSourceImpl @Inject constructor(
                 var bestStartPoint: Pair<Course, GeoPoint>? = null
                 candidates.forEach { candidate ->
                     candidate.locationPoints.forEach { point ->
-                        val distance = calculateDistance(userLoc, point)
-                        if (distance < minDistance) { minDistance = distance; bestStartPoint = candidate to point }
+                        val distance = calculateDistance(userLoc, point.locationPoint)
+                        if (distance < minDistance) { minDistance = distance; bestStartPoint = candidate to point.locationPoint }
                     }
                 }
                 if (bestStartPoint != null) return bestStartPoint
@@ -292,7 +316,7 @@ class CourseDataSourceImpl @Inject constructor(
         currentPath: MutableList<GeoPoint>, // 현재 위치
         currentDist: Double, // 현재까지의 누적 거리
         targetDist: Double, // 사용자가 원하는 거리
-        pointsPool: List<GeoPoint>, // 해당 코스에 포함되는 모든 좌표
+        pointsPool: List<Node>, // 해당 코스에 포함되는 모든 좌표
         visited: MutableSet<Pair<Double, Double>>, // 방문한 좌표
         results: MutableList<Pair<Double, List<GeoPoint>>> // Double(거리) 와 좌표 목록 을 리스트로 담음
     ) {
@@ -307,11 +331,11 @@ class CourseDataSourceImpl @Inject constructor(
 
         // 주변 이웃 찾기
         val allNeighbors = pointsPool.filter { pt ->
-            val key = pt.latitude to pt.longitude
+            val key = pt.locationPoint.latitude to pt.locationPoint.longitude
             if (key in visited) return@filter false
-            val d = calculateDistance(lastPt, pt)
+            val d = calculateDistance(lastPt, pt.locationPoint)
             d in 1.0..7.9 // 1미터에서 7.9미터 사이의 이웃 좌표들 탐색
-        }.map { it to calculateDistance(lastPt, it) }
+        }.map { it to calculateDistance(lastPt, it.locationPoint) }
 
         if (allNeighbors.isEmpty()) {
             if (currentDist > targetDist * 0.95) { // 더 이상 주변 좌표가 없을 경우, 현재까지의 거리가 목표거리의 95퍼센트가 넘으면 코스로 인정
@@ -323,10 +347,10 @@ class CourseDataSourceImpl @Inject constructor(
         // 필터링 및 정렬
         val scoredNeighbors = mutableListOf<Triple<GeoPoint, Double, Int>>()
         if (allNeighbors.size == 1) { // 이웃이 한개밖에 없으면 우선순위 1
-            scoredNeighbors.add(Triple(allNeighbors[0].first, allNeighbors[0].second, 0)) // 좌표, 거리, 우선순위
+            scoredNeighbors.add(Triple(allNeighbors[0].first.locationPoint, allNeighbors[0].second, 0)) // 좌표, 거리, 우선순위
         } else { // 이웃 좌표가 2개 이상 있는 경우
             for ((pt, d) in allNeighbors) {
-                val angleToNext = if (parentPt != null) calculateAngleDiff(parentPt, lastPt, pt) else 0.0
+                val angleToNext = if (parentPt != null) calculateAngleDiff(parentPt, lastPt, pt.locationPoint) else 0.0
                 var isValid = false
                 var priority = 1
 
@@ -335,11 +359,11 @@ class CourseDataSourceImpl @Inject constructor(
                     priority = 0 // 우선순위 0
                 } else { // 20도를 벗어나는 경우에는 그 다음 좌표까지 확인
                     val hasContinuingPath = pointsPool.any { nNext ->
-                        val nNextKey = nNext.latitude to nNext.longitude
+                        val nNextKey = nNext.locationPoint.latitude to nNext.locationPoint.longitude
                         if (nNextKey in visited || nNextKey == (lastPt.latitude to lastPt.longitude)) false
                         else {
-                            val dNext = calculateDistance(pt, nNext)
-                            dNext in 1.0..7.9 && calculateAngleDiff(lastPt, pt, nNext) < 20.0
+                            val dNext = calculateDistance(pt.locationPoint, nNext.locationPoint)
+                            dNext in 1.0..7.9 && calculateAngleDiff(lastPt, pt.locationPoint, nNext.locationPoint) < 20.0
                         }
                     }
                     if (hasContinuingPath) {
@@ -347,7 +371,7 @@ class CourseDataSourceImpl @Inject constructor(
                         priority = 1 // 직선 이웃좌표보다는 우선순위 낮게 설정
                     }
                 }
-                if (isValid) scoredNeighbors.add(Triple(pt, d, priority))
+                if (isValid) scoredNeighbors.add(Triple(pt.locationPoint, d, priority))
             }
         }
         // 우선순위 먼저 확인 후, 거리 짧은 순 정렬
@@ -365,7 +389,8 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     // --- 유틸리티 함수 ---
-    // 파이어 베이스 테스트콜렉션에 저장
+
+    // 파이어 베이스 테스트콜렉션에 저장 (추천된 경로 확인용)
     private suspend fun saveToTestCollection(distance: Int, path: List<GeoPoint>) {
         val testData = hashMapOf(
             "distance" to distance,
