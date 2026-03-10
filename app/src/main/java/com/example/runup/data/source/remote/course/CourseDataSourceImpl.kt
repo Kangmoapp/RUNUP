@@ -21,6 +21,10 @@ class CourseDataSourceImpl @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) : CourseDataSource {
+    private val eps = 0.0003
+    private val margin = eps
+    private val minSamples = 2 // 최소 점 개수
+
     // #1. [코스 병합 및 저장하는 함수]
     override suspend fun saveCourse(course: Course): AuthResult<Boolean> {
         return try {
