@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.UserLoginInfo
 import com.example.runup.domain.usecase.LoginUseCase
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.usecase.UpdateUserLoginStatusUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,13 +22,20 @@ data class LoginUiState(
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val loginUseCase: LoginUseCase
-): ViewModel(){
+    private val loginUseCase: LoginUseCase,
+    private val updateUserLoginStatusUseCase: UpdateUserLoginStatusUseCase
+) : ViewModel() {
+
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState
 
-    fun onEmailChange(v: String) = _uiState.update { it.copy(email = v, errorMessage = null) }
-    fun onPasswordChange(v: String) = _uiState.update { it.copy(password = v, errorMessage = null) }
+    fun onEmailChange(v: String) = _uiState.update {
+        it.copy(email = v, errorMessage = null)
+    }
+
+    fun onPasswordChange(v: String) = _uiState.update {
+        it.copy(password = v, errorMessage = null)
+    }
 
     fun login(onSuccess: () -> Unit) {
         val email = _uiState.value.email
@@ -35,14 +43,20 @@ class LoginViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val userlogininfo= UserLoginInfo(email, password)
+
+            val userlogininfo = UserLoginInfo(email, password)
+
             when (val result = loginUseCase(userlogininfo)) {
                 is AuthResult.Success -> {
+                    updateUserLoginStatusUseCase(true)
                     _uiState.update { it.copy(isLoading = false) }
                     onSuccess()
                 }
+
                 is AuthResult.Fail -> {
-                    _uiState.update { it.copy(isLoading = false, errorMessage = result.message) }
+                    _uiState.update {
+                        it.copy(isLoading = false, errorMessage = result.message)
+                    }
                 }
             }
         }
