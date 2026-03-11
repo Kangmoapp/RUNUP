@@ -30,9 +30,9 @@ class LocationService : LifecycleService() {
     @Inject lateinit var repository: LocationRepository
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
-    // 1. 콜백을 변수로 빼서 나중에 중단할 수 있게 함
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
+    // 콜백을 변수로 빼서 나중에 중단할 수 있게 함
+    private val locationCallback = object : LocationCallback() { // 위치가 잡힐때마다 실행하는 행동 지침
+        override fun onLocationResult(result: LocationResult) { // 위치 정보가 도착했을 때 실행되는 함수
             super.onLocationResult(result)
             result.lastLocation?.let { location ->
                 val newNode = Node(
@@ -44,8 +44,10 @@ class LocationService : LifecycleService() {
         }
     }
 
-    override fun onCreate() {
+    override fun onCreate() { //RunningViewModel 에서 LocationService 호출하면 실행
         super.onCreate()
+
+        // 구글 서비스로부터 위치 제공 클라이언트를 빌려옴 (장비 챙김)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
     }
 
@@ -56,9 +58,9 @@ class LocationService : LifecycleService() {
             stopSelf()
             return START_NOT_STICKY
         }
-
-        startForeground(1, createNotification())
-        requestLocationUpdates()
+        // 진짜 데이터 수집 시작
+        startForeground(1, createNotification()) //상단바에 알림 띄어 시스템이 못 죽이게 함
+        requestLocationUpdates() //위치 업데이트
         return super.onStartCommand(intent, flags, startId)
     }
 
