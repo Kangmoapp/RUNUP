@@ -32,8 +32,7 @@ fun RunUpApp(
     when (currentScreen) {
 
         Screen.TUTORIAL -> TutorialScreen(
-            onYesClick = { viewModel.navigateTo(Screen.GOALSETTING) },
-            //onYesClick = { viewModel.navigateTo(Screen.SIGNUPEMAIL) },
+            onYesClick = { viewModel.navigateTo(Screen.HOME) },
             onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
         )
         Screen.LOGIN -> LoginScreen(
@@ -45,16 +44,26 @@ fun RunUpApp(
             onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
         Screen.SIGNUPPASSWORD -> SignupPassWordScreen (
-            onContinueClick = {viewModel.navigateTo(Screen.TEST)},
+            onContinueClick = {viewModel.navigateTo(Screen.LOGIN)},
             onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
         Screen.HOME -> HomeScreen(
-            onMenuClick = {},
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             onRunClick = {viewModel.navigateTo(Screen.TEST)}
         )
         Screen.GOALSETTING -> GoalSettingScreen(
-            onMenuClick = {viewModel.navigateTo(Screen.HOME)},
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
         )
+        Screen.MENU -> MenuScreen (
+            onBackClick = {viewModel.navigateTo(Screen.HOME)},
+            onCorseClick = { },
+            onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
+            onOptionClick= { },
+            onHelpClick= { },
+            onCommunityClick= { },
+            onMypageClick= { },
+        )
+
         Screen.TEST -> TestScreen()
 
     }
