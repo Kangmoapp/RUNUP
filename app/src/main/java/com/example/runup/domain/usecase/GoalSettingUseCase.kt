@@ -8,6 +8,7 @@ class GoalSettingUseCase @Inject constructor(
     private val userrepository: UserRepository
 ){
     suspend operator fun invoke(goaldistance:Int, goaltime:Int): AuthResult<Boolean>{
+        userrepository.saveUserGoalToRoom(goaldistance, goaltime)
         return userrepository.updateUserGoal(goaldistance, goaltime)
     }
 }

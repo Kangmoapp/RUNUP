@@ -68,7 +68,6 @@ class UserRepositoryImpl @Inject constructor(
                 id = 0, // 단일 사용자 데이터 유지
                 goalDistance = goaldistance,
                 goalTime = goaltime,
-                isLogin = true,
             )
             userDao.insertUser(userEntity)
             AuthResult.Success(true)

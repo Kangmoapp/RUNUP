@@ -8,5 +8,4 @@ data class UserEntity(
     @PrimaryKey val id: Int = 0, // 사용자 정보는 하나만 저장하므로 ID 고정
     val goalDistance: Int,      // 목표 거리
     val goalTime: Int,           // 목표 시간
-    val isLogin: Boolean        // 로그인 여부
 )
