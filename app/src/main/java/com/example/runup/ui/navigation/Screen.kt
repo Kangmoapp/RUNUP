@@ -7,5 +7,6 @@ enum class Screen {
     SIGNUPPASSWORD,
     HOME,
     GOALSETTING,
+    MENU,
     TEST
 }
