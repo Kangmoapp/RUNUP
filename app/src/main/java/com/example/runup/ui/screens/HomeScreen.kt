@@ -27,6 +27,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,11 +40,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+
 import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.BlackTextColor
 import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.WhiteTextColor
+
+import com.example.runup.viewmodel.GoalSettingViewModel
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
@@ -53,13 +59,30 @@ import com.google.maps.android.compose.rememberCameraPositionState
 @Preview
 @Composable
 fun PreviewHomeScreen(){
-    HomeScreen({},{})
+    HomeScreen({},{},{})
 }
 
 @Composable
 fun HomeScreen(
     onMenuClick:()->Unit,
-    onRunClick:()->Unit
+    onRunClick:()->Unit,
+    onDistanceClick:()-> Unit,
+    viewModel: GoalSettingViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    HomeContent(
+        onMenuClick = onMenuClick,
+        onRunClick = onRunClick,
+        onDistanceClick = onDistanceClick
+
+    )
+}
+@Composable
+fun HomeContent(
+    onMenuClick:()->Unit,
+    onRunClick:()->Unit,
+    onDistanceClick:()-> Unit
 ){
     val singapore = LatLng(1.35, 103.87)
     val cameraPositionState = rememberCameraPositionState {
@@ -125,7 +148,7 @@ fun HomeScreen(
                 HomeButton(
                     texttop = "목표 거리",
                     textbottom = "3km",
-                    {},
+                    onClick = onDistanceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )
             }

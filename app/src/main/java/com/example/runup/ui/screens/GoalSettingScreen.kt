@@ -22,7 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.MenuButton
-import com.example.runup.ui.components.RunupAlertDialog
+import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.WhiteTextColor
@@ -39,7 +40,7 @@ fun PreviewGoalSettingContent(){
             goalDistance = 2500,
             goalPace = 390
         ),
-        {},{},{},{}
+        {},{},{},{},{},{},{ _, _ -> },{ 10 to 10 }
     )
 }
 
@@ -56,6 +57,12 @@ fun GoalSettingScreen(
         onDistanceClick = {viewModel.openDistanceDialog()},
         onDistanceClose = {viewModel.closeDistanceDialog()},
         onDistanceConfirm = {viewModel.confirmDistance(it)},
+        onPaceClick = {viewModel.openPaceDialog()},
+        onPaceClose = {viewModel.closePaceDialog()},
+        onPaceConfirm = { minute, second ->
+            viewModel.confirmPace(minute, second)
+        },
+        onTimeCalculate = {viewModel.calculateTime()}
     )
 }
 
@@ -66,7 +73,12 @@ fun GoalSettingContent(
     onDistanceClick:()->Unit,
     onDistanceClose:()->Unit,
     onDistanceConfirm:(Int)->Unit,
+    onPaceClick:()->Unit,
+    onPaceClose:()->Unit,
+    onPaceConfirm:(Int,Int)->Unit,
+    onTimeCalculate:()->Pair<Int, Int>,
 ){
+    val (minute, second) = onTimeCalculate()
     Surface(
         modifier = Modifier
             .fillMaxSize(),
@@ -100,24 +112,33 @@ fun GoalSettingContent(
                 modifier = Modifier.padding(top=15.dp)
             )
             ClickableText(
-                text = "${uiState.goalDistance.toDouble()/1000} km",
-                onClick = onDistanceClick,
+                text = "${uiState.goalPace/60}\' ${uiState.goalPace%60}\"",
+                onClick = onPaceClick,
                 modifier = Modifier.padding(top=15.dp)
             )
 
             GoalSettingScreenText(
-                text = "17분 25초 \n안에 들어와야 해요 ",
+                text = "${minute}분 ${second}초 \n안에 들어와야 해요 ",
                 fontsize = 40.sp,
                 modifier = Modifier.padding(top=15.dp)
             )
         }
         if (uiState.showDistanceDialog) {
-            RunupAlertDialog(
+            DistanceGoalSettingDialog(
                 range = 0..100,
                 startNumber = (uiState.goalDistance/100 + 1),
-                textMapper = { (it / 10.0).toString() },
                 onConfirm = onDistanceConfirm,
                 onDismiss = onDistanceClose
+            )
+        }
+        else if (uiState.showPaceDialog) {
+            PaceGoalSettingDialog(
+                rangeMinutes = 0..20,
+                rangeSeconds = 0..60,
+                startMinute = (uiState.goalPace/60 + 1),
+                startSecond = (uiState.goalPace%60 + 1),
+                onConfirm = onPaceConfirm,
+                onDismiss = onPaceClose
             )
         }
     }

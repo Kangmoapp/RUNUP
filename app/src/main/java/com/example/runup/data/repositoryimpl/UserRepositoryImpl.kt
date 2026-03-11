@@ -1,5 +1,6 @@
 package com.example.runup.data.repositoryimpl
 
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.data.source.local.dao.UserDao
 import com.example.runup.data.source.local.entity.UserEntity
 import com.example.runup.data.source.remote.user.UserDataSource
@@ -7,12 +8,14 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 
 class UserRepositoryImpl @Inject constructor(
     private val userdatasource: UserDataSource,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val userPreferenceDataSource: UserPreferenceDataSource
 ) : UserRepository {
     //firebase
 
@@ -111,25 +114,21 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
-    //4. 사용자 로그인 상태 기록
-    override suspend fun updateUserLoginStatus(loginStatus:Boolean): AuthResult<Boolean> {
+    override suspend fun updateUserLoginStatus(userLoginStatus: Boolean): AuthResult<Boolean> {
         return try {
-            userDao.updateLoginStatus(loginStatus)
+            userPreferenceDataSource.updateUserLoginStatus(userLoginStatus)
             AuthResult.Success(true)
         } catch (e: Exception) {
-            // 실패 시 에러 메시지와 함께 Fail 반환
-            AuthResult.Fail(e.message ?: "데이터 삭제 중 오류가 발생했습니다.")
+            AuthResult.Fail(e.message ?: "로그인 상태 저장 실패")
         }
     }
 
-    //5. 사용자 로그인 상태 가져오기
     override suspend fun getIsLogin(): AuthResult<Boolean> {
         return try {
-            val isLogin = userDao.getIsLogin()
+            val isLogin = userPreferenceDataSource.getIsLogin().first()
             AuthResult.Success(isLogin)
         } catch (e: Exception) {
-            // 실패 시 에러 메시지와 함께 Fail 반환
-            AuthResult.Fail(e.message ?: "데이터 삭제 중 오류가 발생했습니다.")
+            AuthResult.Fail(e.message ?: "로그인 상태 조회 실패")
         }
     }
 }

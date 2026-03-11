@@ -14,21 +14,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class GoalSettingUiState(
+data class HomeUiState(
     val goalDistance: Int = 0,
     val goalPace: Int = 0,
-    val showDistanceDialog: Boolean = false,
-    val showPaceDialog: Boolean = false
+    val showDistanceDialog: Boolean = false
 )
 
 @HiltViewModel
-class GoalSettingViewModel @Inject constructor(
+class HomeViewModel @Inject constructor(
     private val goalsettingUseCase: GoalSettingUseCase,
     private val getUserGoalUseCase: GetUserGoalUseCase
 ): ViewModel(){
 
-    private val _uiState = MutableStateFlow(GoalSettingUiState())
-    val uiState: StateFlow<GoalSettingUiState> = _uiState
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState
     init {
         loadUserGoal()
     }
@@ -62,13 +61,6 @@ class GoalSettingViewModel @Inject constructor(
         _uiState.update { it.copy(showDistanceDialog = false) }
     }
 
-    fun openPaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = true) }
-    }
-    fun closePaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = false) }
-    }
-
     fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val distanceMeter:Int = distanceKm*100
         _uiState.update {
@@ -88,38 +80,5 @@ class GoalSettingViewModel @Inject constructor(
 
             }
         }
-    }
-
-    fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
-        val paceTotal:Int = paceMinute*60 + paceSecond
-        _uiState.update {
-            it.copy(
-                goalPace = paceTotal,
-                showPaceDialog = false
-            )
-        }
-        viewModelScope.launch {
-            when (val result = goalsettingUseCase(_uiState.value.goalDistance, paceTotal)) {
-                is AuthResult.Success -> {
-
-                }
-                is AuthResult.Fail -> {
-
-                }
-
-            }
-        }
-    }
-
-    fun calculateTime(): Pair<Int, Int> {
-        val distance = _uiState.value.goalDistance
-        val pace = _uiState.value.goalPace
-
-        val totalSeconds = distance * pace / 1000
-
-        val minute = totalSeconds / 60
-        val second = totalSeconds % 60
-
-        return minute to second
     }
 }

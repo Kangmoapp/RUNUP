@@ -8,10 +8,8 @@ import javax.inject.Inject
 class UpdateUserLoginStatusUseCase @Inject constructor(
     private val userrepository: UserRepository
 ) {
-    suspend operator fun invoke(userLoginStatus:Boolean): AuthResult<Boolean> {
+    suspend operator fun invoke(userLoginStatus: Boolean): AuthResult<Boolean> {
         return userrepository.updateUserLoginStatus(userLoginStatus)
     }
 }
-//userLoginStatus 에 true -> 로그인 상태
-//false -> 로그아웃 상태
 
