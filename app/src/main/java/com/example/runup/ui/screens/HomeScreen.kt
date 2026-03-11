@@ -40,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 
 import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.theme.BackGroudColor
@@ -72,6 +73,8 @@ fun HomeScreen(
 
     HomeContent(
         onMenuClick = onMenuClick,
+        onRunClick = onRunClick,
+        onDistanceClick = onDistanceClick
 
     )
 }

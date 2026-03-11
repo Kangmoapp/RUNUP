@@ -2,11 +2,8 @@ package com.example.runup.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,21 +23,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.runup.ui.theme.BlackTextColor
 import com.example.runup.ui.theme.White
+import kotlin.div
+import kotlin.toString
 
 @Composable
-fun RunupAlertDialog(
-    range: IntRange,
-    startNumber: Int = 0,
-    textMapper: (Int) -> String,
-    onConfirm: (Int) -> Unit,
+fun PaceGoalSettingDialog(
+    rangeMinutes: IntRange,
+    rangeSeconds: IntRange,
+    startMinute: Int = 0,
+    startSecond: Int = 0,
+    onConfirm: (Int, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var selectedNumber by remember { mutableStateOf(range.first) }
+    var selectedMinutes by remember { mutableStateOf(rangeMinutes.first) }
+    var selectedSeconds by remember { mutableStateOf(rangeSeconds.first) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedNumber) },
+                onClick = { onConfirm(selectedMinutes, selectedSeconds) },
                 shape = RectangleShape,
             ) {
                 Text(
@@ -57,15 +59,30 @@ fun RunupAlertDialog(
                     .fillMaxWidth()
             ) {
                 RunupLazyColumn(
-                    range = range,
-                    startNumber = startNumber,
-                    textMapper = textMapper,
+                    range = rangeMinutes,
+                    startNumber = startMinute,
+                    textMapper = { it.toString() },
                     onSelectedNumberChange = { number ->
-                        selectedNumber = number
+                        selectedMinutes = number
                     }
                 )
                 Text(
-                    text = "km",
+                    text = "분",
+                    fontSize = 30.sp,
+                    modifier = Modifier
+                        .wrapContentSize()
+                        .padding(start = 10.dp)
+                )
+                RunupLazyColumn(
+                    range = rangeSeconds,
+                    startNumber = startSecond,
+                    textMapper = { it.toString() },
+                    onSelectedNumberChange = { number ->
+                        selectedSeconds = number
+                    }
+                )
+                Text(
+                    text = "초",
                     fontSize = 30.sp,
                     modifier = Modifier
                         .wrapContentSize()
@@ -81,12 +98,13 @@ fun RunupAlertDialog(
 
 @Preview
 @Composable
-fun PreviewDistanceScrollBox(){
-    RunupAlertDialog(
-        range = 0..100,
-        startNumber = 20,
-        textMapper = { (it / 10.0).toString() },
-        onConfirm = {},
+fun PreviewPaceGoalSettingDialog(){
+    PaceGoalSettingDialog(
+        rangeMinutes = 0..60,
+        rangeSeconds = 0..60,
+        startMinute = 6,
+        startSecond = 30,
+        onConfirm = { _, _ -> },
         onDismiss = {}
     )
 }
