@@ -64,7 +64,8 @@ class UserRepositoryImpl @Inject constructor(
             val userEntity = UserEntity(
                 id = 0, // 단일 사용자 데이터 유지
                 goalDistance = goaldistance,
-                goalTime = goaltime
+                goalTime = goaltime,
+                isLogin = true,
             )
             userDao.insertUser(userEntity)
             AuthResult.Success(true)
@@ -104,6 +105,28 @@ class UserRepositoryImpl @Inject constructor(
             userDao.deleteUserById()
             // 성공 시 true 반환
             AuthResult.Success(true)
+        } catch (e: Exception) {
+            // 실패 시 에러 메시지와 함께 Fail 반환
+            AuthResult.Fail(e.message ?: "데이터 삭제 중 오류가 발생했습니다.")
+        }
+    }
+
+    //4. 사용자 로그인 상태 기록
+    override suspend fun updateUserLoginStatus(loginStatus:Boolean): AuthResult<Boolean> {
+        return try {
+            userDao.updateLoginStatus(loginStatus)
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            // 실패 시 에러 메시지와 함께 Fail 반환
+            AuthResult.Fail(e.message ?: "데이터 삭제 중 오류가 발생했습니다.")
+        }
+    }
+
+    //5. 사용자 로그인 상태 가져오기
+    override suspend fun getIsLogin(): AuthResult<Boolean> {
+        return try {
+            val isLogin = userDao.getIsLogin()
+            AuthResult.Success(isLogin)
         } catch (e: Exception) {
             // 실패 시 에러 메시지와 함께 Fail 반환
             AuthResult.Fail(e.message ?: "데이터 삭제 중 오류가 발생했습니다.")

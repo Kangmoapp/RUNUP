@@ -40,12 +40,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+
 import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.BlackTextColor
 import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.WhiteTextColor
+
 import com.example.runup.viewmodel.GoalSettingViewModel
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
