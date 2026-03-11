@@ -8,6 +8,6 @@ class GetUserGoalUseCase @Inject constructor(
     private val userRepository: UserRepository
 ){
     suspend operator fun invoke() : AuthResult<Pair<Int,Int>> {
-        return userRepository.getUserGoal()
+        return userRepository.getUserGoalFromRoom()
     }
 }

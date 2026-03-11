@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.service)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -74,11 +75,14 @@ dependencies {
 
     //구글맵 의존성
     implementation("com.google.maps.android:maps-compose:4.4.1")
+    implementation(libs.google.play.services.location)
 
-    val room_version = "2.6.1"
-
+    //room db 관련
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    implementation(libs.accompanist.permissions)
+    implementation(libs.maps.compose)
 
 }
