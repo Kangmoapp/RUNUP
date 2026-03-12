@@ -88,4 +88,17 @@ dependencies {
     implementation(libs.accompanist.permissions)
     implementation(libs.maps.compose)
 
+    // Firebase (BOM 방식을 사용하면 개별 라이브러리 버전을 맞출 필요가 없어 편리합니다)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.firebase.firestore.ktx)
+
+    // 구글 로그인 & Credential Manager
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+
+    // Kotlin Coroutines Play Services (await() 함수 사용을 위해 필수)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
 }

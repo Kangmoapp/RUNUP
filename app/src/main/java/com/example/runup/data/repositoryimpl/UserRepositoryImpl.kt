@@ -19,45 +19,49 @@ class UserRepositoryImpl @Inject constructor(
 ) : UserRepository {
     //firebase
 
-    // 1. 이메일 중복 체크
+    // 이메일 중복 체크
     override suspend fun checkuseremail(useremail: String): AuthResult<Boolean> {
         return userdatasource.isEmailAlreadyRegistered(useremail)
     }
-    // 2. 이메일, PW 저장
+    // 이메일, PW 저장
     override suspend fun saveUserlogininfo(useremail: String, userpw: String): AuthResult<Boolean> {
         return userdatasource.registerUser(useremail, userpw)
     }
-    // 3. 로그인
+    // 로그인
     override suspend fun login(useremail: String, userpw: String): AuthResult<Boolean> {
         return userdatasource.loginUser(useremail, userpw)
     }
-    // 4. 사용자 이름 업데이트
+    // 구글로 로그인
+    override suspend fun signInWithGoogle(idToken: String): AuthResult<Boolean> {
+        return userdatasource.signInWithGoogle(idToken)
+    }
+    // 사용자 이름 업데이트
     override suspend fun updateUserName(username: String): AuthResult<Boolean> {
         return userdatasource.updateUserName(username)
     }
-    // 5. 달리기 목표 저장
+    // 달리기 목표 저장
     override suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean> {
         return userdatasource.updateUserGoal(goaldistance, goaltime)
     }
-    // 6. 달리기 기록 저장
+    // 달리기 기록 저장
     override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
         return userdatasource.saveRunRecord(record)
     }
-    // 7. 내 데이터 가져오기
+    // 내 데이터 가져오기
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return userdatasource.getMyUserData()
     }
-    //8. 사용자 계정 삭제
+    // 사용자 계정 삭제
     override suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean> {
         return userdatasource.deleteUserAccount(userpw)
     }
-    //9. 사용자 목표 가져오기
+    // 사용자 목표 가져오기
     override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>> {
         return userdatasource.getUserGoal()
     }
 
     //Room DB
-    //1. roomdb 에 사용자목표저장
+    // roomdb 에 사용자목표저장
     override suspend fun saveUserGoalToRoom(
         goaldistance: Int,
         goaltime: Int
@@ -79,7 +83,7 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
-    //2. 사용자 목표 가져오기
+    // 사용자 목표 가져오기
     override suspend fun getUserGoalFromRoom(): AuthResult<Pair<Int, Int>> {
         return try {
             //Dao를 통해 id=0인 유저 데이터 조회
@@ -100,7 +104,7 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
-    //3. 사용자 삭제
+    // 사용자 삭제
     override suspend fun deleteUserGoalFromRoom(): AuthResult<Boolean> {
         return try {
             // id = 0인 데이터를 삭제

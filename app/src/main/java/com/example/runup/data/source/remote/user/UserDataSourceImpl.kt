@@ -8,6 +8,7 @@ import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
@@ -17,7 +18,7 @@ class UserDataSourceImpl @Inject constructor(
     private val firestore: FirebaseFirestore
 ) : UserDataSource {
 
-    //1. 이메일 확인
+    // 이메일 확인
     override suspend fun isEmailAlreadyRegistered(email: String): AuthResult<Boolean> {
         return try {
             val querySnapshot = firestore.collection("UserData")
@@ -38,7 +39,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //2. 사용자 회원가입
+    // 사용자 회원가입
     override suspend fun registerUser(email: String, pw: String): AuthResult<Boolean> {
         return try {
             val authResult = auth.createUserWithEmailAndPassword(email, pw).await()
@@ -60,7 +61,33 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //3. 로그인
+    // 구글로 사용자 로그인
+    override suspend fun signInWithGoogle(idToken: String): AuthResult<Boolean> {
+        return try {
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
+            val authResult = auth.signInWithCredential(credential).await()
+            val user = authResult.user ?: return AuthResult.Fail("User null")
+
+            val userDoc = firestore.collection("UserData").document(user.uid).get().await()
+
+            if (!userDoc.exists()) {
+                val userMap = mutableMapOf(
+                    "userId" to user.uid,
+                    "userEmail" to (user.email ?: ""),
+                    "userName" to (user.displayName ?: "Runner"),
+                    "goalDistance" to 0,
+                    "goalTime" to 0,
+                    "authType" to "google" // 이메일 가입자와 구분용
+                )
+                firestore.collection("UserData").document(user.uid).set(userMap).await()
+            }
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("Google Login Error: ${e.localizedMessage}")
+        }
+    }
+
+    // 로그인
     override suspend fun loginUser(email: String, pw: String): AuthResult<Boolean> {
         return try {
             val result = auth.signInWithEmailAndPassword(email, pw).await()
@@ -81,7 +108,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //4. 사용자 이름 등록
+    // 사용자 이름 등록
     override suspend fun updateUserName(name: String): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
@@ -93,7 +120,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //5. 사용자 목표 업데이트
+    // 사용자 목표 업데이트
     override suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
@@ -105,7 +132,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //6. 사용자 러닝 기록 저장
+    // 사용자 러닝 기록 저장
     override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
@@ -117,7 +144,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //7. 사용자 데이터 불러오기
+    // 사용자 데이터 불러오기
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
@@ -129,7 +156,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //8. 회원 탈퇴
+    // 회원 탈퇴
     override suspend fun deleteUserAccount(password: String): AuthResult<Boolean> {
         return try {
             val user = auth.currentUser ?: return AuthResult.Fail("로그인이 필요합니다.")
@@ -153,7 +180,7 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    //9. 사용자 목표 가져오기
+    // 사용자 목표 가져오기
     override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>{
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
