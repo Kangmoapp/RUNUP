@@ -61,8 +61,32 @@ fun RunUpApp(
             onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
             onOptionClick= { },
             onHelpClick= { },
-            onCommunityClick= { },
+            onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
             onMypageClick= { },
+        )
+
+        Screen.COMMUNITY -> CommunityScreen(
+            onBackClick = { viewModel.navigateTo(Screen.MENU) },
+            onPostClick = { postId ->
+                // 이제 "1"이 아니라 실제 클릭한 postId를 들고 갑니다.
+                viewModel.navigateToDetail(postId)
+            },
+            onUploadClick = {
+                viewModel.navigateTo(Screen.POST_UPLOAD)
+            }
+        )
+
+        Screen.POST_UPLOAD -> PostUploadScreen(
+            onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) },
+            onUploadSuccess = {
+                viewModel.navigateTo(Screen.COMMUNITY)
+            }
+        )
+
+        Screen.COMMUNITY_DETAIL -> CommunityDetailScreen(
+            // viewModel에 저장된 따끈따끈한 ID를 전달합니다.
+            postId = viewModel.selectedPostId,
+            onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) }
         )
 
         Screen.TEST -> TestScreen()

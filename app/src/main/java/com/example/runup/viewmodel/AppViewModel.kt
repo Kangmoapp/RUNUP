@@ -18,6 +18,10 @@ class AppViewModel @Inject constructor(
     private val _currentScreen = MutableStateFlow(Screen.TUTORIAL)
     val currentScreen: StateFlow<Screen> = _currentScreen
 
+    // --- 추가된 부분: 상세페이지로 전달할 ID 저장 변수 ---
+    var selectedPostId: String = ""
+        private set
+
     init {
         checkLoginStatus()
     }
@@ -25,7 +29,6 @@ class AppViewModel @Inject constructor(
     private fun checkLoginStatus() {
         viewModelScope.launch {
             when (val result = getUserLoginStatusUseCase()) {
-
                 is AuthResult.Success -> {
                     _currentScreen.value =
                         if (result.data) Screen.HOME
@@ -40,5 +43,11 @@ class AppViewModel @Inject constructor(
 
     fun navigateTo(screen: Screen) {
         _currentScreen.value = screen
+    }
+
+    // --- 추가된 부분: ID를 저장하며 상세페이지로 이동하는 함수 ---
+    fun navigateToDetail(postId: String) {
+        selectedPostId = postId
+        _currentScreen.value = Screen.COMMUNITY_DETAIL
     }
 }
