@@ -55,6 +55,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.service)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -74,14 +75,30 @@ dependencies {
 
     //구글맵 의존성
     implementation("com.google.maps.android:maps-compose:4.4.1")
+    implementation(libs.google.play.services.location)
 
-    val room_version = "2.6.1"
-
+    //room db 관련
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
     //DataStore 의존성
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    implementation(libs.accompanist.permissions)
+    implementation(libs.maps.compose)
+
+    // Firebase (BOM 방식을 사용하면 개별 라이브러리 버전을 맞출 필요가 없어 편리합니다)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.firebase.firestore.ktx)
+
+    // 구글 로그인 & Credential Manager
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+
+    // Kotlin Coroutines Play Services (await() 함수 사용을 위해 필수)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
 }
