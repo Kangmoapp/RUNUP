@@ -30,10 +30,13 @@ fun RunUpApp(
     val currentScreen by viewModel.currentScreen.collectAsState()
 
     when (currentScreen) {
+        Screen.START -> StartScreen (
+            onHomeClick = { viewModel.navigateTo(Screen.HOME) },
+        )
 
         Screen.TUTORIAL -> TutorialScreen(
             onYesClick = { viewModel.navigateTo(Screen.HOME) },
-            onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
+            onNoClick = { viewModel.navigateTo(Screen.HOME) },
         )
         Screen.LOGIN -> LoginScreen(
             onLoginClick = {viewModel.navigateTo(Screen.HOME)},
@@ -49,7 +52,7 @@ fun RunUpApp(
         )
         Screen.HOME -> HomeScreen(
             onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-            onRunClick = {viewModel.navigateTo(Screen.TEST)},
+            onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
             onDistanceClick = {}
         )
         Screen.GOALSETTING -> GoalSettingScreen(
@@ -63,6 +66,9 @@ fun RunUpApp(
             onHelpClick= { },
             onCommunityClick= { },
             onMypageClick= { },
+        )
+        Screen.RUNNING -> RunningScreen(
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
         )
 
         Screen.TEST -> TestScreen()

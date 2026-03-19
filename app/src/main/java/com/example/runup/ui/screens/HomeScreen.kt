@@ -1,14 +1,11 @@
 package com.example.runup.ui.screens
 
 
-import android.widget.Button
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.R
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,8 +15,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -33,20 +28,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.runup.ui.components.CenterBar
 
 import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.theme.BackGroudColor
-import com.example.runup.ui.theme.BlackTextColor
+import com.example.runup.ui.theme.MapSize
+import com.example.runup.ui.theme.MapSpaceSize
 import com.example.runup.ui.theme.White
-import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.ui.theme.TextWhite
 
 import com.example.runup.viewmodel.GoalSettingViewModel
 import com.google.android.gms.maps.model.CameraPosition
@@ -59,7 +54,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 @Preview
 @Composable
 fun PreviewHomeScreen(){
-    HomeScreen({},{},{})
+    HomeContent({},{},{})
 }
 
 @Composable
@@ -79,7 +74,7 @@ fun HomeScreen(
     )
 }
 @Composable
-fun HomeContent(
+private fun HomeContent(
     onMenuClick:()->Unit,
     onRunClick:()->Unit,
     onDistanceClick:()-> Unit
@@ -107,8 +102,7 @@ fun HomeContent(
                         .padding(start = 20.dp, end = 20.dp)
                         .clip(RoundedCornerShape(24.dp))
                         .background(color = White)  // ui 확인용
-                        .fillMaxWidth()
-                        .height(500.dp),
+                        .MapSize(),
                     cameraPositionState = cameraPositionState
                 ) {
                     Marker(
@@ -125,13 +119,12 @@ fun HomeContent(
                         .offset(y=90.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(90.dp))
+            Spacer(modifier = Modifier.MapSpaceSize())
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp)
+                    .fillMaxSize()
             ){
                 HomeButton(
                     texttop = "목표 페이스",
@@ -139,12 +132,7 @@ fun HomeContent(
                     {},
                     modifier = Modifier.height(130.dp).weight(1f)
                 )
-                Box(
-                    modifier = Modifier
-                        .background(color = BlackTextColor, shape = RoundedCornerShape(20 .dp))
-                        .width(4.dp)
-                        .height(88.dp)
-                )
+                CenterBar()
                 HomeButton(
                     texttop = "목표 거리",
                     textbottom = "3km",
@@ -210,13 +198,13 @@ private fun HomeButton(
         Text(
             text = texttop,
             fontSize = fontsize,
-            color = WhiteTextColor,
+            color = TextWhite,
             modifier = Modifier
         )
         Text(
             text = textbottom,
             fontSize = fontsize,
-            color = WhiteTextColor,
+            color = TextWhite,
             modifier = Modifier
         )
     }

@@ -26,7 +26,7 @@ import com.example.runup.ui.components.DistanceGoalSettingDialog
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
-import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.ui.theme.TextWhite
 import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.GoalSettingUiState
 import com.example.runup.viewmodel.GoalSettingViewModel
@@ -67,7 +67,7 @@ fun GoalSettingScreen(
 }
 
 @Composable
-fun GoalSettingContent(
+private fun GoalSettingContent(
     uiState: GoalSettingUiState,
     onMenuClick:()->Unit,
     onDistanceClick:()->Unit,
@@ -175,7 +175,7 @@ private fun GoalSettingScreenText(
     Text(
         text= text,
         fontSize = fontsize,
-        color = WhiteTextColor,
+        color = TextWhite,
         textAlign = TextAlign.Center,
         modifier = modifier
     )
