@@ -29,9 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,8 +41,10 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.runup.R
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.MenuButton
+import com.example.runup.ui.state.UserUiState
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
@@ -72,17 +72,20 @@ import kotlinx.coroutines.tasks.await
 fun PreviewRunScreen() {
     RunningContent(
         onMenuClick = {},
-        onStopClick = {},
-        onCompleteClick = {},   // ⭐ 추가
-        latLngList = listOf(
-            LatLng(37.5665, 126.9780),
-            LatLng(37.5651, 126.9895)
-        ),
-        hasLocationPermission = true,
-        currentLocation = LatLng(37.5665, 126.9780)
+        onRunClick = {},
+        onCompleteClick = {},
+        uiState = UserUiState(
+            latLngList = listOf(
+                LatLng(37.5665, 126.9780),
+                LatLng(37.5651, 126.9895)
+            ),
+            currentLocation = LatLng(37.5665, 126.9780),
+            totalDistance = 1700.0,
+            hasLocationPermission = true,
+            isTracking = true
+        )
     )
 }
-
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -95,11 +98,7 @@ fun RunningScreen(
         LocationServices.getFusedLocationProviderClient(context)
     }
 
-    val pathPoints by viewModel.pathPoints.collectAsState()
-
-    val latLngList = remember(pathPoints) {
-        pathPoints.map { LatLng(it.locationPoint.latitude, it.locationPoint.longitude) }
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     val locationPermissionState = rememberMultiplePermissionsState(
         permissions = listOf(
@@ -114,15 +113,15 @@ fun RunningScreen(
         }
     }
 
-    var currentLocation by remember { mutableStateOf<LatLng?>(null) }
-
     LaunchedEffect(locationPermissionState.allPermissionsGranted) {
+        viewModel.updateLocationPermission(locationPermissionState.allPermissionsGranted)
+
         if (locationPermissionState.allPermissionsGranted) {
             try {
                 val location: Location? = fusedLocationClient.lastLocation.await()
-                currentLocation = location?.let {
-                    LatLng(it.latitude, it.longitude)
-                }
+                viewModel.updateCurrentLocation(
+                    location?.let { LatLng(it.latitude, it.longitude) }
+                )
             } catch (_: SecurityException) {
             }
         }
@@ -130,13 +129,9 @@ fun RunningScreen(
 
     RunningContent(
         onMenuClick = onMenuClick,
-        onStopClick = {},
-        onCompleteClick = {
-            viewModel.stopAndSave()
-        },
-        latLngList = latLngList,
-        hasLocationPermission = locationPermissionState.allPermissionsGranted,
-        currentLocation = currentLocation
+        onRunClick = {},
+        onCompleteClick = { viewModel.stopAndSave() },
+        uiState = uiState
     )
 }
 
@@ -144,35 +139,35 @@ fun RunningScreen(
 @Composable
 private fun RunningContent(
     onMenuClick: () -> Unit,
-    onStopClick: () -> Unit,
-    onCompleteClick:()->Unit,
-    latLngList: List<LatLng>,
-    hasLocationPermission: Boolean,
-    currentLocation: LatLng?
+    onRunClick: () -> Unit,
+    onCompleteClick: () -> Unit,
+    uiState: UserUiState
 ) {
     val defaultLocation = LatLng(35.8888, 128.6103)
 
     val cameraPositionState = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(
-            currentLocation ?: latLngList.lastOrNull() ?: defaultLocation,
+            uiState.currentLocation ?: uiState.latLngList.lastOrNull() ?: defaultLocation,
             16f
         )
     }
 
     val mapProperties = MapProperties(
-        isMyLocationEnabled = hasLocationPermission
+        isMyLocationEnabled = uiState.hasLocationPermission
     )
 
-    LaunchedEffect(currentLocation) {
-        currentLocation?.let {
-            cameraPositionState.animate(CameraUpdateFactory.newLatLngZoom(it, 16f))
+    LaunchedEffect(uiState.currentLocation) {
+        uiState.currentLocation?.let {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(it, 16f)
+            )
         }
     }
 
-    LaunchedEffect(latLngList.size) {
-        if (latLngList.isNotEmpty()) {
+    LaunchedEffect(uiState.latLngList.size) {
+        if (uiState.latLngList.isNotEmpty()) {
             cameraPositionState.animate(
-                CameraUpdateFactory.newLatLng(latLngList.last())
+                CameraUpdateFactory.newLatLng(uiState.latLngList.last())
             )
         }
     }
@@ -202,9 +197,9 @@ private fun RunningContent(
                         myLocationButtonEnabled = true
                     )
                 ) {
-                    if (latLngList.size >= 2) {
+                    if (uiState.latLngList.size >= 2) {
                         Polyline(
-                            points = latLngList,
+                            points = uiState.latLngList,
                             color = Color.Blue,
                             width = 15f,
                             jointType = JointType.ROUND
@@ -213,7 +208,7 @@ private fun RunningContent(
                 }
 
                 BunIconButton(
-                    onClick = onStopClick,
+                    onClick = onRunClick,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .size(180.dp)
@@ -234,7 +229,10 @@ private fun RunningContent(
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier.weight(1f)
                 ) {
-                    StateBox(texttop = "거리", textbottom = "1.7km")
+                    StateBox(
+                        texttop = "거리",
+                        textbottom = "${uiState.totalDistance.toInt()}m"
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
                     StateBox(texttop = "페이스", textbottom = "6'49\"")
                 }
@@ -272,16 +270,15 @@ private fun RunningContent(
 
 @Composable
 private fun BunIconButton(
-    onClick:()->Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
-){
+) {
     IconButton(
         onClick = onClick,
-        modifier = modifier
-            .clip(CircleShape) // 원형으로 자르기
-    ){
+        modifier = modifier.clip(CircleShape)
+    ) {
         Icon(
-            painter = painterResource(id = com.example.runup.R.drawable.yellow_shoes),
+            painter = painterResource(id = R.drawable.yellow_shoes),
             contentDescription = "달리기 버튼",
             tint = Color.Unspecified,
             modifier = Modifier.fillMaxSize()
@@ -292,26 +289,24 @@ private fun BunIconButton(
 @Composable
 private fun StateBox(
     texttop: String,
-    textbottom:String,
+    textbottom: String,
     fontsize: TextUnit = 25.sp,
-    modifier:Modifier = Modifier.wrapContentSize()
-){
+    modifier: Modifier = Modifier.wrapContentSize()
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
         modifier = modifier
-    ){
+    ) {
         Text(
             text = texttop,
             fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
+            color = TextWhite
         )
         Text(
             text = textbottom,
             fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
+            color = TextWhite
         )
     }
 }

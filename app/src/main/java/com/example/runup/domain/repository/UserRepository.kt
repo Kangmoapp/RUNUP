@@ -2,6 +2,7 @@ package com.example.runup.domain.repository
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
+import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     // 이메일 중복 체크
@@ -34,12 +35,13 @@ interface UserRepository {
     // 사용자 목표 가져오기
     suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
 
-    //room DB
+    //room DB 사용자 값 저장은 suspend 가져오는건 suspend x
     // 사용자 목표 저장
     suspend fun saveUserGoalToRoom(goaldistance: Int, goaltime: Int): AuthResult<Boolean>
 
     // 사용자 목표 가져오기
-    suspend fun getUserGoalFromRoom(): AuthResult<Pair<Int, Int>>
+    //suspend fun getUserGoalFromRoom(): AuthResult<Pair<Int, Int>>
+    fun getUserGoalFromRoom(): Flow<Pair<Int, Int>?>
 
     // 사용자 삭제
     suspend fun deleteUserGoalFromRoom(): AuthResult<Boolean>

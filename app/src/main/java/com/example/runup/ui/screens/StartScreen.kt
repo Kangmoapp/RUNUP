@@ -31,7 +31,6 @@ fun StartScreen(
         )
     )
 
-    // 화면에 들어오면 권한 요청 팝업 띄우기
     LaunchedEffect(Unit) {
         if (!locationPermissionState.allPermissionsGranted) {
             locationPermissionState.launchMultiplePermissionRequest()

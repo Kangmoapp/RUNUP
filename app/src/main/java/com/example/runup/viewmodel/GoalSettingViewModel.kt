@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -35,21 +36,14 @@ class GoalSettingViewModel @Inject constructor(
 
     private fun loadUserGoal() {
         viewModelScope.launch {
-            when (val result = getUserGoalUseCase()) {
-
-                is AuthResult.Success -> {
-                    val (distance, pace) = result.data
-
+            getUserGoalUseCase().collectLatest { goal ->
+                goal?.let { (distance, pace) ->
                     _uiState.update {
                         it.copy(
                             goalDistance = distance,
                             goalPace = pace
                         )
                     }
-                }
-
-                is AuthResult.Fail -> {
-                    // 필요하면 에러 처리
                 }
             }
         }
