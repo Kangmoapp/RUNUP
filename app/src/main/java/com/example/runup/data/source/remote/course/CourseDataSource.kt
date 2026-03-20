@@ -12,4 +12,8 @@ interface CourseDataSource {
         currentLocation: GeoPoint,
         featureIndex: Int
     ): AuthResult<List<List<Pair<Int, List<GeoPoint>>>>>
+
+    suspend fun startRealtimeSync()
+
+    suspend fun getSearchResult(queryText: String): List<Course>
 }
