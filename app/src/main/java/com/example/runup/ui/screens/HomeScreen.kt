@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 
+import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +23,15 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
@@ -44,12 +48,14 @@ import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.TextWhite
 
 import com.example.runup.viewmodel.GoalSettingViewModel
+import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.tasks.await
 
 @Preview
 @Composable
@@ -65,6 +71,23 @@ fun HomeScreen(
     viewModel: GoalSettingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    /* 지도 화면을 이전 위치로 옮겨주는 코드
+    val context = LocalContext.current
+    val fusedLocationClient = remember {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
+    LaunchedEffect(Unit) {
+        try {
+            val location: Location? = fusedLocationClient.lastLocation.await()
+            viewModel.updateCurrentLocation(
+                location?.let { LatLng(it.latitude, it.longitude) }
+            )
+        } catch (_: SecurityException) {
+        }
+    }
+    
+     */
 
     HomeContent(
         onMenuClick = onMenuClick,

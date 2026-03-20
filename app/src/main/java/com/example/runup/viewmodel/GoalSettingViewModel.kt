@@ -66,10 +66,7 @@ class GoalSettingViewModel @Inject constructor(
     fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val distanceMeter:Int = distanceKm*100
         _uiState.update {
-            it.copy(
-                goalDistance = distanceMeter,
-                showDistanceDialog = false
-            )
+            it.copy(showDistanceDialog = false)
         }
         viewModelScope.launch {
             when (val result = goalsettingUseCase(distanceMeter, _uiState.value.goalPace)) {
@@ -87,10 +84,7 @@ class GoalSettingViewModel @Inject constructor(
     fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val paceTotal:Int = paceMinute*60 + paceSecond
         _uiState.update {
-            it.copy(
-                goalPace = paceTotal,
-                showPaceDialog = false
-            )
+            it.copy(showPaceDialog = false)
         }
         viewModelScope.launch {
             when (val result = goalsettingUseCase(_uiState.value.goalDistance, paceTotal)) {

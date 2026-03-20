@@ -1,5 +1,6 @@
 package com.example.runup.domain.repository
 
+import android.util.Log
 import com.example.runup.domain.model.Node
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ class LocationRepository @Inject constructor() {
             _totalDistance.value += distance
         }
         _recordedNodes.value = currentList + newNode
+        Log.d("Check", "RunningPositionLS = ${_recordedNodes.value}")
     }
 
     fun clearData() {

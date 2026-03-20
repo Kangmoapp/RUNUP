@@ -2,13 +2,13 @@ package com.example.runup.viewmodel
 
 import android.app.Application
 import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.LocationService
-import com.example.runup.ui.state.UserUiState
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,54 +19,58 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class RunningUiState(
+    val currentLocation: LatLng? = null,
+    val latLngList: List<LatLng> = emptyList(),   //지금까지 이동 경로 좌표 목록
+    val totalTime:Int = 0,
+    val totalDistance: Double = 0.0, //현재까지 달린 거리
+    val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
+)
+
 @HiltViewModel
 class RunningViewModel @Inject constructor(
     private val repository: LocationRepository,
     private val saveCourseUseCase: SaveCourseUseCase,
     private val application: Application
 ) : ViewModel() {
-
-    private val _hasLocationPermission = MutableStateFlow(false)
-    private val _currentLocation = MutableStateFlow<LatLng?>(null)
     private val _isTracking = MutableStateFlow(false)
 
-    private val _uiState = MutableStateFlow(UserUiState())
-    val uiState: StateFlow<UserUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(RunningUiState())
+    val uiState: StateFlow<RunningUiState> = _uiState.asStateFlow()
 
     init {
+        startTracking()
+        updateUiState()
+    }
+
+    private fun updateUiState(){
         viewModelScope.launch {
             combine(
                 repository.recordedNodes,
                 repository.totalDistance,
-                _hasLocationPermission,
-                _currentLocation,
                 _isTracking
-            ) { nodes, totalDistance, hasLocationPermission, currentLocation, isTracking ->
-                UserUiState(
+            ) { nodes, totalDistance, isTracking ->
+                val lastLocation = nodes.lastOrNull()?.let {
+                    LatLng(it.locationPoint.latitude, it.locationPoint.longitude)
+                }
+                RunningUiState(
+                    currentLocation = lastLocation,
                     latLngList = nodes.map {
                         LatLng(
                             it.locationPoint.latitude,
                             it.locationPoint.longitude
                         )
                     },
-                    currentLocation = currentLocation,
                     totalDistance = totalDistance,
-                    hasLocationPermission = hasLocationPermission,
                     isTracking = isTracking
                 )
             }.collect { newState ->
+                Log.d("RunningPosition", "currentLocation = ${newState.currentLocation}")
                 _uiState.value = newState
             }
         }
     }
 
-    fun updateLocationPermission(granted: Boolean) {
-        _hasLocationPermission.value = granted
-    }
-
-    fun updateCurrentLocation(latLng: LatLng?) {
-        _currentLocation.value = latLng
-    }
 
     fun startTracking() {
         _isTracking.value = true
@@ -88,7 +92,6 @@ class RunningViewModel @Inject constructor(
                 val result = saveCourseUseCase(nodes, distance)
                 if (result is AuthResult.Success) {
                     repository.clearData()
-                    _currentLocation.value = null
                     _isTracking.value = false
                 }
             }

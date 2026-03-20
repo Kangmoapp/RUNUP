@@ -29,7 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,7 +46,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.R
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.MenuButton
-import com.example.runup.ui.state.UserUiState
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
@@ -52,6 +53,7 @@ import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.TextWhite
 import com.example.runup.ui.theme.White
+import com.example.runup.viewmodel.RunningUiState
 import com.example.runup.viewmodel.RunningViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -74,14 +76,13 @@ fun PreviewRunScreen() {
         onMenuClick = {},
         onRunClick = {},
         onCompleteClick = {},
-        uiState = UserUiState(
+        uiState = RunningUiState(
+            currentLocation = LatLng(37.5665, 126.9780),
             latLngList = listOf(
                 LatLng(37.5665, 126.9780),
                 LatLng(37.5651, 126.9895)
             ),
-            currentLocation = LatLng(37.5665, 126.9780),
             totalDistance = 1700.0,
-            hasLocationPermission = true,
             isTracking = true
         )
     )
@@ -93,40 +94,7 @@ fun RunningScreen(
     onMenuClick: () -> Unit,
     viewModel: RunningViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
-    val fusedLocationClient = remember {
-        LocationServices.getFusedLocationProviderClient(context)
-    }
-
     val uiState by viewModel.uiState.collectAsState()
-
-    val locationPermissionState = rememberMultiplePermissionsState(
-        permissions = listOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-    )
-
-    LaunchedEffect(Unit) {
-        if (!locationPermissionState.allPermissionsGranted) {
-            locationPermissionState.launchMultiplePermissionRequest()
-        }
-    }
-
-    LaunchedEffect(locationPermissionState.allPermissionsGranted) {
-        viewModel.updateLocationPermission(locationPermissionState.allPermissionsGranted)
-
-        if (locationPermissionState.allPermissionsGranted) {
-            try {
-                val location: Location? = fusedLocationClient.lastLocation.await()
-                viewModel.updateCurrentLocation(
-                    location?.let { LatLng(it.latitude, it.longitude) }
-                )
-            } catch (_: SecurityException) {
-            }
-        }
-    }
-
     RunningContent(
         onMenuClick = onMenuClick,
         onRunClick = {},
@@ -141,33 +109,22 @@ private fun RunningContent(
     onMenuClick: () -> Unit,
     onRunClick: () -> Unit,
     onCompleteClick: () -> Unit,
-    uiState: UserUiState
+    uiState: RunningUiState
 ) {
     val defaultLocation = LatLng(35.8888, 128.6103)
 
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            uiState.currentLocation ?: uiState.latLngList.lastOrNull() ?: defaultLocation,
-            16f
-        )
+        position = CameraPosition.fromLatLngZoom(defaultLocation, 16f)
     }
 
     val mapProperties = MapProperties(
-        isMyLocationEnabled = uiState.hasLocationPermission
+        isMyLocationEnabled = true
     )
 
     LaunchedEffect(uiState.currentLocation) {
-        uiState.currentLocation?.let {
+        uiState.currentLocation?.let { location ->
             cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(it, 16f)
-            )
-        }
-    }
-
-    LaunchedEffect(uiState.latLngList.size) {
-        if (uiState.latLngList.isNotEmpty()) {
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLng(uiState.latLngList.last())
+                CameraUpdateFactory.newLatLngZoom(location, 16f)
             )
         }
     }
