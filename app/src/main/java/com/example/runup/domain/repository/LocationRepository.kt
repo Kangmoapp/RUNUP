@@ -2,6 +2,7 @@ package com.example.runup.domain.repository
 
 import android.annotation.SuppressLint
 import com.example.runup.domain.model.AuthResult
+import android.util.Log
 import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.Scores
 import com.google.android.gms.location.CurrentLocationRequest
@@ -39,6 +40,7 @@ class LocationRepository @Inject constructor(
             _totalDistance.value += distance
         }
         _recordedNodes.value = currentList + newNode
+        Log.d("Check", "RunningPositionLS = ${_recordedNodes.value}")
     }
 
     fun clearData() {
