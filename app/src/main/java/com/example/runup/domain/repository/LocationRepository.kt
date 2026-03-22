@@ -1,25 +1,20 @@
 package com.example.runup.domain.repository
 
-import android.annotation.SuppressLint
-import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.Scores
-import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.Priority
 import com.google.firebase.firestore.GeoPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.resume
 import kotlin.math.pow
 
 @Singleton
 class LocationRepository @Inject constructor(
     private val fusedLocationClient: FusedLocationProviderClient
 ) {
+    // 저장된 노드들
     private val _recordedNodes = MutableStateFlow<List<Node>>(emptyList())
     val recordedNodes: StateFlow<List<Node>> = _recordedNodes
 
@@ -27,11 +22,26 @@ class LocationRepository @Inject constructor(
     private val _totalDistance = MutableStateFlow(0.0)
     val totalDistance: StateFlow<Double> = _totalDistance
 
-    fun addNode(newNode: Node) {
+    // 단순 현재 위치 (수집되는 족족 업데이트)
+    private val _currentLocation = MutableStateFlow<GeoPoint?>(null)
+    val currentLocation: StateFlow<GeoPoint?> = _currentLocation
+
+    // 서비스에서 호출: 원천 좌표만 업데이트
+    fun updateCurrentLocation(geoPoint: GeoPoint) {
+        _currentLocation.value = geoPoint
+    }
+
+    // ViewModel에서 호출: 현재 위치를 기반으로 노드 추가
+    fun addNodeFromCurrentLocation() {
+        val currentPos = _currentLocation.value ?: return
+        val newNode = Node(
+            locationPoint = currentPos,
+            score = Scores(0.0, 0.0, 0.0)
+        )
+
         val currentList = _recordedNodes.value
         if (currentList.isNotEmpty()) {
             val lastNode = currentList.last()
-            // 이전 노드와 새 노드 사이의 거리 계산 (미터 단위)
             val distance = calculateDistance(
                 lastNode.locationPoint.latitude, lastNode.locationPoint.longitude,
                 newNode.locationPoint.latitude, newNode.locationPoint.longitude
@@ -56,34 +66,5 @@ class LocationRepository @Inject constructor(
                 Math.sin(dLon / 2).pow(2.0)
         val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
         return r * c
-    }
-
-    @SuppressLint("MissingPermission")
-    suspend fun getCurrentLocation(): AuthResult<GeoPoint> {
-        return try {
-            // 코루틴을 중단시키고 비동기 결과를 기다림
-            suspendCancellableCoroutine { continuation ->
-                val currentLocationRequest = CurrentLocationRequest.Builder()
-                    .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
-                    .build()
-
-                fusedLocationClient.getCurrentLocation(currentLocationRequest, null)
-                    .addOnSuccessListener { location ->
-                        if (location != null) {
-                            continuation.resume(AuthResult.Success(GeoPoint(location.latitude, location.longitude)))
-                        } else {
-                            // 위치 정보가 null인 경우 (GPS가 잡히지 않을 때 등)
-                            continuation.resume(AuthResult.Fail("현재 위치를 찾을 수 없습니다. GPS 설정을 확인해주세요."))
-                        }
-                    }
-                    .addOnFailureListener { exception ->
-                        // Google API 자체에서 에러가 난 경우
-                        continuation.resume(AuthResult.Fail(exception.message ?: "위치 서비스 오류가 발생했습니다."))
-                    }
-            }
-        } catch (e: Exception) {
-            // 위의 로직 중 어디서든 예상치 못한 Crash가 발생하면 여기서 잡아줌
-            AuthResult.Fail("시스템 오류: ${e.localizedMessage}")
-        }
     }
 }

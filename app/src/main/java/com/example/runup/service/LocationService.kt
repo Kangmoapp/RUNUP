@@ -10,8 +10,6 @@ import android.os.Build
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
-import com.example.runup.domain.model.Node
-import com.example.runup.domain.model.Scores
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.ui.screens.MainActivity
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -28,18 +26,14 @@ import javax.inject.Inject
 class LocationService : LifecycleService() {
 
     @Inject lateinit var repository: LocationRepository
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    @Inject lateinit var fusedLocationClient: FusedLocationProviderClient
 
     // 콜백을 변수로 빼서 나중에 중단할 수 있게 함
     private val locationCallback = object : LocationCallback() { // 위치가 잡힐때마다 실행하는 행동 지침
         override fun onLocationResult(result: LocationResult) { // 위치 정보가 도착했을 때 실행되는 함수
             super.onLocationResult(result)
             result.lastLocation?.let { location ->
-                val newNode = Node(
-                    locationPoint = GeoPoint(location.latitude, location.longitude),
-                    score = Scores(0.0, 0.0, 0.0)
-                )
-                repository.addNode(newNode)
+                repository.updateCurrentLocation(GeoPoint(location.latitude, location.longitude)) //이제 실행되면 계속 위치 갱신만 한다
             }
         }
     }
