@@ -28,7 +28,7 @@ class GoogleAuthManager @Inject constructor() {
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false) //기기에 등록된 모든 구글계정 전부 표시
             .setServerClientId(webClientId) //RUN UP 웹 클라이언트 아이디
-            .setAutoSelectEnabled(true) //사용자가 이 앱에서 로그인한 적이 있는 계정이 딱 하나라면, 계정 선택 창을 띄우지 않고 자동으로 그 계정으로 로그인을 시도
+            .setAutoSelectEnabled(false) //사용자가 이 앱에서 로그인한 적이 있는 계정이 딱 하나라면, 계정 선택 창을 띄우지 않고 자동으로 그 계정으로 로그인을 시도
             .build()
 
         val request = GetCredentialRequest.Builder()
