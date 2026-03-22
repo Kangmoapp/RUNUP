@@ -8,9 +8,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 
@@ -86,7 +84,6 @@ class UserRepositoryImpl @Inject constructor(
     }
 
     // 사용자 목표 가져오기
-    /*
     override suspend fun getUserGoalFromRoom(): AuthResult<Pair<Int, Int>> {
         return try {
             //Dao를 통해 id=0인 유저 데이터 조회
@@ -106,14 +103,6 @@ class UserRepositoryImpl @Inject constructor(
             AuthResult.Fail(e.message ?: "로컬 데이터를 불러오는 중 오류가 발생했습니다.")
         }
     }
-
-     */
-    override fun getUserGoalFromRoom(): Flow<Pair<Int, Int>?> {
-        return userDao.getUserFlow().map { userEntity ->
-            userEntity?.let { Pair(it.goalDistance, it.goalTime) }
-        }
-    }
-
 
     // 사용자 삭제
     override suspend fun deleteUserGoalFromRoom(): AuthResult<Boolean> {

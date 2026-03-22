@@ -19,9 +19,7 @@ accompanistPermissions = "0.34.0"
 mapsCompose = "4.3.3"
 credentials = "1.2.2"
 googleid = "1.1.1"
-objectbox = "4.0.0"
-gson = "2.10.1"
-litert = "1.0.1"
+tvMaterial = "1.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,11 +38,6 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
-objectbox-kotlin = { group = "io.objectbox", name = "objectbox-kotlin", version.ref = "objectbox" }
-litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
-litert-api = { group = "com.google.ai.edge.litert", name = "litert-api", version.ref = "litert" }
-
-litert-support = { group = "com.google.ai.edge.litert", name = "litert-support", version.ref = "litert" }
 
 # Firebase 서비스들 (BOM 덕분에 버전 생략 가능)
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
@@ -60,17 +53,12 @@ androidx-lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-s
 google-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "googleLocation" }
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanistPermissions" }
 maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
-google-gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 # Credential Manager (구글 로그인용)
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
-
-# Credential Manager (구글 로그인용)
-androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
-androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
+androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -79,6 +67,5 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-objectbox = { id = "io.objectbox", version.ref = "objectbox" }
 
 

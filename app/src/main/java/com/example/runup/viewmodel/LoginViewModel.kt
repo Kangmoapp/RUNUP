@@ -73,31 +73,29 @@ class LoginViewModel @Inject constructor(
     fun onGoogleLoginClick(context: Context, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            // GoogleAuthManager를 실행 (ViewModelScope 사용)
+
             googleAuthManager.signIn(
                 context = context,
-                scope = this, // viewModelScope 전달
+                scope = this, // 현재 이 launch의 scope를 넘김
                 onTokenReceived = { idToken ->
-                    signInWithGoogle(idToken, onSuccess)
+                    viewModelScope.launch {
+                        signInWithGoogle(idToken, onSuccess)
+                    }
                 }
-
             )
-
         }
     }
 
-    private fun signInWithGoogle(idToken: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            val result = loginUseCase.invoke(idToken)
-            when (result) {
-                is AuthResult.Success -> {
-                    updateUserLoginStatusUseCase(true)
-                    _uiState.update { it.copy(isLoading = false) }
-                    onSuccess()
-                }
-                is AuthResult.Fail -> {
-                    _uiState.update { it.copy(isLoading = false, errorMessage = result.message) }
-                }
+    private suspend fun signInWithGoogle(idToken: String, onSuccess: () -> Unit) {
+        val result = loginUseCase.invoke(idToken)
+        when (result) {
+            is AuthResult.Success -> {
+                updateUserLoginStatusUseCase(true)
+                _uiState.update { it.copy(isLoading = false) }
+                onSuccess()
+            }
+            is AuthResult.Fail -> {
+                _uiState.update { it.copy(isLoading = false, errorMessage = result.message) }
             }
         }
     }
