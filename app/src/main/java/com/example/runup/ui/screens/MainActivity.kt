@@ -30,14 +30,16 @@ fun RunUpApp(
     val currentScreen by viewModel.currentScreen.collectAsState()
 
     when (currentScreen) {
+        Screen.START -> StartScreen (
+            onHomeClick = { viewModel.navigateTo(Screen.HOME) },
+        )
 
         Screen.TUTORIAL -> TutorialScreen(
             onYesClick = { viewModel.navigateTo(Screen.HOME) },
-            //onYesClick = { viewModel.navigateTo(Screen.SIGNUPEMAIL) },
-            onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
+            onNoClick = { viewModel.navigateTo(Screen.HOME) },
         )
         Screen.LOGIN -> LoginScreen(
-            onLoginClick = {viewModel.navigateTo(Screen.TEST)},
+            onLoginClick = {viewModel.navigateTo(Screen.HOME)},
             onSignUpClick = {viewModel.navigateTo(Screen.SIGNUPEMAIL)}
         )
         Screen.SIGNUPEMAIL -> SignupEmailScreen(
@@ -45,13 +47,31 @@ fun RunUpApp(
             onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
         Screen.SIGNUPPASSWORD -> SignupPassWordScreen (
-            onContinueClick = {viewModel.navigateTo(Screen.TEST)},
+            onContinueClick = {viewModel.navigateTo(Screen.LOGIN)},
             onLoginClick = {viewModel.navigateTo(Screen.LOGIN)}
         )
-        Screen.TEST -> TestScreen()
         Screen.HOME -> HomeScreen(
-            onMenuClick = {},
-            onRunClick = {viewModel.navigateTo(Screen.TEST)}
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+            onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
+            onDistanceClick = {}
         )
+        Screen.GOALSETTING -> GoalSettingScreen(
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+        )
+        Screen.MENU -> MenuScreen (
+            onBackClick = {viewModel.navigateTo(Screen.HOME)},
+            onCorseClick = { },
+            onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
+            onOptionClick= { },
+            onHelpClick= { },
+            onCommunityClick= { },
+            onMypageClick= { },
+        )
+        Screen.RUNNING -> RunningScreen(
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+        )
+
+        Screen.TEST -> TestScreen()
+
     }
 }

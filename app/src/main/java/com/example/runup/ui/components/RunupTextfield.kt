@@ -16,7 +16,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.runup.ui.theme.Black
-import com.example.runup.ui.theme.TextColor
+import com.example.runup.ui.theme.TextGray
+import com.example.runup.ui.theme.TextWhite
 import com.example.runup.ui.theme.White
 
 
@@ -28,7 +29,7 @@ fun RunupTextfield(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     textcolor: Color = Black,
-    placeholdercolor: Color = TextColor,
+    placeholdercolor: Color = TextGray,
     containercolor: Color = White,
     indicatorcolor: Color = Color.Transparent,
     isPassword: Boolean = false,
