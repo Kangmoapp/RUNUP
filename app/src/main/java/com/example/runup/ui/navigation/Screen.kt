@@ -8,6 +8,8 @@ enum class Screen {
     HOME,
     GOALSETTING,
     MENU,
+    RUNNING,
+    START,
     TEST,
     COMMUNITY,
     COMMUNITY_DETAIL,

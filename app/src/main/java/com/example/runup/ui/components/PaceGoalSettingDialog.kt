@@ -21,10 +21,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.runup.ui.theme.BlackTextColor
+import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.White
-import kotlin.div
-import kotlin.toString
 
 @Composable
 fun PaceGoalSettingDialog(
@@ -47,7 +45,7 @@ fun PaceGoalSettingDialog(
             ) {
                 Text(
                     text = "확인",
-                    color = BlackTextColor)
+                    color = TextBlack)
             }
         },
         text = {

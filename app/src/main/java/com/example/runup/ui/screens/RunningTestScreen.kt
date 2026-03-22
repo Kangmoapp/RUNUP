@@ -26,6 +26,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 fun RunningTestScreen(
     viewModel: RunningViewModel = hiltViewModel()
 ) {
+    /*
     val pathPoints by viewModel.pathPoints.collectAsState()
 
     // 1. 노드(Node) 리스트를 지도가 이해할 수 있는 LatLng 리스트로 변환
@@ -102,4 +103,6 @@ fun RunningTestScreen(
             }
         }
     }
+
+     */
 }

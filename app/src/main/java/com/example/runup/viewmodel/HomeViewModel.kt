@@ -7,24 +7,29 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.UserLoginInfo
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
+import com.google.type.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val goalDistance: Int = 0,
     val goalPace: Int = 0,
-    val showDistanceDialog: Boolean = false
+    val currentLocation: LatLng? = null,   //현재 위치
+    val showDistanceDialog: Boolean = false,
+    val showPaceDialog: Boolean = false
 )
-
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val goalsettingUseCase: GoalSettingUseCase,
     private val getUserGoalUseCase: GetUserGoalUseCase
 ): ViewModel(){
+    private val _currentLocation = MutableStateFlow<com.google.android.gms.maps.model.LatLng?>(null)
+    private val _isTracking = MutableStateFlow(false)
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState
@@ -34,21 +39,14 @@ class HomeViewModel @Inject constructor(
 
     private fun loadUserGoal() {
         viewModelScope.launch {
-            when (val result = getUserGoalUseCase()) {
-
-                is AuthResult.Success -> {
-                    val (distance, pace) = result.data
-
+            getUserGoalUseCase().collectLatest { goal ->
+                goal?.let { (distance, pace) ->
                     _uiState.update {
                         it.copy(
                             goalDistance = distance,
                             goalPace = pace
                         )
                     }
-                }
-
-                is AuthResult.Fail -> {
-                    // 필요하면 에러 처리
                 }
             }
         }
@@ -80,5 +78,9 @@ class HomeViewModel @Inject constructor(
 
             }
         }
+    }
+
+    fun updateCurrentLocation(latLng: com.google.android.gms.maps.model.LatLng?) {
+        _currentLocation.value = latLng
     }
 }

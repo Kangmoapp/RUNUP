@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.google.services)
     alias(libs.plugins.ksp)
+    id("io.objectbox")
 }
 
 android {
@@ -39,6 +40,37 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    packaging {
+        resources {
+            // 중복 리소스 제외 (기본 설정)
+            excludes.add("META-INF/LICENSE.txt")
+            excludes.add("META-INF/NOTICE.txt")
+            excludes.add("META-INF/AL2.0")
+            excludes.add("META-INF/LGPL2.1")
+
+            // 만약 빌드 시 .so 파일 충돌이 다시 나면 아래 줄의 주석을 푸세요.
+            // pickFirsts.add("**/libobjectbox-jni.so")
+            pickFirst("lib/x86/libtensorflowlite_jni.so")
+            pickFirst("lib/x86_64/libtensorflowlite_jni.so")
+            pickFirst("lib/armeabi-v7a/libtensorflowlite_jni.so")
+            pickFirst("lib/arm64-v8a/libtensorflowlite_jni.so")
+        }
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        // 모든 중복된 모듈 요청을 특정 버전으로 강제 고정하여 통합합니다.
+        force("io.objectbox:objectbox-android:4.0.0")
+
+        // 혹은 브라우저 라이브러리가 들고 오는 녀석을 아예 무시하게 만듭니다.
+        dependencySubstitution {
+            substitute(module("io.objectbox:objectbox-android-objectbrowser"))
+                .using(module("io.objectbox:objectbox-android-objectbrowser:4.0.0"))
+                .because("중복 클래스 충돌 방지를 위해 버전을 명시적으로 제어함")
+        }
     }
 }
 
@@ -105,4 +137,15 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
 
     implementation("com.google.firebase:firebase-storage-ktx")
+    // 파이어베이스의 데이터들을 로컬에서 objectbox로 관리하기 위함
+    implementation(libs.objectbox.kotlin)
+
+    // gson 형태로 매핑하기 위해 필요함
+    implementation(libs.google.gson)
+
+    // tflite 모델 불러오기 위해 필요함
+    implementation(libs.litert)
+    implementation(libs.litert.api)
+    implementation(libs.litert.support)
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
 }

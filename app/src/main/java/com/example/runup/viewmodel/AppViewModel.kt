@@ -15,7 +15,7 @@ import javax.inject.Inject
 class AppViewModel @Inject constructor(
     private val getUserLoginStatusUseCase: GetUserLoginStatusUseCase
 ) : ViewModel() {
-    private val _currentScreen = MutableStateFlow(Screen.TUTORIAL)
+    private val _currentScreen = MutableStateFlow(Screen.START)
     val currentScreen: StateFlow<Screen> = _currentScreen
 
     // --- 추가된 부분: 상세페이지로 전달할 ID 저장 변수 ---
@@ -32,7 +32,7 @@ class AppViewModel @Inject constructor(
                 is AuthResult.Success -> {
                     _currentScreen.value =
                         if (result.data) Screen.HOME
-                        else Screen.TUTORIAL
+                        else Screen.START
                 }
                 is AuthResult.Fail -> {
                     _currentScreen.value = Screen.TEST

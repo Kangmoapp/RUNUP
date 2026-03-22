@@ -1,12 +1,20 @@
 package com.example.runup.data.source.remote.course
 
+import android.util.Log
+import com.example.runup.data.source.local.objectbox.entity.CourseEntity
+import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.Scores
+import com.example.runup.service.EmbeddingHelper
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
+import com.google.gson.Gson
+import io.objectbox.Box
+import io.objectbox.kotlin.query
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import kotlin.math.acos
@@ -18,8 +26,10 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 class CourseDataSourceImpl @Inject constructor(
-    private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val courseBox: Box<CourseEntity>,
+    private val embeddingHelper: EmbeddingHelper,
+    private val gson: Gson // Hilt에서 주입
 ) : CourseDataSource {
     // #1. [코스 병합 및 저장하는 함수]
     override suspend fun saveCourse(course: Course): AuthResult<Boolean> {
@@ -511,5 +521,116 @@ class CourseDataSourceImpl @Inject constructor(
         val mag2 = sqrt(v2.first.pow(2) + v2.second.pow(2))
         if (mag1 == 0.0 || mag2 == 0.0) return 180.0
         return 180.0 - Math.toDegrees(acos((dot / (mag1 * mag2)).coerceIn(-1.0, 1.0)))
+    }
+
+
+    override suspend fun startRealtimeSync() {
+        Log.d("RUNUP_SYNC", "🚀 Firestore 실시간 동기화 시작...")
+
+        // 로컬에는 있는데 Firestore 에는 없는 유령 데이터 삭제
+        firestore.collection("Course").get().addOnSuccessListener { snapshot ->
+            val remoteIds = snapshot.documents.map { it.id }.toSet()
+
+            // 로컬 ObjectBox에 저장된 모든 데이터 가져오기
+            val localEntities = courseBox.all
+
+            // 로컬에는 있는데 Firestore(remoteIds)에는 없는 데이터 찾아내기
+            val toDelete = localEntities.filter { it.firebaseId !in remoteIds }
+
+            if (toDelete.isNotEmpty()) {
+                courseBox.remove(toDelete) // 로컬 DB에서 한 번에 삭제
+                Log.d("RUNUP_SYNC", "🗑️ 유령 데이터 ${toDelete.size}건 삭제 완료: ${toDelete.map { it.firebaseId }}")
+            } else {
+                Log.d("RUNUP_SYNC", "✅ 로컬 데이터가 최신 상태입니다. 삭제할 유령 데이터 없음.")
+            }
+        }.addOnFailureListener {
+            Log.e("RUNUP_SYNC", "❌ 전체 동기화 체크 실패: ${it.message}")
+        }
+
+        firestore.collection("Course")
+            .addSnapshotListener { snapshots, error ->
+                if (error != null) {
+                    Log.e("RUNUP_SYNC", "❌ 동기화 중 에러 발생: ${error.message}")
+                    return@addSnapshotListener
+                }
+
+                snapshots?.documentChanges?.forEach { dc ->
+                    val doc = dc.document
+
+                    try {
+                        // Firestore 데이터를 기존 Course 모델로 변환
+                        val courseModel = doc.toObject(Course::class.java)
+
+                        // 벡터 데이터 추출 (Double List -> FloatArray)
+                        val vectorList = doc.get("vector") as? List<Double>
+                        val floatVector = vectorList?.map { it.toFloat() }?.toFloatArray()
+
+                        // ObjectBox 엔티티 생성
+                        val entity = CourseEntity(
+                            firebaseId = doc.id,
+                            courseDataJson = gson.toJson(courseModel),
+                            embeddingText = doc.get("embedding_text") as? String,
+                            vector = floatVector
+                        )
+
+                        when (dc.type) {
+                            // 데이터 추가 또는 수정
+                            DocumentChange.Type.ADDED -> {
+                                courseBox.put(entity)
+                                Log.d("RUNUP_SYNC", "✅ 새 코스 추가됨: ${courseModel.id}")
+                            }
+                            DocumentChange.Type.MODIFIED -> {
+                                courseBox.put(entity)
+                                Log.d("RUNUP_SYNC", "🔄 코스 정보 수정됨: ${courseModel.id}")
+                            }
+                            // 데이터 삭제
+                            DocumentChange.Type.REMOVED -> {
+                                // firebaseId로 로컬 데이터를 찾아서 삭제
+                                val target = courseBox.query(CourseEntity_.firebaseId.equal(doc.id)).build().findFirst()
+                                target?.let { courseBox.remove(it.id) }
+                                Log.d("RUNUP_SYNC", "🗑️ 코스 삭제됨: ${doc.id}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("RUNUP_SYNC", "⚠️ 데이터 변환 중 오류: ${e.message}")
+                    }
+                }
+
+                Log.d("RUNUP_SYNC", "현재 로컬 DB 코스 총 개수: ${courseBox.count()}")
+            }
+    }
+
+
+    //벡터 유사도 검색
+    override suspend fun getSearchResult(queryText: String): List<Course> {
+        // 문장을 384차원 벡터로 변환
+        val userQueryVector = embeddingHelper.getEmbedding(queryText)
+
+        // 점수와 함께 검색
+        val resultsWithScores = courseBox.query {
+            nearestNeighbors(CourseEntity_.vector, userQueryVector, 5) // 넉넉히 5개까지 확인
+        }.findWithScores()
+
+        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
+        Log.d("RUNUP_SEARCH_DEBUG", "📊 DB 내 총 코스 개수: ${courseBox.count()}")
+        Log.d("RUNUP_SEARCH_DEBUG", "🔎 검색 결과 개수: ${resultsWithScores.size}")
+        Log.d("RUNUP_SEARCH_DEBUG", "🎯 검색어: '$queryText'")
+        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
+
+        // 점수 확인 및 코스 번호만 로그 출력
+        resultsWithScores.forEachIndexed { index, scoreObject ->
+            val entity = scoreObject.get() // 실제 데이터(CourseEntity)
+            val score = scoreObject.score  // ⭐ 유사도 점수 (0에 가까울수록 일치)
+
+            Log.d("RUNUP_SEARCH_DEBUG", "   [$index] 순위 | 코스ID: ${entity.firebaseId} | 유사도 점수: $score")
+            Log.d("RUNUP_SEARCH_DEBUG", "   텍스트: ${entity.embeddingText?.take(128)}")
+        }
+        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
+
+        // UI에는 검색 결과 순서대로 Course 객체 리스트 반환
+        return resultsWithScores.map { scoreObject ->
+            val entity = scoreObject.get()
+            gson.fromJson(entity.courseDataJson, Course::class.java)
+        }
     }
 }
