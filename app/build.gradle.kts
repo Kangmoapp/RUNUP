@@ -148,4 +148,7 @@ dependencies {
     implementation(libs.litert.api)
     implementation(libs.litert.support)
     implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
+
+    // Version Catalog를 이용한 라이브러리 추가
+    implementation(libs.mediapipe.tasks.genai)
 }

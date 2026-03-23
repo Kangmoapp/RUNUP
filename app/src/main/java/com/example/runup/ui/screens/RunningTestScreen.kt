@@ -3,7 +3,6 @@ package com.example.runup.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -26,83 +25,94 @@ import com.google.maps.android.compose.rememberCameraPositionState
 fun RunningTestScreen(
     viewModel: RunningViewModel = hiltViewModel()
 ) {
-    /*
-    val pathPoints by viewModel.pathPoints.collectAsState()
+    // 1. ViewModel의 단일 UI 상태 구독
+    val uiState by viewModel.uiState.collectAsState()
 
-    // 1. 노드(Node) 리스트를 지도가 이해할 수 있는 LatLng 리스트로 변환
-    val latLngList = remember(pathPoints) {
-        pathPoints.map { LatLng(it.locationPoint.latitude, it.locationPoint.longitude) }
-    }
-
-    // 2. 카메라 상태 설정 (최초 위치 혹은 현재 위치 기준)
+    // 2. 카메라 상태 설정
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            latLngList.lastOrNull() ?: LatLng(35.8888, 128.6103), // 좌표 없으면 경북대 근처나 기본위치
-            16f
-        )
+        position = CameraPosition.fromLatLngZoom(LatLng(35.8888, 128.6103), 17f)
     }
 
-    // 실시간으로 좌표가 추가될 때 카메라가 내 위치를 따라가게 하고 싶다면
-    LaunchedEffect(latLngList.size) {
-        latLngList.lastOrNull()?.let { lastLatLng ->
-            cameraPositionState.animate(CameraUpdateFactory.newLatLng(lastLatLng))
+    // [중요] 내 위치(uiState.currentLocation)가 업데이트될 때마다 카메라가 따라감
+    LaunchedEffect(uiState.currentLocation) {
+        uiState.currentLocation?.let { latLng ->
+            cameraPositionState.animate(CameraUpdateFactory.newLatLng(latLng))
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // --- 지도 영역 (화면의 70% 차지) ---
+        // --- 지도 영역 ---
         GoogleMap(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             cameraPositionState = cameraPositionState,
-            properties = MapProperties(isMyLocationEnabled = true), // 내 위치 파란 점 표시
-            uiSettings = MapUiSettings(zoomControlsEnabled = true)
+            properties = MapProperties(isMyLocationEnabled = true),
+            uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = true)
         ) {
-            // [실시간 경로 그리기]
-            if (latLngList.size >= 2) {
+            // [실시간 경로 그리기] - uiState.latLngList 사용
+            if (uiState.latLngList.size >= 2) {
                 Polyline(
-                    points = latLngList,
+                    points = uiState.latLngList,
                     color = Color.Blue,
-                    width = 15f,
-                    jointType = JointType.ROUND // 선 연결 부위를 부드럽게
+                    width = 12f,
+                    jointType = JointType.ROUND
                 )
             }
         }
 
-        // --- 컨트롤 영역 (하단) ---
+        // --- 컨트롤 영역 (하단 테스트 패널) ---
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             elevation = CardDefaults.cardElevation(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(text = "수집된 좌표: ${pathPoints.size}개", fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // 상단 정보 표시 (uiState에서 데이터 추출)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("위치: ${String.format("%.7f", uiState.currentLocation?.latitude ?: 0.0)}, ${String.format("%.7f", uiState.currentLocation?.longitude ?: 0.0)}")
+                    Text("거리: ${String.format("%.1f", uiState.totalDistance)}m", color = Color.Blue, fontWeight = FontWeight.Bold)
+                }
+                Text("기록된 노드: ${uiState.latLngList.size}개")
+                Text("상태: ${if (uiState.isTracking) "러닝 기록 중 🏃" else "대기 중 🛑"}", fontWeight = FontWeight.SemiBold)
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
+                // 1단계: 위치 추적 서비스 (LocationService)
+                Text("1. 위치 서비스", style = MaterialTheme.typography.labelSmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { viewModel.startTracking() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("기록 시작")
+                    Button(onClick = { viewModel.startCurrentLocationTracking() }, modifier = Modifier.weight(1f)) {
+                        Text("GPS 켜기")
                     }
                     Button(
-                        onClick = { viewModel.stopAndSave() },
+                        onClick = { viewModel.stopCurrentLocationTracking() },
                         modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                    ) {
+                        Text("GPS 끄기")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 2단계: 러닝 기록 (ViewModel Job 컨트롤)
+                Text("2. 러닝 기록", style = MaterialTheme.typography.labelSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { viewModel.startRunningTracking() },
+                        modifier = Modifier.weight(1f),
+                        enabled = !uiState.isTracking, // 이미 기록 중이면 비활성화
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    ) {
+                        Text("러닝 시작")
+                    }
+                    Button(
+                        onClick = { viewModel.stopRunningTracking() },
+                        modifier = Modifier.weight(1f),
+                        enabled = uiState.isTracking, // 기록 중이 아닐 때 비활성화
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                     ) {
-                        Text("종료 및 저장")
+                        Text("저장 및 종료")
                     }
                 }
             }
         }
     }
-
-     */
 }
