@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import com.example.runup.domain.repository.LocationRepository

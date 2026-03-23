@@ -30,10 +30,13 @@ fun RunUpApp(
     val currentScreen by viewModel.currentScreen.collectAsState()
 
     when (currentScreen) {
+        Screen.START -> StartScreen (
+            onHomeClick = { viewModel.navigateTo(Screen.HOME) },
+        )
 
         Screen.TUTORIAL -> TutorialScreen(
             onYesClick = { viewModel.navigateTo(Screen.HOME) },
-            onNoClick = { viewModel.navigateTo(Screen.LOGIN) },
+            onNoClick = { viewModel.navigateTo(Screen.HOME) },
         )
         Screen.LOGIN -> LoginScreen(
             onLoginClick = {viewModel.navigateTo(Screen.HOME)},
@@ -49,7 +52,7 @@ fun RunUpApp(
         )
         Screen.HOME -> HomeScreen(
             onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-            onRunClick = {viewModel.navigateTo(Screen.TEST)},
+            onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
             onDistanceClick = {}
         )
         Screen.GOALSETTING -> GoalSettingScreen(
@@ -61,8 +64,35 @@ fun RunUpApp(
             onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
             onOptionClick= { },
             onHelpClick= { },
-            onCommunityClick= { },
+            onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
             onMypageClick= { },
+        )
+        Screen.RUNNING -> RunningScreen(
+            onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+        )
+
+        Screen.COMMUNITY -> CommunityScreen(
+            onBackClick = { viewModel.navigateTo(Screen.MENU) },
+            onPostClick = { postId ->
+                // 이제 "1"이 아니라 실제 클릭한 postId를 들고 갑니다.
+                viewModel.navigateToDetail(postId)
+            },
+            onUploadClick = {
+                viewModel.navigateTo(Screen.POST_UPLOAD)
+            }
+        )
+
+        Screen.POST_UPLOAD -> PostUploadScreen(
+            onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) },
+            onUploadSuccess = {
+                viewModel.navigateTo(Screen.COMMUNITY)
+            }
+        )
+
+        Screen.COMMUNITY_DETAIL -> CommunityDetailScreen(
+            // viewModel에 저장된 따끈따끈한 ID를 전달합니다.
+            postId = viewModel.selectedPostId,
+            onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) }
         )
 
         Screen.TEST -> TestScreen()
