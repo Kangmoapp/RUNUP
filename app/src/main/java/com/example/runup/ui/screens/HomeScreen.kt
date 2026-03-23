@@ -39,15 +39,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.CenterBar
+import com.example.runup.ui.components.DistanceGoalSettingDialog
 
 import com.example.runup.ui.components.MenuButton
+import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
 import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.TextWhite
+import com.example.runup.viewmodel.GoalSettingUiState
 
 import com.example.runup.viewmodel.GoalSettingViewModel
+import com.example.runup.viewmodel.HomeUiState
+import com.example.runup.viewmodel.HomeViewModel
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -60,52 +65,49 @@ import kotlinx.coroutines.tasks.await
 @Preview
 @Composable
 fun PreviewHomeScreen(){
-    HomeContent({},{},{})
+
+    HomeContent(
+        uiState = HomeUiState(
+        goalDistance = 2500,
+        goalPace = 390),
+        {},{},{},{},{},{},{},{ _, _ -> },
+        )
 }
 
 @Composable
 fun HomeScreen(
     onMenuClick:()->Unit,
     onRunClick:()->Unit,
-    onDistanceClick:()-> Unit,
-    viewModel: GoalSettingViewModel = hiltViewModel()
+    viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    /* 지도 화면을 이전 위치로 옮겨주는 코드
-    val context = LocalContext.current
-    val fusedLocationClient = remember {
-        LocationServices.getFusedLocationProviderClient(context)
-    }
-    LaunchedEffect(Unit) {
-        try {
-            val location: Location? = fusedLocationClient.lastLocation.await()
-            viewModel.updateCurrentLocation(
-                location?.let { LatLng(it.latitude, it.longitude) }
-            )
-        } catch (_: SecurityException) {
-        }
-    }
-    
-     */
-
     HomeContent(
+        uiState = uiState,
         onMenuClick = onMenuClick,
         onRunClick = onRunClick,
-        onDistanceClick = onDistanceClick
-
+        onDistanceClick = {viewModel.openDistanceDialog()},
+        onDistanceClose = {viewModel.closeDistanceDialog()},
+        onDistanceConfirm = {viewModel.confirmDistance(it)},
+        onPaceClick = {viewModel.openPaceDialog()},
+        onPaceClose = {viewModel.closePaceDialog()},
+        onPaceConfirm = { minute, second ->
+            viewModel.confirmPace(minute, second)
+        },
     )
 }
 @Composable
 private fun HomeContent(
+    uiState: HomeUiState,
     onMenuClick:()->Unit,
     onRunClick:()->Unit,
-    onDistanceClick:()-> Unit
+    onDistanceClick:()->Unit,
+    onDistanceClose:()->Unit,
+    onDistanceConfirm:(Int)->Unit,
+    onPaceClick:()->Unit,
+    onPaceClose:()->Unit,
+    onPaceConfirm:(Int,Int)->Unit,
 ){
-    val singapore = LatLng(1.35, 103.87)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(singapore, 10f)
-    }
 
     Surface(
         modifier = Modifier
@@ -126,13 +128,7 @@ private fun HomeContent(
                         .clip(RoundedCornerShape(24.dp))
                         .background(color = White)  // ui 확인용
                         .MapSize(),
-                    cameraPositionState = cameraPositionState
                 ) {
-                    Marker(
-                        state = MarkerState(position = singapore),
-                        title = "Singapore",
-                        snippet = "Marker in Singapore"
-                    )
                 }
                 BunIconButton(
                     onClick = onRunClick,
@@ -151,19 +147,36 @@ private fun HomeContent(
             ){
                 HomeButton(
                     texttop = "목표 페이스",
-                    textbottom = "6분 30초",
-                    {},
+                    textbottom = "${uiState.goalPace/60}\' ${uiState.goalPace%60}\"",
+                    onClick = onPaceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )
                 CenterBar()
                 HomeButton(
                     texttop = "목표 거리",
-                    textbottom = "3km",
+                    textbottom = "${uiState.goalDistance.toDouble()/1000} km",
                     onClick = onDistanceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )
             }
-
+        }
+        if (uiState.showDistanceDialog) {
+            DistanceGoalSettingDialog(
+                range = 0..100,
+                startNumber = (uiState.goalDistance/100 + 1),
+                onConfirm = onDistanceConfirm,
+                onDismiss = onDistanceClose
+            )
+        }
+        else if (uiState.showPaceDialog) {
+            PaceGoalSettingDialog(
+                rangeMinutes = 0..20,
+                rangeSeconds = 0..60,
+                startMinute = (uiState.goalPace/60 + 1),
+                startSecond = (uiState.goalPace%60 + 1),
+                onConfirm = onPaceConfirm,
+                onDismiss = onPaceClose
+            )
         }
     }
 }
