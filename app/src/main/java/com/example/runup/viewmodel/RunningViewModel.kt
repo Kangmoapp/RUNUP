@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -35,13 +34,16 @@ class RunningViewModel @Inject constructor(
     private val saveCourseUseCase: SaveCourseUseCase,
     private val application: Application
 ) : ViewModel() {
+
+
     private val _isTracking = MutableStateFlow(false)
     private var recordingJob: Job? = null // 러닝 기록용 코루틴 잡
+
     private val _uiState = MutableStateFlow(RunningUiState())
     val uiState: StateFlow<RunningUiState> = _uiState.asStateFlow()
 
     init {
-        startTracking()
+        startCurrentLocationTracking()
         updateUiState()
     }
 
@@ -50,35 +52,38 @@ class RunningViewModel @Inject constructor(
             combine(
                 repository.recordedNodes,
                 repository.totalDistance,
+                repository.currentLocation, // 실시간 위치
                 _isTracking
-            ) { nodes, totalDistance, isTracking ->
-                val lastLocation = nodes.lastOrNull()?.let {
-                    LatLng(it.locationPoint.latitude, it.locationPoint.longitude)
-                }
+            ) { nodes, totalDistance, currentGeo, isTracking ->
                 RunningUiState(
-                    currentLocation = lastLocation,
-                    latLngList = nodes.map {
-                        LatLng(
-                            it.locationPoint.latitude,
-                            it.locationPoint.longitude
-                        )
-                    },
+                    // 실시간 내 위치 (기록 중이 아니어도 표시됨)
+                    currentLocation = currentGeo?.let { LatLng(it.latitude, it.longitude) },
+
+                    // 지금까지 이동한 경로
+                    latLngList = nodes.map { LatLng(it.locationPoint.latitude, it.locationPoint.longitude) },
+
                     totalDistance = totalDistance,
                     isTracking = isTracking
                 )
             }.collect { newState ->
-                Log.d("RunningPosition", "currentLocation = ${newState.currentLocation}")
+                Log.d("RunningPosition", "UI State Updated: ${newState.currentLocation}")
                 _uiState.value = newState
             }
         }
     }
 
 
-    // [1] 단순 위치 추적 시작 (서비스 실행)
+    // [1] 단순 위치 추적 시작 (GPS 서비스 ON)
     fun startCurrentLocationTracking() {
+        val intent = Intent(application, LocationService::class.java)
+        application.startForegroundService(intent)
+    }
 
-    // [2] 단순 위치 추적 종료 (서비스 종료)
+    // [2] 단순 위치 추적 종료 (GPS 서비스 OFF)
     fun stopCurrentLocationTracking() {
+        // 러닝 기록 중이었다면 그것부터 멈춤
+        if (_isTracking.value) stopRunningTracking()
+
         val intent = Intent(application, LocationService::class.java).apply {
             action = "STOP_TRACKING"
         }
@@ -87,11 +92,12 @@ class RunningViewModel @Inject constructor(
 
     // [3] 러닝 경로 기록 시작
     fun startRunningTracking() {
-        // 이미 기록 중이면 중복 실행 방지
-        if (recordingJob?.isActive == true) return
+        if (_isTracking.value) return // 이미 기록 중이면 무시
+
+        _isTracking.value = true
         recordingJob = viewModelScope.launch {
             while (true) {
-                // 1초마다 레포지토리에 현재 좌표를 기록하라고 명령
+                // 1초마다 레포지토리의 현재 위치를 노드로 변환하여 저장
                 repository.addNodeFromCurrentLocation()
                 delay(1000L)
             }
@@ -100,15 +106,17 @@ class RunningViewModel @Inject constructor(
 
     // [4] 러닝 경로 기록 중단 및 저장
     fun stopRunningTracking() {
-        recordingJob?.cancel() // 1초마다 기록하던 작업 중단
+        _isTracking.value = false
+        recordingJob?.cancel()
 
         viewModelScope.launch {
-            val nodes = pathPoints.value
-            val distance = currentDistance.value.toInt()
+            val nodes = repository.recordedNodes.value
+            val distance = repository.totalDistance.value.toInt()
 
             if (nodes.isNotEmpty()) {
                 val result = saveCourseUseCase(nodes, distance)
                 if (result is AuthResult.Success) {
+                    // 저장 성공 후 경로 데이터만 초기화
                     repository.clearData()
                 }
             }
