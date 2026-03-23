@@ -53,7 +53,6 @@ fun RunUpApp(
         Screen.HOME -> HomeScreen(
             onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
-            onDistanceClick = {}
         )
         Screen.GOALSETTING -> GoalSettingScreen(
             onMenuClick = {viewModel.navigateTo(Screen.MENU)},
