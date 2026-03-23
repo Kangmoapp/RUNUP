@@ -98,7 +98,7 @@ fun RunningScreen(
     RunningContent(
         onMenuClick = onMenuClick,
         onRunClick = {},
-        onCompleteClick = { viewModel.stopAndSave() },
+        onCompleteClick = { },
         uiState = uiState
     )
 }

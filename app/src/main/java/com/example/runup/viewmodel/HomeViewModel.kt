@@ -1,14 +1,16 @@
 package com.example.runup.viewmodel
 
 
+import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
-import com.example.runup.domain.model.UserLoginInfo
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
-import com.google.type.LatLng
+import com.example.runup.service.LocationService
+import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,12 +30,15 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val goalsettingUseCase: GoalSettingUseCase,
     private val getUserGoalUseCase: GetUserGoalUseCase,
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val application: Application
 ): ViewModel(){
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState
     init {
         loadUserGoal()
+        observeCurrentLocation()
+        startCurrentLocationTracking()
     }
 
     private fun loadUserGoal() {
@@ -50,8 +55,30 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+    private fun observeCurrentLocation() {
+        viewModelScope.launch {
+            locationRepository.currentLocation.collectLatest { location ->
+                _uiState.update {
+                    it.copy(
+                        currentLocation = location?.let {
+                            LatLng(it.latitude, it.longitude)
+                        }
+                    )
+                }
+            }
+        }
+    }
 
+    // [1] 단순 위치 추적 시작 (GPS 서비스 ON)
+    fun startCurrentLocationTracking() {
+        locationRepository.startTracking()
+    }
 
+    fun stopCurrentLocationTracking() {
+        locationRepository.stopTracking()
+    }
+
+    // 목표 설정 함수들
     fun openDistanceDialog() {
         _uiState.update { it.copy(showDistanceDialog = true) }
     }

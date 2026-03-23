@@ -75,8 +75,7 @@ class RunningViewModel @Inject constructor(
 
     // [1] 단순 위치 추적 시작 (GPS 서비스 ON)
     fun startCurrentLocationTracking() {
-        val intent = Intent(application, LocationService::class.java)
-        application.startForegroundService(intent)
+        repository.startTracking()
     }
 
     // [2] 단순 위치 추적 종료 (GPS 서비스 OFF)
@@ -84,10 +83,7 @@ class RunningViewModel @Inject constructor(
         // 러닝 기록 중이었다면 그것부터 멈춤
         if (_isTracking.value) stopRunningTracking()
 
-        val intent = Intent(application, LocationService::class.java).apply {
-            action = "STOP_TRACKING"
-        }
-        application.startService(intent)
+        repository.stopTracking()
     }
 
     // [3] 러닝 경로 기록 시작

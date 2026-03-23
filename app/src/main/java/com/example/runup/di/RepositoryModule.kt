@@ -1,8 +1,10 @@
 package com.example.runup.di
 
+import com.example.runup.data.repository.LocationRepositoryImpl
 import com.example.runup.data.repositoryimpl.CourseRepositoryImpl
 import com.example.runup.data.repositoryimpl.UserRepositoryImpl
 import com.example.runup.domain.repository.CourseRepository
+import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import dagger.Binds
 import dagger.Module
@@ -19,7 +21,11 @@ abstract class RepositoryModule {
     abstract fun bindUserRepository(
         impl: UserRepositoryImpl
     ): UserRepository
-
+    @Binds
+    @Singleton
+    abstract fun bindLocationRepository(
+        impl: LocationRepositoryImpl
+    ): LocationRepository
     @Binds
     @Singleton
     abstract fun bindCourseRepository(
