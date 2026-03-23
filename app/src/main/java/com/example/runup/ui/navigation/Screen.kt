@@ -9,7 +9,9 @@ enum class Screen {
     GOALSETTING,
     MENU,
     RUNNING,
-
     START,
-    TEST
+    TEST,
+    COMMUNITY,
+    COMMUNITY_DETAIL,
+    POST_UPLOAD
 }

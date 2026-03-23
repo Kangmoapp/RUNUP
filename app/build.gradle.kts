@@ -88,6 +88,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.tv.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -133,6 +134,9 @@ dependencies {
     // Kotlin Coroutines Play Services (await() 함수 사용을 위해 필수)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+    implementation("com.google.firebase:firebase-storage-ktx")
     // 파이어베이스의 데이터들을 로컬에서 objectbox로 관리하기 위함
     implementation(libs.objectbox.kotlin)
 
@@ -144,4 +148,7 @@ dependencies {
     implementation(libs.litert.api)
     implementation(libs.litert.support)
     implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1")
+
+    // Version Catalog를 이용한 라이브러리 추가
+    implementation(libs.mediapipe.tasks.genai)
 }
