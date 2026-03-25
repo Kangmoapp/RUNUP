@@ -38,8 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.MenuBar
 
-import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
@@ -127,7 +127,7 @@ private fun HomeContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(start = 18.dp, end = 18.dp)
         ){
-            MenuButton(onClick = onMenuClick)
+            MenuBar(onMenuClick = onMenuClick, isBack = false)
 
             Box(
                 modifier = Modifier.fillMaxWidth()
@@ -162,7 +162,7 @@ private fun HomeContent(
             ){
                 HomeButton(
                     texttop = "목표 페이스",
-                    textbottom = "${uiState.goalPace/60}\' ${uiState.goalPace%60}\"",
+                    textbottom = "${uiState.goalPace/60}분 ${uiState.goalPace%60}초",
                     onClick = onPaceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )

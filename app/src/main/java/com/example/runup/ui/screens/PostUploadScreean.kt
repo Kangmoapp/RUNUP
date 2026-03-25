@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.runup.ui.components.BackButton
+import com.example.runup.ui.components.MenuBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.CommunityViewModel
@@ -53,6 +53,7 @@ fun PostUploadScreen(
 
     Scaffold(
         containerColor = BackGroudColor,
+        /*
         topBar = {
             Row(
                 modifier = Modifier
@@ -75,6 +76,8 @@ fun PostUploadScreen(
                 )
             }
         }
+         */
+        topBar = { MenuBar(onBackClick = onBackClick, text = "새 게시물", isMenu = false) },
     ) { padding ->
         Column(
             modifier = Modifier

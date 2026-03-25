@@ -21,8 +21,8 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.MenuBar
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Black
@@ -40,13 +40,14 @@ fun PreviewGoalSettingContent(){
             goalDistance = 2500,
             goalPace = 390
         ),
-        {},{},{},{},{},{},{ _, _ -> },{ 10 to 10 }
+        {},{},{},{},{},{},{},{ _, _ -> },{ 10 to 10 }
     )
 }
 
 @Composable
 fun GoalSettingScreen(
     onMenuClick:()->Unit,
+    onBackClick:()->Unit,
     viewModel: GoalSettingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -54,6 +55,7 @@ fun GoalSettingScreen(
     GoalSettingContent(
         uiState = uiState,
         onMenuClick = onMenuClick,
+        onBackClick = onBackClick,
         onDistanceClick = {viewModel.openDistanceDialog()},
         onDistanceClose = {viewModel.closeDistanceDialog()},
         onDistanceConfirm = {viewModel.confirmDistance(it)},
@@ -70,6 +72,7 @@ fun GoalSettingScreen(
 private fun GoalSettingContent(
     uiState: GoalSettingUiState,
     onMenuClick:()->Unit,
+    onBackClick:()->Unit,
     onDistanceClick:()->Unit,
     onDistanceClose:()->Unit,
     onDistanceConfirm:(Int)->Unit,
@@ -87,7 +90,7 @@ private fun GoalSettingContent(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            MenuButton(onClick = onMenuClick)
+            MenuBar(onMenuClick = onMenuClick, onBackClick = onBackClick)
 
             GoalSettingScreenText(
                text = "이번 달리기는",

@@ -26,7 +26,8 @@ private fun PreviewLoadingScreen(){
 }
 
 @Composable
-fun LoadingScreen(){
+fun LoadingScreen(
+){
     Surface(
         modifier = Modifier
             .fillMaxSize(),

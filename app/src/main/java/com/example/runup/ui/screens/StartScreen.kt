@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.room.util.TableInfo
 import com.example.runup.R
+import com.example.runup.ui.components.PageIndicator
 import com.example.runup.ui.theme.DarkGray
 import com.example.runup.ui.theme.Gray
 import com.example.runup.ui.theme.White
@@ -108,27 +109,6 @@ private fun StartContent(
                 modifier = Modifier
                     .clickable { onLoginClick() }
             )
-
-            /*
-            Button(
-                onClick = onHomeClick,
-                enabled = hasLocationPermission
-            ) {
-                Text(
-                    if (hasLocationPermission) "홈화면"
-                    else "위치 권한이 필요합니다"
-                )
-            }
-
-            if (!hasLocationPermission) {
-                Button(
-                    onClick = onRequestPermission
-                ) {
-                    Text("권한 다시 요청")
-                }
-            }
-
-             */
         }
     }
 }
@@ -159,37 +139,7 @@ private fun SimpleHorizontalPager() {
         PageIndicator(pagerState, pageCount)
     }
 }
-@Composable
-private fun PageIndicator(
-    pagerState: PagerState,
-    pageCount: Int
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        repeat(pageCount) { index ->
 
-            val color =
-                if (pagerState.currentPage == index)
-                    Gray
-                else
-                    DarkGray
-
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .background(color, CircleShape)
-            )
-
-            if (index != pageCount - 1) {
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-        }
-    }
-}
 
 
 @Preview

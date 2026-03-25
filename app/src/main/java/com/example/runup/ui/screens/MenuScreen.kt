@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.runup.ui.components.BackButton
+import com.example.runup.ui.components.MenuBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.TextWhite
 
@@ -42,7 +42,7 @@ fun MenuScreen(
     ) {
         Column(
         ){
-            BackButton(onClick = onBackClick)
+            MenuBar(onBackClick = onBackClick, isMenu = false)
             MenuText(text = "코스 추천",onClick = onCorseClick)
             MenuText(text = "목표 설정 화면",onClick = onGoalClick)
             MenuText(text = "설정",onClick = onOptionClick)
