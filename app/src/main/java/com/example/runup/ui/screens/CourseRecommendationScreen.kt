@@ -1,6 +1,5 @@
 package com.example.runup.ui.screens
 
-import android.graphics.Point
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,32 +12,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.runup.ui.components.MenuBar
-import com.example.runup.ui.components.PageIndicator
+import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
-import com.example.runup.ui.theme.DarkGray
 import com.example.runup.ui.theme.Gray
-import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.TextGray
@@ -71,7 +60,7 @@ private fun CourseRecommendationContent(
     ) {
         Column(
         ){
-            MenuBar(onBackClick = onBackClick, onMenuClick = onMenuClick)
+            TopBar(onBackClick = onBackClick, onMenuClick = onMenuClick)
             Box(
                 modifier = Modifier
                     .height(550.dp)

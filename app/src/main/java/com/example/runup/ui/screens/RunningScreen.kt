@@ -1,8 +1,6 @@
 package com.example.runup.ui.screens
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.location.Location
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,15 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.R
 import com.example.runup.ui.components.CenterBar
-import com.example.runup.ui.components.MenuBar
+import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
@@ -59,8 +53,6 @@ import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.RunningUiState
 import com.example.runup.viewmodel.RunningViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.rememberMultiplePermissionsState
-import com.google.android.gms.location.LocationServices
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.JointType
@@ -70,7 +62,6 @@ import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
-import kotlinx.coroutines.tasks.await
 
 @Preview
 @Composable
@@ -152,7 +143,7 @@ private fun RunningContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(start = 18.dp, end = 18.dp)
         ) {
-            MenuBar(onMenuClick = onMenuClick)
+            TopBar(onMenuClick = onMenuClick)
 
             Box(
                 modifier = Modifier.fillMaxWidth()

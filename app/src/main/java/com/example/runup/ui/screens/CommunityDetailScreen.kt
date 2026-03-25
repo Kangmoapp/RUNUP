@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.runup.ui.components.MenuBar
+import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.CommunityViewModel
@@ -70,7 +70,7 @@ fun CommunityDetailScreen(
         },
 
          */
-        topBar = { MenuBar(onBackClick = onBackClick, text = "게시물", isMenu = false) },
+        topBar = { TopBar(onBackClick = onBackClick, text = "게시물", isMenu = false) },
         bottomBar = {
             Surface(
                 color = Color(0xFF1A1A1A),
