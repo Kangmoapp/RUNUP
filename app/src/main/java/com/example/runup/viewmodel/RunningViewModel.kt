@@ -9,6 +9,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.LocationService
+import com.example.runup.ui.navigation.Screen
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.timeout
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -42,9 +44,26 @@ class RunningViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(RunningUiState())
     val uiState: StateFlow<RunningUiState> = _uiState.asStateFlow()
 
+    private val _isStart = MutableStateFlow(true)
+    val isStart: StateFlow<Boolean> = _isStart
+
+    private val _loadTimer = MutableStateFlow(0)
+    val loadTimer: StateFlow<Int> = _loadTimer
+
     init {
+        viewModelScope.launch {
+            startScreen()
+        }
         startCurrentLocationTracking()
         updateUiState()
+    }
+    private suspend fun startScreen(){
+        _isStart.value = true
+        for (i in 3 downTo 1) {
+            _loadTimer.value = i
+            delay(1000)
+        }
+        _isStart.value = false
     }
 
     private fun updateUiState(){

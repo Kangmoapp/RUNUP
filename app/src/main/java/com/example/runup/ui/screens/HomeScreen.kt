@@ -38,8 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.TopBar
 
-import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
@@ -125,12 +125,12 @@ private fun HomeContent(
     ){
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(start = 18.dp, end = 18.dp)
+            //modifier = Modifier.padding(start = 18.dp, end = 18.dp)
         ){
-            MenuButton(onClick = onMenuClick)
+            TopBar(onMenuClick = onMenuClick, isBack = false)
 
             Box(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp)
             ){
                 GoogleMap(
                     modifier = Modifier
@@ -158,11 +158,11 @@ private fun HomeContent(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .wrapContentSize()
-                    .padding(top = 35.dp)
+                    .padding(top = 35.dp, start = 18.dp, end = 18.dp)
             ){
                 HomeButton(
                     texttop = "목표 페이스",
-                    textbottom = "${uiState.goalPace/60}\' ${uiState.goalPace%60}\"",
+                    textbottom = "${uiState.goalPace/60}분 ${uiState.goalPace%60}초",
                     onClick = onPaceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )

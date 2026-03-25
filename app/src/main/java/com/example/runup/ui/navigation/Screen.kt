@@ -10,5 +10,7 @@ enum class Screen {
     COMMUNITY,
     COMMUNITY_DETAIL,
     POST_UPLOAD,
-    LOADING
+    LOADING,
+
+    RECOMMEND
 }

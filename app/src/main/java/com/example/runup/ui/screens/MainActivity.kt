@@ -43,10 +43,11 @@ fun RunUpApp(
             )
             Screen.GOALSETTING -> GoalSettingScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onBackClick = {viewModel.navigateTo(Screen.HOME)},
             )
             Screen.MENU -> MenuScreen (
                 onBackClick = {viewModel.navigateTo(Screen.HOME)},
-                onCorseClick = { },
+                onCorseClick = {viewModel.navigateTo(Screen.RECOMMEND)},
                 onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
                 onOptionClick= { },
                 onHelpClick= { },
@@ -82,6 +83,10 @@ fun RunUpApp(
             )
             Screen.LOADING -> LoadingScreen ()
 
+            Screen.RECOMMEND -> CourseRecommendationScreen (
+                onBackClick = {viewModel.navigateTo(Screen.HOME)},
+                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+            )
             Screen.TEST -> TestScreen()
 
         }

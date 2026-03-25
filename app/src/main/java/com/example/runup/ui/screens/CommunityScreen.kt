@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.runup.domain.model.Post
-import com.example.runup.ui.components.BackButton
+import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.CommunityViewModel
@@ -46,6 +46,7 @@ fun CommunityScreen(
 
     Scaffold(
         containerColor = BackGroudColor,
+        /*
         topBar = {
             Row(
                 modifier = Modifier
@@ -69,6 +70,22 @@ fun CommunityScreen(
                 }
             }
         }
+
+         */
+        topBar = {
+            TopBar(
+                onBackClick = onBackClick,
+                text = "커뮤니티",
+                isMenu = false,
+                insteadMenuComponent = {
+                    Icon(
+                        Icons.Default.Add,
+                        "글쓰기",
+                        tint = WhiteTextColor,
+                        modifier = Modifier.size(28.dp).clickable{onUploadClick()}
+                    )
+                }
+            ) },
     ) { padding ->
         val posts = viewModel.posts
 
