@@ -29,3 +29,9 @@ data class Scores(
     val crowdedScore: Double = 0.0,
     val hardScore: Double = 0.0,
 )
+
+data class CoursePathGroup(
+    val originCourse: Course, // 기존 코스 정보 (ID 포함)
+    val reason: String = "",
+    val generatedPaths: List<Pair<Int, List<GeoPoint>>> // 파생된 경로들 (거리와 좌표 리스트)
+)
