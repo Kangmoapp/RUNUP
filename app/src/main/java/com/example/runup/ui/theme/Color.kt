@@ -19,6 +19,7 @@ val WhiteTextColor = Color(0xFFFFFFFF)
 
 val Gray = Color(0xFFD9D9D9)
 
+val DarkGray = Color(0xFF696969)
 val TextWhite = Color(0xFFF7F7F7)
 
 val TextBlack = Color(0xFF000000)

@@ -1,15 +1,11 @@
 package com.example.runup.viewmodel
 
 
-import android.app.Application
-import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserGoalUseCase
-import com.example.runup.domain.usecase.GoalSettingUseCase
-import com.example.runup.service.LocationService
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -19,22 +15,23 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class HomeUiState(
+data class CourseRecommendationUiState(
     val goalDistance: Int = 0,
-    val goalPace: Int = 0,
     val currentLocation: LatLng? = null,   //현재 위치
+    val currentSort: SortType = SortType.DISTANCE,
+    val isLoop: Boolean = true,
+    val showLoop: Boolean = false,
     val showDistanceDialog: Boolean = false,
-    val showPaceDialog: Boolean = false
+    val showSortDialog: Boolean = false
 )
 @HiltViewModel
-class HomeViewModel @Inject constructor(
-    private val goalsettingUseCase: GoalSettingUseCase,
+class CourseRecommendationViewModel @Inject constructor(
     private val getUserGoalUseCase: GetUserGoalUseCase,
     private val locationRepository: LocationRepository,
-    private val application: Application
 ): ViewModel(){
-    private val _uiState = MutableStateFlow(HomeUiState())
-    val uiState: StateFlow<HomeUiState> = _uiState
+    private val _uiState = MutableStateFlow(CourseRecommendationUiState())
+    val uiState: StateFlow<CourseRecommendationUiState> = _uiState
+
     init {
         loadUserGoal()
         observeCurrentLocation()
@@ -44,11 +41,10 @@ class HomeViewModel @Inject constructor(
     private fun loadUserGoal() {
         viewModelScope.launch {
             getUserGoalUseCase().collectLatest { goal ->
-                goal?.let { (distance, pace) ->
+                goal?.let { (distance) ->
                     _uiState.update {
                         it.copy(
-                            goalDistance = distance,
-                            goalPace = pace
+                            goalDistance = distance
                         )
                     }
                 }
@@ -68,6 +64,22 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+    fun resetUiState() {
+        _uiState.value = CourseRecommendationUiState()
+    }
+
+    fun onSearchClick(){
+        // 여기서 uiState의 goalDistance, currentSort, isLoop 를 usecase에 넘기는 함수 작성
+    }
+
+    fun openLoopDialog(){
+        _uiState.update { it.copy(showLoop = true) }
+    }
+
+    fun loopSelect(isFirst: Boolean = true){
+        if(isFirst) _uiState.update { it.copy(showLoop = false) }
+        else _uiState.update { it.copy(isLoop = !_uiState.value.isLoop, showLoop = false) }
+    }
 
     // [1] 단순 위치 추적 시작 (GPS 서비스 ON)
     fun startCurrentLocationTracking() {
@@ -86,46 +98,24 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(showDistanceDialog = false) }
     }
 
-    fun openPaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = true) }
+    fun openSortDialog() {
+        _uiState.update { it.copy(showSortDialog = true) }
     }
-    fun closePaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = false) }
+    fun closeSortDialog() {
+        _uiState.update { it.copy(showSortDialog = false) }
     }
+
 
     fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val distanceMeter:Int = distanceKm*100
         _uiState.update {
-            it.copy(showDistanceDialog = false)
-        }
-        viewModelScope.launch {
-            when (val result = goalsettingUseCase(distanceMeter, _uiState.value.goalPace)) {
-                is AuthResult.Success -> {
-
-                }
-                is AuthResult.Fail -> {
-
-                }
-
-            }
+            it.copy(showDistanceDialog = false, goalDistance = distanceMeter)
         }
     }
 
-    fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
-        val paceTotal:Int = paceMinute*60 + paceSecond
+    fun confirmSort(sortType: SortType) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         _uiState.update {
-            it.copy(showPaceDialog = false)
-        }
-        viewModelScope.launch {
-            when (val result = goalsettingUseCase(_uiState.value.goalDistance, paceTotal)) {
-                is AuthResult.Success -> {
-
-                }
-                is AuthResult.Fail -> {
-
-                }
-
-            }
+            it.copy(showSortDialog = false, currentSort = sortType)
         }
     }
 }

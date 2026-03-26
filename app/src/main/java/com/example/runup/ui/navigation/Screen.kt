@@ -1,10 +1,6 @@
 package com.example.runup.ui.navigation
 
 enum class Screen {
-    TUTORIAL,
-    LOGIN,
-    SIGNUPEMAIL,
-    SIGNUPPASSWORD,
     HOME,
     GOALSETTING,
     MENU,
@@ -13,5 +9,8 @@ enum class Screen {
     TEST,
     COMMUNITY,
     COMMUNITY_DETAIL,
-    POST_UPLOAD
+    POST_UPLOAD,
+    LOADING,
+
+    RECOMMEND
 }

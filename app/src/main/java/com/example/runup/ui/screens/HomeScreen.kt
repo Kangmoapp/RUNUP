@@ -1,7 +1,6 @@
 package com.example.runup.ui.screens
 
 
-import android.location.Location
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -26,12 +26,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.TextUnit
@@ -40,27 +38,23 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.TopBar
 
-import com.example.runup.ui.components.MenuButton
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
 import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.TextWhite
-import com.example.runup.viewmodel.GoalSettingUiState
-
-import com.example.runup.viewmodel.GoalSettingViewModel
 import com.example.runup.viewmodel.HomeUiState
 import com.example.runup.viewmodel.HomeViewModel
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.rememberCameraPositionState
-import kotlinx.coroutines.tasks.await
 
 @Preview
 @Composable
@@ -108,28 +102,48 @@ private fun HomeContent(
     onPaceClose:()->Unit,
     onPaceConfirm:(Int,Int)->Unit,
 ){
+    val defaultLocation = LatLng(35.8888, 128.6103)
 
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(defaultLocation, 17f)
+    }
+    val mapProperties = MapProperties(
+        isMyLocationEnabled = true
+    )
+
+    LaunchedEffect(uiState.currentLocation) {
+        uiState.currentLocation?.let { location ->
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(location, 17f)
+            )
+        }
+    }
     Surface(
         modifier = Modifier
             .fillMaxSize(),
         color = BackGroudColor
     ){
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            //modifier = Modifier.padding(start = 18.dp, end = 18.dp)
         ){
-            MenuButton(onClick = onMenuClick)
+            TopBar(onMenuClick = onMenuClick, isBack = false)
 
             Box(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp)
             ){
                 GoogleMap(
                     modifier = Modifier
-                        .padding(start = 20.dp, end = 20.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(color = White)  // ui 확인용
+                        .background(color = White)
                         .MapSize(),
-                ) {
-                }
+                    cameraPositionState = cameraPositionState,
+                    properties = mapProperties,
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = true,
+                        myLocationButtonEnabled = true
+                    )
+                )
                 BunIconButton(
                     onClick = onRunClick,
                     modifier = Modifier
@@ -143,11 +157,12 @@ private fun HomeContent(
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .fillMaxSize()
+                    .wrapContentSize()
+                    .padding(top = 35.dp, start = 18.dp, end = 18.dp)
             ){
                 HomeButton(
                     texttop = "목표 페이스",
-                    textbottom = "${uiState.goalPace/60}\' ${uiState.goalPace%60}\"",
+                    textbottom = "${uiState.goalPace/60}분 ${uiState.goalPace%60}초",
                     onClick = onPaceClick,
                     modifier = Modifier.height(130.dp).weight(1f)
                 )
