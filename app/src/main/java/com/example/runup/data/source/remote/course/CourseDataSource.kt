@@ -2,6 +2,7 @@ package com.example.runup.data.source.remote.course
 
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
+import com.example.runup.domain.model.CoursePathGroup
 import com.google.firebase.firestore.GeoPoint
 
 interface CourseDataSource {
@@ -11,9 +12,14 @@ interface CourseDataSource {
         courseDistance: Int,
         currentLocation: GeoPoint,
         featureIndex: Int
-    ): AuthResult<List<List<Pair<Int, List<GeoPoint>>>>>
+    ): AuthResult<List<CoursePathGroup>>
+
+    suspend fun getCourseFromAI(
+        courseDistance: Int,
+        currentLocation: GeoPoint,
+        userPrompt: String,
+    ): AuthResult<List<CoursePathGroup>>
 
     suspend fun startRealtimeSync()
 
-    suspend fun getSearchResult(queryText: String): List<Course>
 }

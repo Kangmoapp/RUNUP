@@ -5,16 +5,15 @@ import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
+import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.Scores
-import com.example.runup.service.EmbeddingHelper
-import com.google.firebase.auth.FirebaseAuth
+import com.example.runup.service.GeminiHelper
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
 import com.google.gson.Gson
 import io.objectbox.Box
-import io.objectbox.kotlin.query
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import kotlin.math.acos
@@ -28,7 +27,7 @@ import kotlin.math.sqrt
 class CourseDataSourceImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val courseBox: Box<CourseEntity>,
-    private val embeddingHelper: EmbeddingHelper,
+    private val geminiHelper: GeminiHelper,
     private val gson: Gson // Hilt에서 주입
 ) : CourseDataSource {
     // #1. [코스 병합 및 저장하는 함수]
@@ -42,7 +41,7 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private suspend fun mergeAndSaveCourse(newCourse: Course){
-        val eps = 0.0003 // 30m
+        val eps = 0.00006 // 6m
         val margin = eps
         val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
 
@@ -191,9 +190,8 @@ class CourseDataSourceImpl @Inject constructor(
         sortedPoints.add(current)
 
         var totalDistance = 0.0
-        val radius = 6371000.0 // 지구 반지름
 
-        // 모든 노드의 각 점수들을 합산한 뒤 평균을 내어 코스의 대표 점수로 설정합니다.
+        // 2. 모든 노드의 각 점수들을 합산한 뒤 평균을 내어 코스의 대표 점수로 설정합니다.
         val avgBright = nodes.map { it.score.brightScore }.average()
         val avgCrowded = nodes.map { it.score.crowdedScore }.average()
         val avgHard = nodes.map { it.score.hardScore }.average()
@@ -209,17 +207,7 @@ class CourseDataSourceImpl @Inject constructor(
             }!!
 
             // [거리 계산] 찾은 '다음 점'과의 하버사인 거리 계산 (실제 거리용)
-            val lat1 = Math.toRadians(current.locationPoint.latitude)
-            val lat2 = Math.toRadians(next.locationPoint.latitude)
-            val dLat = Math.toRadians(next.locationPoint.latitude - current.locationPoint.latitude)
-            val dLon = Math.toRadians(next.locationPoint.longitude - current.locationPoint.longitude) // 여기서 한 번에 계산
-
-            val a = Math.sin(dLat / 2).let { it * it } +
-                    Math.cos(lat1) * Math.cos(lat2) *
-                    Math.sin(dLon / 2).let { it * it }
-
-            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-            totalDistance += radius * c
+            totalDistance += calculateDistance(current.locationPoint, next.locationPoint)
 
             // 다음 스텝 준비
             remaining.remove(next)
@@ -251,7 +239,7 @@ class CourseDataSourceImpl @Inject constructor(
         courseDistance: Int,
         currentLocation: GeoPoint,
         featureIndex: Int
-    ): AuthResult<List<List<Pair<Int, List<GeoPoint>>>>> {
+    ): AuthResult<List<CoursePathGroup>> {
         return try {
             // 방법 선택 (0이면 거리순, 1~3이면 특징순)
             val sourceCourses = if (featureIndex == 0) {
@@ -263,8 +251,54 @@ class CourseDataSourceImpl @Inject constructor(
 
             if (sourceCourses.isEmpty()) return AuthResult.Fail("주변에 이용 가능한 코스가 없습니다.")
 
+            // 2. Pair를 Triple로 변환 (추천 사유 추가)
+            val sourcesWithReason = sourceCourses.map { (course, startPoint) ->
+                // 특징 인덱스에 따라 적절한 기본 문구 설정
+                val defaultReason = when (featureIndex) {
+                    0 -> "현재 위치에서 가장 가까운 추천 코스입니다."
+                    1 -> "야간에도 밝고 안전한 코스입니다."
+                    2 -> "사람들이 많이 찾는 활기찬 코스입니다."
+                    3 -> "운동 효과가 좋은 난이도 있는 코스입니다."
+                    else -> "사용자 취향에 맞는 추천 코스입니다."
+                }
+                Triple(course, startPoint, defaultReason)
+            }
+
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
-            val recommendedResult = generatePathsFromSources(sourceCourses, courseDistance.toDouble())
+            val recommendedResult = generatePathsFromSources(sourcesWithReason, courseDistance.toDouble())
+
+            if (recommendedResult.isEmpty()) {
+                AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
+            } else {
+                AuthResult.Success(recommendedResult)
+            }
+        } catch (e: Exception) {
+            AuthResult.Fail("코스 탐색 중 오류 발생: ${e.message}")
+        }
+    }
+
+    override suspend fun getCourseFromAI(
+        courseDistance: Int, // 몇 m 뛸껀지
+        currentLocation: GeoPoint, //
+        userPrompt: String,
+    ): AuthResult<List<CoursePathGroup>>{
+        return try {
+            val aiRecommendations = geminiHelper.performAiSearch(userPrompt)
+
+            val sources = aiRecommendations.mapNotNull { (course, reason) ->
+                val startPoint = findStartPointForAI(currentLocation, course)
+                if (startPoint != null) {
+                    // (코스, 시작점, 추천이유)를 묶어서 전달
+                    Triple(course, startPoint.second, reason)
+                } else null
+            }
+
+            if (sources.isEmpty()) {
+                return AuthResult.Fail("추천된 코스의 시작점을 찾을 수 없습니다.")
+            }
+
+            // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
+            val recommendedResult = generatePathsFromSources(sources, courseDistance.toDouble())
 
             if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
@@ -303,7 +337,7 @@ class CourseDataSourceImpl @Inject constructor(
         // 거리순 정렬 후, 동일 코스 내 중복 시작점 제거(가장 가까운 것만) 및 최대 5개 추출
         return startPoints.sortedBy { it.third }
             .distinctBy { it.first.id } // 한 코스당 가장 가까운 지점 1개만 선택
-            .take(5)
+            .take(3)
             .map { it.first to it.second }
     }
 
@@ -348,19 +382,36 @@ class CourseDataSourceImpl @Inject constructor(
         // 점수가 높은 순(descending)으로 정렬 후 중복 제거 및 최대 5개 추출
         return featurePoints.sortedByDescending { it.third } // 점수가 높은 순
             .distinctBy { it.first.id } // 동일 코스 내 중복 시작점 제거
-            .take(5)
+            .take(3)
             .map { it.first to it.second }
     }
+
+    private fun findStartPointForAI(
+        userLoc: GeoPoint,
+        course: Course
+    ): Pair<Course, GeoPoint>? {
+        // 1. 해당 코스의 모든 points 중 사용자 위치와 가장 가까운 점(GeoPoint)을 찾음
+        val nearestPoint = course.locationPoints
+            .map { it.locationPoint }
+            .minByOrNull { calculateDistance(userLoc, it) }
+
+        // 2. 가장 가까운 점이 있다면 Course와 묶어서 반환, 없으면 null 반환
+        return nearestPoint?.let {
+            course to it
+        }
+    }
+
+
 
 
     // 공통 모듈: 여러 소스(Course)로부터 목표 거리에 맞는 경로들을 "그룹별로" 생성
     private suspend fun generatePathsFromSources(
-        sources: List<Pair<Course, GeoPoint>>,
+        sources: List<Triple<Course, GeoPoint, String>>, // List[코스, 해당 코스의 시작점, 이유]
         targetDist: Double
-    ): List<List<Pair<Int, List<GeoPoint>>>> { //[A_course[1,2,3],B_course[1,2],C_course[1,2,3]]
-        val allGroupsResult = mutableListOf<List<Pair<Int, List<GeoPoint>>>>()
+    ): List<CoursePathGroup> { //[A_course[1,2,3],B_course[1,2],C_course[1,2,3]]
+        val allGroupsResult = mutableListOf<CoursePathGroup>()
 
-        sources.forEachIndexed { groupIndex, (course, startPoint) ->
+        sources.forEachIndexed { _, (course, startPoint, reason) ->
             val courseResults = mutableListOf<Pair<Double, List<GeoPoint>>>()
             val visited = mutableSetOf<Pair<Double, Double>>()
             visited.add(startPoint.latitude to startPoint.longitude)
@@ -386,16 +437,14 @@ class CourseDataSourceImpl @Inject constructor(
                         distance = distanceInt,
                         path = path,
                         originId = course.id,
-                        groupOrder = groupIndex, // A=0, B=1, C=2...
                         subIndex = pathIndex + 1  // 1, 2, 3
                     )
 
                     distanceInt to path
                 }
-                allGroupsResult.add(subGroup)
+                allGroupsResult.add(CoursePathGroup(course, reason,subGroup,))
             }
         }
-
         return allGroupsResult
     }
 
@@ -488,22 +537,20 @@ class CourseDataSourceImpl @Inject constructor(
         distance: Int,
         path: List<GeoPoint>,
         originId: String,
-        groupOrder: Int,
         subIndex: Int
     ) {
         val testData = hashMapOf(
             "distance" to distance,
             "locationPoints" to path,
             "originCourseId" to originId,
-            "groupOrder" to groupOrder, // 정렬용 필드
-            "subPathName" to "Group${groupOrder}_${originId}_Path${subIndex}", // 이름에 그룹 순서 명시
-            "createdAt" to com.google.firebase.Timestamp.now()
+            "subPathName" to "${originId}_Path${subIndex}", // 이름에 그룹 순서 명시
         )
 
         // 문서 ID를 직접 지정해서 저장하면 콘솔에서 정렬된 상태로 보기 편합니다.
-        val docName = "test_G${groupOrder}_P${subIndex}_${System.currentTimeMillis()}"
+        val docName = "test_${originId}_P${subIndex}"
         firestore.collection("test").document(docName).set(testData).await()
     }
+
     // 두 좌표의 거리 계산 (지구 반지름 기반)
     private fun calculateDistance(p1: GeoPoint, p2: GeoPoint): Double {
         val r = 6371000.0
@@ -570,6 +617,7 @@ class CourseDataSourceImpl @Inject constructor(
                             firebaseId = doc.id,
                             courseDataJson = gson.toJson(courseModel),
                             embeddingText = doc.get("embedding_text") as? String,
+                            address = doc.get("address") as? String,
                             vector = floatVector
                         )
 
@@ -598,39 +646,5 @@ class CourseDataSourceImpl @Inject constructor(
 
                 Log.d("RUNUP_SYNC", "현재 로컬 DB 코스 총 개수: ${courseBox.count()}")
             }
-    }
-
-
-    //벡터 유사도 검색
-    override suspend fun getSearchResult(queryText: String): List<Course> {
-        // 문장을 384차원 벡터로 변환
-        val userQueryVector = embeddingHelper.getEmbedding(queryText)
-
-        // 점수와 함께 검색
-        val resultsWithScores = courseBox.query {
-            nearestNeighbors(CourseEntity_.vector, userQueryVector, 5) // 넉넉히 5개까지 확인
-        }.findWithScores()
-
-        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
-        Log.d("RUNUP_SEARCH_DEBUG", "📊 DB 내 총 코스 개수: ${courseBox.count()}")
-        Log.d("RUNUP_SEARCH_DEBUG", "🔎 검색 결과 개수: ${resultsWithScores.size}")
-        Log.d("RUNUP_SEARCH_DEBUG", "🎯 검색어: '$queryText'")
-        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
-
-        // 점수 확인 및 코스 번호만 로그 출력
-        resultsWithScores.forEachIndexed { index, scoreObject ->
-            val entity = scoreObject.get() // 실제 데이터(CourseEntity)
-            val score = scoreObject.score  // ⭐ 유사도 점수 (0에 가까울수록 일치)
-
-            Log.d("RUNUP_SEARCH_DEBUG", "   [$index] 순위 | 코스ID: ${entity.firebaseId} | 유사도 점수: $score")
-            Log.d("RUNUP_SEARCH_DEBUG", "   텍스트: ${entity.embeddingText?.take(128)}")
-        }
-        Log.d("RUNUP_SEARCH_DEBUG", "--------------------------------------")
-
-        // UI에는 검색 결과 순서대로 Course 객체 리스트 반환
-        return resultsWithScores.map { scoreObject ->
-            val entity = scoreObject.get()
-            gson.fromJson(entity.courseDataJson, Course::class.java)
-        }
     }
 }
