@@ -7,7 +7,9 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.Node
+import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
+import com.example.runup.domain.model.SortType
 import com.example.runup.service.GeminiHelper
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
@@ -238,15 +240,16 @@ class CourseDataSourceImpl @Inject constructor(
     override suspend fun getCourse(
         courseDistance: Int,
         currentLocation: GeoPoint,
-        featureIndex: Int
+        isLoop: Boolean,
+        sortType: SortType
     ): AuthResult<List<CoursePathGroup>> {
         return try {
             // 방법 선택 (0이면 거리순, 1~3이면 특징순)
-            val sourceCourses = if (featureIndex == 0) {
+            val sourceCourses = if (sortType == SortType.DISTANCE) {
                 findNearestStartPoints(currentLocation)
             } else {
                 // featureIndex가 1, 2, 3인 경우를 그대로 넘김
-                findFeatureStartPoints(currentLocation, featureIndex)
+                findFeatureStartPoints(currentLocation, sortType)
             }
 
             if (sourceCourses.isEmpty()) return AuthResult.Fail("주변에 이용 가능한 코스가 없습니다.")
@@ -254,18 +257,20 @@ class CourseDataSourceImpl @Inject constructor(
             // 2. Pair를 Triple로 변환 (추천 사유 추가)
             val sourcesWithReason = sourceCourses.map { (course, startPoint) ->
                 // 특징 인덱스에 따라 적절한 기본 문구 설정
-                val defaultReason = when (featureIndex) {
-                    0 -> "현재 위치에서 가장 가까운 추천 코스입니다."
-                    1 -> "야간에도 밝고 안전한 코스입니다."
-                    2 -> "사람들이 많이 찾는 활기찬 코스입니다."
-                    3 -> "운동 효과가 좋은 난이도 있는 코스입니다."
+                val defaultReason = when (sortType) {
+                    SortType.DISTANCE -> "현재 위치에서 가장 가까운 추천 코스입니다."
+                    SortType.BRIGHT -> "야간에도 밝고 안전한 코스입니다."
+                    SortType.PEOPLE -> "사람들이 많이 찾는 활기찬 코스입니다."
+                    SortType.DIFFICULTY -> "운동 효과가 좋은 난이도 있는 코스입니다."
                     else -> "사용자 취향에 맞는 추천 코스입니다."
                 }
                 Triple(course, startPoint, defaultReason)
             }
 
+            val targetDist = if(isLoop) courseDistance/2.0 else courseDistance.toDouble()
+
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
-            val recommendedResult = generatePathsFromSources(sourcesWithReason, courseDistance.toDouble())
+            val recommendedResult = generatePathsFromSources(sourcesWithReason, targetDist)
 
             if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
@@ -280,6 +285,7 @@ class CourseDataSourceImpl @Inject constructor(
     override suspend fun getCourseFromAI(
         courseDistance: Int, // 몇 m 뛸껀지
         currentLocation: GeoPoint, //
+        isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>{
         return try {
@@ -297,8 +303,10 @@ class CourseDataSourceImpl @Inject constructor(
                 return AuthResult.Fail("추천된 코스의 시작점을 찾을 수 없습니다.")
             }
 
+            val targetDist = if(isLoop) courseDistance/2.0 else courseDistance.toDouble()
+
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
-            val recommendedResult = generatePathsFromSources(sources, courseDistance.toDouble())
+            val recommendedResult = generatePathsFromSources(sources, targetDist)
 
             if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
@@ -348,7 +356,7 @@ class CourseDataSourceImpl @Inject constructor(
      */
     private suspend fun findFeatureStartPoints(
         userLoc: GeoPoint,
-        featureIndex: Int
+        sortType: SortType
     ): List<Pair<Course, GeoPoint>> {
         val maxRadius = 0.005 // 최대 500m 범위
         val docs = firestore.collection("Course")
@@ -368,10 +376,10 @@ class CourseDataSourceImpl @Inject constructor(
                 val dist = calculateDistance(userLoc, node.locationPoint)
                 if (dist <= 500.0) { // 500m 이내인 코스만 대상으로 함
                     // 인덱스에 따라 정렬 기준 점수(score)를 Triple의 세 번째 인자로 설정
-                    val targetScore = when (featureIndex) {
-                        1 -> course.scores.brightScore
-                        2 -> course.scores.crowdedScore
-                        3 -> course.scores.hardScore
+                    val targetScore = when (sortType) {
+                        SortType.BRIGHT -> course.scores.brightScore
+                        SortType.PEOPLE -> course.scores.crowdedScore
+                        SortType.DIFFICULTY -> course.scores.hardScore
                         else -> 0.0
                     }
                     featurePoints.add(Triple(course, node.locationPoint, targetScore))
@@ -432,6 +440,8 @@ class CourseDataSourceImpl @Inject constructor(
                 val subGroup = courseResults.mapIndexed { pathIndex, (dist, path) ->
                     val distanceInt = dist.toInt()
 
+                    val centerPoint = calculateCenterPoint(path)
+
                     // 저장 로직을 여기서 처리하여 그룹/경로 인덱스를 정확히 기록
                     saveToTestCollection(
                         distance = distanceInt,
@@ -440,9 +450,13 @@ class CourseDataSourceImpl @Inject constructor(
                         subIndex = pathIndex + 1  // 1, 2, 3
                     )
 
-                    distanceInt to path
+                    Path(
+                        distance = distanceInt,
+                        points = path,
+                        centerPoint = centerPoint
+                    )
                 }
-                allGroupsResult.add(CoursePathGroup(course, reason,subGroup,))
+                allGroupsResult.add(CoursePathGroup(course, reason,subGroup))
             }
         }
         return allGroupsResult
@@ -568,6 +582,18 @@ class CourseDataSourceImpl @Inject constructor(
         val mag2 = sqrt(v2.first.pow(2) + v2.second.pow(2))
         if (mag1 == 0.0 || mag2 == 0.0) return 180.0
         return 180.0 - Math.toDegrees(acos((dot / (mag1 * mag2)).coerceIn(-1.0, 1.0)))
+    }
+
+    // 좌표 목록에서 중심 좌표 반환
+    private fun calculateCenterPoint(path: List<GeoPoint>): GeoPoint {
+        if (path.isEmpty()) return GeoPoint(0.0, 0.0)
+
+        val minLat = path.minOf { it.latitude }
+        val maxLat = path.maxOf { it.latitude }
+        val minLng = path.minOf { it.longitude }
+        val maxLng = path.maxOf { it.longitude }
+
+        return GeoPoint((minLat + maxLat) / 2.0, (minLng + maxLng) / 2.0)
     }
 
 
