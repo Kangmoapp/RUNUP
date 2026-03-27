@@ -58,6 +58,10 @@ android {
             pickFirst("lib/arm64-v8a/libtensorflowlite_jni.so")
         }
     }
+
+    androidResources {
+        noCompress += listOf("task", "bin", "tflite")
+    }
 }
 
 configurations.all {
@@ -151,4 +155,7 @@ dependencies {
 
     // Version Catalog를 이용한 라이브러리 추가
     implementation(libs.mediapipe.tasks.genai)
+
+    // Version Catalog를 통해 Gemini SDK 추가
+    implementation(libs.google.generativeai)
 }
