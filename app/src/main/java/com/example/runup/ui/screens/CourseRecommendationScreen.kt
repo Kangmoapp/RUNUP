@@ -1,6 +1,5 @@
 package com.example.runup.ui.screens
 
-import android.app.Dialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.expandVertically
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,24 +40,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.layout.VerticalAlignmentLine
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.DistanceGoalSettingDialog
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.runup.domain.model.SortType
-import com.example.runup.ui.components.DistanceGoalSettingDialog
-import com.example.runup.ui.components.RunupLazyColumn
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
-import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.Gray
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
@@ -304,16 +292,6 @@ private fun RecommendButton(
 
         }
     }
-
-
-    if (uiState.showDistanceDialog) {
-        DistanceGoalSettingDialog(
-            range = 0..100,
-            startNumber = (uiState.goalDistance/100 + 1),
-            onConfirm = onDistanceConfirm,
-            onDismiss = onDistanceClose
-        )
-    }
 }
 
 
@@ -434,7 +412,7 @@ private fun InfoText(
             .padding(end = 10.dp)
     ){
         Text(
-            text = "거리 계산 방법",
+            text = text,
             fontSize = 22.sp,
             color = TextBlack,
         )
