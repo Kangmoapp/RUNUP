@@ -28,6 +28,7 @@ data class CourseRecommendationUiState(
 class CourseRecommendationViewModel @Inject constructor(
     private val getUserGoalUseCase: GetUserGoalUseCase,
     private val locationRepository: LocationRepository,
+    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase
 ): ViewModel(){
     private val _uiState = MutableStateFlow(CourseRecommendationUiState())
     val uiState: StateFlow<CourseRecommendationUiState> = _uiState
@@ -69,7 +70,41 @@ class CourseRecommendationViewModel @Inject constructor(
     }
 
     fun onSearchClick(){
-        // 여기서 uiState의 goalDistance, currentSort, isLoop 를 usecase에 넘기는 함수 작성
+        val location = _uiState.value.currentLocation ?: run {
+            return
+        }
+        // 여기서 uiState의 currentLocation, goalDistance, currentSort, isLoop 를 usecase에 넘기는 함수 작성
+        viewModelScope.launch {
+            val result = getRecommendedCourseUseCase.invoke(
+                _uiState.value.goalDistance,
+                GeoPoint(location.latitude, location.longitude), // 현재 위치로 하면 그 주변에 코스 없을 수도 있어서 -> GeoPoint(35.88948381055103,128.6095353131536) 이걸로 테스트 해보셈
+                _uiState.value.isLoop,
+                _uiState.value.currentSort,
+                3
+            )
+
+            // 코스가 반환되어 오는지 테스트 로그
+            when (result) {
+                is AuthResult.Success -> {
+                    // 1. 전체 개수 확인
+                    Log.d("RUNUP_TEST", "총 추천 개수: ${result.data.size}")
+
+                    // 2. 각 리스트 요소에 접근해서 주요 데이터만 확인
+                    result.data.forEachIndexed { i, item ->
+                        Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
+                        Log.d("RUNUP_TEST", "    -> 거리: ${item.path.distance}m | 좌표수: ${item.path.points.size} | 중심: ${item.path.centerPoint}")
+
+                        // 첫 번째 좌표가 LatLng으로 잘 바뀌었는지 한 점만 확인
+                        item.path.points.firstOrNull()?.let {
+                            Log.d("RUNUP_TEST", "    -> 시작점 체크: ${it.latitude}, ${it.longitude}")
+                        }
+                    }
+                }
+                is AuthResult.Fail -> {
+                    Log.e("RUNUP_TEST", "에러 발생: ${result.message}")
+                }
+            }
+        }
     }
 
     fun openLoopDialog(){

@@ -1,5 +1,6 @@
 package com.example.runup.ui.screens
 
+import android.app.Dialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.expandVertically
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,6 +48,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+import androidx.compose.ui.zIndex
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.runup.domain.model.SortType
+import com.example.runup.ui.components.DistanceGoalSettingDialog
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runup.domain.model.SortType
@@ -53,6 +60,7 @@ import com.example.runup.ui.components.DistanceGoalSettingDialog
 import com.example.runup.ui.components.RunupLazyColumn
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
+import com.example.runup.ui.theme.Black
 import com.example.runup.ui.theme.Gray
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
@@ -84,6 +92,7 @@ fun CourseRecommendationScreen(
             viewModel.confirmSort(sort)
         },
         openLoopDialog = {viewModel.openLoopDialog()},
+
         loopSelect = { isFirst ->
             viewModel.loopSelect(isFirst)
         },
@@ -117,6 +126,7 @@ private fun CourseRecommendationContent(
 ){
     val textLoopFirst :String = if(uiState.isLoop) "왕복" else "편도"
     val textLoopSecond :String = if(uiState.isLoop) "편도" else "왕복"
+
     val loopVisibleState = remember { MutableTransitionState(false) }
     loopVisibleState.targetState = uiState.showLoop
 
@@ -127,6 +137,9 @@ private fun CourseRecommendationContent(
     ) {
         Column(
         ){
+            Box(){
+
+            }
             TopBar(onBackClick = onBackClick, onMenuClick = onMenuClick)
             Box(
                 modifier = Modifier
@@ -291,6 +304,16 @@ private fun RecommendButton(
 
         }
     }
+
+
+    if (uiState.showDistanceDialog) {
+        DistanceGoalSettingDialog(
+            range = 0..100,
+            startNumber = (uiState.goalDistance/100 + 1),
+            onConfirm = onDistanceConfirm,
+            onDismiss = onDistanceClose
+        )
+    }
 }
 
 
@@ -411,7 +434,7 @@ private fun InfoText(
             .padding(end = 10.dp)
     ){
         Text(
-            text = text,
+            text = "거리 계산 방법",
             fontSize = 22.sp,
             color = TextBlack,
         )
