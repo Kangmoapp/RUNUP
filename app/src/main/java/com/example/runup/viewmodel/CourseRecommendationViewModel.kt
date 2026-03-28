@@ -1,16 +1,12 @@
 package com.example.runup.viewmodel
 
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
-import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.google.android.gms.maps.model.LatLng
-import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,6 +110,10 @@ class CourseRecommendationViewModel @Inject constructor(
     fun openLoopDialog(){
         _uiState.update { it.copy(showLoop = true) }
     }
+    fun closeLoopDialog() {
+        _uiState.update { it.copy(showLoop = false) }
+    }
+
 
     fun loopSelect(isFirst: Boolean = true){
         if(isFirst) _uiState.update { it.copy(showLoop = false) }
