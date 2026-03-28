@@ -75,6 +75,10 @@ class CourseRecommendationViewModel @Inject constructor(
     fun openLoopDialog(){
         _uiState.update { it.copy(showLoop = true) }
     }
+    fun closeLoopDialog() {
+        _uiState.update { it.copy(showLoop = false) }
+    }
+
 
     fun loopSelect(isFirst: Boolean = true){
         if(isFirst) _uiState.update { it.copy(showLoop = false) }
