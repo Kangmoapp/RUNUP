@@ -11,6 +11,7 @@ import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
 import com.example.runup.domain.model.SortType
 import com.example.runup.service.GeminiHelper
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
@@ -30,7 +31,8 @@ class CourseDataSourceImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val courseBox: Box<CourseEntity>,
     private val geminiHelper: GeminiHelper,
-    private val gson: Gson // Hilt에서 주입
+    private val gson: Gson,
+    private val courseMapper: CourseMapper
 ) : CourseDataSource {
     // #1. [코스 병합 및 저장하는 함수]
     override suspend fun saveCourse(course: Course): AuthResult<Boolean> {
@@ -43,7 +45,7 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private suspend fun mergeAndSaveCourse(newCourse: Course){
-        val eps = 0.00006 // 6m
+        val eps = 0.0003 // 30m
         val margin = eps
         val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
 
@@ -320,20 +322,24 @@ class CourseDataSourceImpl @Inject constructor(
 
     // 사용자 위치와 가장 가까운 시작점 찾기
     private suspend fun findNearestStartPoints(userLoc: GeoPoint): List<Pair<Course, GeoPoint>> {
-        val maxRadius = 0.005 // 최대 500m
-        val docs = firestore.collection("Course")
-            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
-            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
-            .get().await()
+        val maxRadius = 0.005 // 약 500m 내외의 위경도 오차 범위
 
-        val allCandidates = docs.toObjects(Course::class.java).filter {
-            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
-        }
+        // ObjectBox 쿼리: 지리적 영역(Bounding Box) 필터링
+        val query = courseBox.query()
+            .greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            .less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            .greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            .less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
+            .build()
 
+        val candidates = query.find()
+        query.close()
         //코스, 시작좌표, 내위치에서 시작점까지의 거리를 담는 리스트
         val startPoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
 
-        allCandidates.forEach { course ->
+        candidates.forEach { entity ->
+            val course = courseMapper.toDomain(entity) // 매퍼 사용하여 복원
+
             course.locationPoints.forEach { node ->
                 val dist = calculateDistance(userLoc, node.locationPoint)
                 if (dist <= 500.0) { // 500m 이내인 모든 좌표 후보군
@@ -344,7 +350,7 @@ class CourseDataSourceImpl @Inject constructor(
 
         // 거리순 정렬 후, 동일 코스 내 중복 시작점 제거(가장 가까운 것만) 및 최대 5개 추출
         return startPoints.sortedBy { it.third }
-            .distinctBy { it.first.id } // 한 코스당 가장 가까운 지점 1개만 선택
+            .distinctBy { it.first.id }
             .take(3)
             .map { it.first to it.second }
     }
@@ -358,30 +364,38 @@ class CourseDataSourceImpl @Inject constructor(
         userLoc: GeoPoint,
         sortType: SortType
     ): List<Pair<Course, GeoPoint>> {
-        val maxRadius = 0.005 // 최대 500m 범위
-        val docs = firestore.collection("Course")
-            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
-            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
-            .get().await()
+        val maxRadius = 0.005 // 약 500m 내외의 위경도 오차 범위
 
-        val allCandidates = docs.toObjects(Course::class.java).filter {
-            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
-        }
+        // 1. ObjectBox 쿼리: 사용자 주변 영역(Bounding Box)에 걸쳐 있는 코스들 1차 필터링
+        val query = courseBox.query()
+            .greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            .less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            .greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            .less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
+            .build()
+
+        val candidates = query.find()
+        query.close()
 
         // 코스, 시작점, 특징점수를 한꺼번에 담을 리스트
         val featurePoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
 
-        allCandidates.forEach { course ->
+        candidates.forEach { entity ->
+            // CourseMapper를 사용하여 DB 엔티티를 도메인 모델(Course)로 복원
+            val course = courseMapper.toDomain(entity)
+
+            // 해당 코스의 점수 확인 (SortType에 따라 선택)
+            val targetScore = when (sortType) {
+                SortType.BRIGHT -> course.scores.brightScore
+                SortType.PEOPLE -> course.scores.crowdedScore
+                SortType.DIFFICULTY -> course.scores.hardScore
+                else -> 0.0
+            }
+
+            // 코스 내의 모든 포인트를 확인하여 사용자 위치와 500m 이내인 것들 수집
             course.locationPoints.forEach { node ->
                 val dist = calculateDistance(userLoc, node.locationPoint)
-                if (dist <= 500.0) { // 500m 이내인 코스만 대상으로 함
-                    // 인덱스에 따라 정렬 기준 점수(score)를 Triple의 세 번째 인자로 설정
-                    val targetScore = when (sortType) {
-                        SortType.BRIGHT -> course.scores.brightScore
-                        SortType.PEOPLE -> course.scores.crowdedScore
-                        SortType.DIFFICULTY -> course.scores.hardScore
-                        else -> 0.0
-                    }
+                if (dist <= 500.0) {
                     featurePoints.add(Triple(course, node.locationPoint, targetScore))
                 }
             }
@@ -596,7 +610,7 @@ class CourseDataSourceImpl @Inject constructor(
         return GeoPoint((minLat + maxLat) / 2.0, (minLng + maxLng) / 2.0)
     }
 
-
+    /*
     override suspend fun startRealtimeSync() {
         Log.d("RUNUP_SYNC", "🚀 Firestore 실시간 동기화 시작...")
 
@@ -673,4 +687,5 @@ class CourseDataSourceImpl @Inject constructor(
                 Log.d("RUNUP_SYNC", "현재 로컬 DB 코스 총 개수: ${courseBox.count()}")
             }
     }
+    */
 }

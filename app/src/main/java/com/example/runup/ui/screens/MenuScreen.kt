@@ -22,7 +22,7 @@ import com.example.runup.ui.theme.TextWhite
 @Preview
 @Composable
 fun PreviewMenuScreen(){
-    MenuScreen({},{},{},{},{},{},{})
+    MenuScreen({},{},{},{},{},{},{}, {})
 }
 
 @Composable
@@ -34,6 +34,7 @@ fun MenuScreen(
     onHelpClick:()->Unit,
     onCommunityClick:()->Unit,
     onMypageClick:()->Unit,
+    onLocalDBClick:()->Unit,
 ){
     Surface(
         modifier = Modifier
@@ -49,6 +50,7 @@ fun MenuScreen(
             MenuText(text = "도움말",onClick = onHelpClick)
             MenuText(text = "커뮤니티",onClick = onCommunityClick)
             MenuText(text = "마이페이지",onClick = onMypageClick)
+            MenuText(text = "로컬데이터", onClick = onLocalDBClick)
         }
     }
 }

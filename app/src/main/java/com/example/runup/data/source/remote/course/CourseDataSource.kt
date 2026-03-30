@@ -23,6 +23,6 @@ interface CourseDataSource {
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>
 
-    suspend fun startRealtimeSync()
+    //suspend fun startRealtimeSync()
 
 }
