@@ -7,7 +7,6 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import androidx.credentials.CustomCredential
 import androidx.credentials.exceptions.GetCredentialException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -38,24 +37,12 @@ class GoogleAuthManager @Inject constructor() {
 
         scope.launch {
             try {
-                Log.d("GoogleLogin", "2. getCredential 호출 직전")
                 val result = credentialManager.getCredential(context = context, request = request)
-                Log.d("GoogleLogin", "3. 결과 받음: ${result.credential.type}")
                 val credential = result.credential
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val idToken = googleIdTokenCredential.idToken
 
-                if (credential is CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-
-                    Log.d("GoogleLogin", "4. 조건 일치! 토큰 추출 시작")
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
-                    val idToken = googleIdTokenCredential.idToken
-
-                    Log.d("GoogleLogin", "5. 토큰 추출 성공: ${idToken.take(10)}...") // 보안상 앞부분만 출력
-                    onTokenReceived(idToken)
-                } else {
-                    // 만약 이 로그가 찍힌다면 조건문 설정이 잘못된 것입니다.
-                    Log.e("GoogleLogin", "4. 실패: 타입이 일치하지 않음. 실제 타입: ${credential.type}")
-                }
+                onTokenReceived(idToken)
             } catch (e: GetCredentialException) {
                 Log.e("GoogleLogin", "Credential 에러: ${e.message}")
             } catch (e: Exception) { // 모든 에러를 다 잡도록 추가
@@ -63,8 +50,6 @@ class GoogleAuthManager @Inject constructor() {
             }
         }
     }
-
-    // GoogleAuthManager.kt 내부에 추가
 
     suspend fun signOut(context: Context) {
         try {

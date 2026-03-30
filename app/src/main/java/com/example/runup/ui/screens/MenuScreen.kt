@@ -12,17 +12,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.TextWhite
+import com.example.runup.viewmodel.MenuViewModel
 
 @Preview
 @Composable
 fun PreviewMenuScreen(){
-    MenuScreen({},{},{},{},{},{},{}, {})
+    MenuScreen({},{},{},{},{},{},{}, {}, {})
 }
 
 @Composable
@@ -35,7 +38,11 @@ fun MenuScreen(
     onCommunityClick:()->Unit,
     onMypageClick:()->Unit,
     onLocalDBClick:()->Unit,
+    onLogoutClick:()->Unit,
+    viewModel: MenuViewModel = hiltViewModel()
 ){
+    val context = LocalContext.current
+
     Surface(
         modifier = Modifier
             .fillMaxSize(),
@@ -51,6 +58,11 @@ fun MenuScreen(
             MenuText(text = "커뮤니티",onClick = onCommunityClick)
             MenuText(text = "마이페이지",onClick = onMypageClick)
             MenuText(text = "로컬데이터", onClick = onLocalDBClick)
+            MenuText(text = "로그아웃", onClick = {
+                viewModel.signOutWithGoogle(context) {
+                    onLogoutClick()
+                }
+            })
         }
     }
 }

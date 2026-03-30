@@ -67,16 +67,4 @@ class StartViewModel @Inject constructor(
             }
         }
     }
-
-    fun forceSignOut(context: Context) {
-        viewModelScope.launch {
-            try {
-                googleAuthManager.signOut(context) // 이미 만들어진 signOut이 있다면 호출
-                Log.d("test", "강제 로그아웃 성공 - 이제 다시 로그인해 보세요.")
-            } catch (e: Exception) {
-                Log.e("test", "로그아웃 실패: ${e.message}")
-            }
-        }
-    }
-
 }
