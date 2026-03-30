@@ -11,6 +11,7 @@ enum class Screen {
     COMMUNITY_DETAIL,
     POST_UPLOAD,
     LOADING,
-
-    RECOMMEND
+    RECOMMEND,
+    RUNNINGTEST,
+    LOCALDB,
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.viewbinding.BuildConfig
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.MyObjectBox
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.gson.Gson
 import dagger.Module
 import dagger.Provides
@@ -40,4 +41,11 @@ object ObjectBoxModule {
     @Provides
     @Singleton
     fun provideGson(): Gson = Gson()
+
+    // 2. CourseMapper 자체를 Singleton으로 제공합니다.
+    @Provides
+    @Singleton
+    fun provideCourseMapper(gson: Gson): CourseMapper {
+        return CourseMapper(gson)
+    }
 }

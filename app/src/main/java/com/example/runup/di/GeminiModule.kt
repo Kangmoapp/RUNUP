@@ -3,6 +3,7 @@ package com.example.runup.di
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.service.EmbeddingHelper
 import com.example.runup.service.GeminiHelper
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.gson.Gson
 import dagger.Module
 import dagger.Provides
@@ -20,9 +21,10 @@ object GeminiModule {
     fun provideGeminiHelper(
         embeddingHelper: EmbeddingHelper,
         courseBox: Box<CourseEntity>,
-        gson: Gson
+        gson: Gson,
+        courseMapper: CourseMapper
     ): GeminiHelper {
         // 이제 GemmaHelper를 만들 때 모든 재료를 다 던져줍니다.
-        return GeminiHelper(embeddingHelper, courseBox, gson)
+        return GeminiHelper(embeddingHelper, courseBox, gson, courseMapper)
     }
 }

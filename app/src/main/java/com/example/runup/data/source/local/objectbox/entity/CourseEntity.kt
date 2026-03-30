@@ -11,17 +11,24 @@ data class CourseEntity(
     @Id var id: Long = 0,
 
     @Unique(onConflict = ConflictStrategy.REPLACE)
-    var firebaseId: String? = null, // Firestore 문서 ID
+    var firebaseId: String? = null,
 
-    // 💡 기존의 Course 객체를 JSON 문자열로 변환해서 저장할 공간
-    var courseDataJson: String? = null,
+    // Course의 핵심 필드들을 밖으로 꺼냅니다 (검색 가능하게!)
+    var distance: Int = 0,
+    var minLat: Double = 0.0,
+    var maxLat: Double = 0.0,
+    var minLng: Double = 0.0,
+    var maxLng: Double = 0.0,
 
+    // 복잡한 객체(Scores)나 리스트(Node)만 JSON으로 유지
+    var locationPointsJson: String? = null,
+    var scoresJson: String? = null,
+
+    // AI/검색용 필드
     var embeddingText: String? = null,
-
     var address: String? = null,
     var landmark: String? = null,
 
-    // 벡터 검색용 (384 차원)
     @HnswIndex(dimensions = 384)
     var vector: FloatArray? = null
 )

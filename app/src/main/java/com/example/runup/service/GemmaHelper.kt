@@ -4,8 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
-import com.example.runup.data.source.remote.course.CourseDataSource
 import com.example.runup.domain.model.Course
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.gson.Gson
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
@@ -19,7 +19,8 @@ class GemmaHelper(
     private val context: Context,
     private val embeddingHelper: EmbeddingHelper,
     private val courseBox: Box<CourseEntity>,
-    private val gson: Gson // Hilt에서 주입
+    private val gson: Gson, // Hilt에서 주입
+    private val courseMapper: CourseMapper,
 ) {
     private var llmInference: LlmInference? = null
     private var llmInferenceSession: LlmInferenceSession? = null
@@ -181,9 +182,7 @@ class GemmaHelper(
 
             // 5단계: ID로 로컬 DB에서 실제 Course 객체 찾기
             val finalCourse = topEntities.find { it.firebaseId == recommendedId }?.let { entity ->
-                entity.courseDataJson?.let { json ->
-                    gson.fromJson(json, Course::class.java)
-                }
+                courseMapper.toDomain(entity)
             }
 
             if (finalCourse != null) {

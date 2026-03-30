@@ -1,6 +1,7 @@
 package com.example.runup.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
@@ -53,6 +54,7 @@ class StartViewModel @Inject constructor(
     private fun signInWithGoogle(idToken: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             val result = loginUseCase.invoke(idToken)
+            Log.d("test", "${result}")
             when (result) {
                 is AuthResult.Success -> {
                     updateUserLoginStatusUseCase(true)
@@ -62,6 +64,17 @@ class StartViewModel @Inject constructor(
                 is AuthResult.Fail -> {
                     _uiState.update { it.copy(isLoading = false, errorMessage = result.message) }
                 }
+            }
+        }
+    }
+
+    fun forceSignOut(context: Context) {
+        viewModelScope.launch {
+            try {
+                googleAuthManager.signOut(context) // 이미 만들어진 signOut이 있다면 호출
+                Log.d("test", "강제 로그아웃 성공 - 이제 다시 로그인해 보세요.")
+            } catch (e: Exception) {
+                Log.e("test", "로그아웃 실패: ${e.message}")
             }
         }
     }
