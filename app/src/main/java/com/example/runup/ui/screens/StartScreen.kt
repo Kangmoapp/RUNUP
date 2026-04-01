@@ -79,20 +79,12 @@ fun StartScreen(
                 onSuccess = onHomeClick   // 로그인 성공 시 홈 이동
             )
         },
-        onHomeClick = onHomeClick,
-        hasLocationPermission = locationPermissionState.allPermissionsGranted,
-        onRequestPermission = {
-            locationPermissionState.launchMultiplePermissionRequest()
-        }
     )
 }
 
 @Composable
 private fun StartContent(
     onLoginClick:()->Unit,
-    onHomeClick: () -> Unit,
-    hasLocationPermission: Boolean,
-    onRequestPermission: () -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -196,8 +188,5 @@ private fun StartText(
 private fun PreviewStartContent() {
     StartContent(
         {},
-        onHomeClick = {},
-        hasLocationPermission = false,
-        onRequestPermission = {}
     )
 }

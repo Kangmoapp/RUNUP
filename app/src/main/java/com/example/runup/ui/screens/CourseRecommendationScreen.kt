@@ -6,7 +6,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,8 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
@@ -47,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.MyGoogleMap
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Gray
@@ -57,8 +55,6 @@ import com.example.runup.ui.theme.TextWhite
 import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.CourseRecommendationUiState
 import com.example.runup.viewmodel.CourseRecommendationViewModel
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapUiSettings
 import kotlin.Boolean
 
 @Composable
@@ -117,7 +113,8 @@ private fun CourseRecommendationContent(
 
     val loopVisibleState = remember { MutableTransitionState(false) }
     loopVisibleState.targetState = uiState.showLoop
-
+    val hasCourse = uiState.recommendedCourses.isNotEmpty()
+    val firstCourse = uiState.recommendedCourses.firstOrNull()
     Surface(
         modifier = Modifier
             .fillMaxSize(),
@@ -134,7 +131,45 @@ private fun CourseRecommendationContent(
                     .height(550.dp)
                     .fillMaxWidth()
             ){
-                MapHorizontalPager()
+                Box{
+                    uiState.cameraLocation?.let { location ->
+                        MyGoogleMap(
+                            cameraPosition = location,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(color = White),
+                            isCourse = uiState.isRecommendClick,
+                            course = uiState.recommendedCourses
+                                .firstOrNull()
+                                ?.path
+                                ?.points
+                                ?: emptyList()
+                        )
+                    }
+                    if(uiState.isRecommendClick){
+                        Column(
+                            modifier = Modifier.padding(start = 18.dp, top = 18.dp)
+                        ){
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .height(30.dp)
+                                    .width(70.dp)
+                                    .background(
+                                        color = White.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(5.dp)
+                                    )
+                            ){
+                                Text(
+                                    text = "코스 ${uiState.courseIndex+1}",
+                                    color = TextGray,
+                                    fontSize = 20.sp
+                                )
+                            }
+                        }
+
+                    }
+                }
                 RecommendButton(
                     modifier = Modifier
                         .align(Alignment.BottomCenter),
@@ -419,6 +454,7 @@ private fun InfoText(
     }
 }
 
+/*
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MapHorizontalPager() {
@@ -436,48 +472,9 @@ private fun MapHorizontalPager() {
     }
 }
 
-@Composable
-private fun CourseRecommendationGoogleMap(
-    pageIndex:Int,
-    isRecommendClick: Boolean = true
-){
-    Box(
+ */
 
-    ){
-        GoogleMap(
-            modifier = Modifier
-                .background(color = Gray)
-                .fillMaxSize(),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = true,
-                myLocationButtonEnabled = true
-            )
-        )
-        if(isRecommendClick){
-            Column(
-                modifier = Modifier.padding(start = 18.dp, top = 18.dp)
-            ){
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .height(30.dp)
-                        .width(70.dp)
-                        .background(
-                            color = White.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(5.dp)
-                        )
-                ){
-                    Text(
-                        text = "코스 ${pageIndex}",
-                        color = TextGray,
-                        fontSize = 20.sp
-                    )
-                }
-            }
 
-        }
-    }
-}
 
 @Preview
 @Composable
