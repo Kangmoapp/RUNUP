@@ -33,9 +33,10 @@ fun CommunityDetailScreen(
     viewModel: CommunityViewModel = hiltViewModel()
 ) {
     var commentText by remember { mutableStateOf("") }
-    val post = viewModel.selectedPost
-    val comments = viewModel.comments
-    val isLoading = viewModel.isLoading
+    val uiState by viewModel.communityUiState.collectAsState()
+    val post = uiState.selectedPost
+    val comments = uiState.comments
+    val isLoading = uiState.isLoading
 
     // 스크롤 상태 기억 (데이터가 변경되어도 위치 유지)
     val listState = rememberLazyListState()
@@ -149,7 +150,7 @@ fun CommunityDetailScreen(
                     }
 
                     // 이미지 영역
-                    items(post.images) { imageUrl ->
+                    items(post.locationImages) { imageUrl ->
                         AsyncImage(
                             model = imageUrl,
                             contentDescription = null,

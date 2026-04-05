@@ -148,9 +148,22 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-            val document = firestore.collection("UserData").document(userid).get().await()
-            val userData = document.toObject(UserData::class.java) ?: UserData()
-            AuthResult.Success(userData)
+
+            // 1. UserData 문서 가져오기
+            val userDocRef = firestore.collection("UserData").document(userid)
+            val userSnapshot = userDocRef.get().await()
+            val userData = userSnapshot.toObject(UserData::class.java) ?: UserData()
+
+            // 2. 'runs' 서브 컬렉션 데이터 가져오기
+            val runsSnapshot = userDocRef.collection("runs").get().await()
+            val runRecords = runsSnapshot.toObjects(RunRecord::class.java) // 리스트로 변환
+
+            // 3. UserData 객체에 리스트 주입 (UserData 클래스에 records 필드가 있다고 가정)
+            val finalUserData = userData.copy(runs = runRecords)
+
+            Log.d("runrecord", "총 ${runRecords.size}개의 기록 로드 완료: $finalUserData")
+            AuthResult.Success(finalUserData)
+
         } catch (e: Exception) {
             AuthResult.Fail("사용자 정보 로드 실패", e)
         }
