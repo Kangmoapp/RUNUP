@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -59,8 +60,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.util.lerp
+import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.google.firebase.firestore.GeoPoint
-import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,11 +72,25 @@ fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel()
 ) {
     val communityState by viewModel.communityUiState.collectAsState()
-    val scrollState = rememberLazyListState()
+
+    val scrollState = rememberLazyListState(
+        initialFirstVisibleItemIndex = viewModel.savedScrollIndex,
+        initialFirstVisibleItemScrollOffset = viewModel.savedScrollOffset
+    )
 
     // 처음 진입 시 데이터 호출
     LaunchedEffect(Unit) {
         viewModel.fetchPosts(isInitial = true) // 포스트 불러옴
+    }
+
+    // 스크롤 저장용 추가
+    LaunchedEffect(scrollState.isScrollInProgress) {
+        if (!scrollState.isScrollInProgress) {
+            viewModel.saveScrollState(
+                scrollState.firstVisibleItemIndex,
+                scrollState.firstVisibleItemScrollOffset
+            )
+        }
     }
 
     // 무한 스크롤 감지 (기존 유지)
@@ -120,7 +135,7 @@ fun CommunityScreen(
             },
             modifier = Modifier.fillMaxSize().padding(padding)
         ){
-            // 1. 메인 콘텐츠: 초기 로딩이 끝났을 때만 보여줌
+            // 메인 콘텐츠: 초기 로딩이 끝났을 때만 보여줌
             if (!communityState.isInitialLoading) {
                 LazyColumn(
                     state = scrollState,
@@ -412,13 +427,21 @@ fun PostItem(
             }
         }
 
-// 내용 영역
+        // 내용 영역
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row {
                 Text(post.authorName, color = WhiteTextColor, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(post.content, color = WhiteTextColor)
             }
+
+            // [추가] 날짜 영역
+            Spacer(modifier = Modifier.height(4.dp)) // 내용과 날짜 사이 간격
+            Text(
+                text = formatTimestamp(post.timestamp),
+                color = WhiteTextColor.copy(alpha = 0.5f), // 날짜는 약간 흐릿하게
+                fontSize = 12.sp
+            )
         }
     }
 

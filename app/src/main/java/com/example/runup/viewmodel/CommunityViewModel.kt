@@ -75,6 +75,16 @@ class CommunityViewModel @Inject constructor(
     var selectedCommonImageUris by mutableStateOf<List<Uri>>(emptyList())
         private set
 
+    var savedScrollIndex by mutableStateOf(0)
+        private set
+    var savedScrollOffset by mutableStateOf(0)
+        private set
+
+    fun saveScrollState(index: Int, offset: Int) {
+        savedScrollIndex = index
+        savedScrollOffset = offset
+    }
+
 
     fun fetchPosts(isInitial: Boolean = false, forceRefresh: Boolean = false) {
         // 처음이면서 post가 존재하는 상태이면 굳이 fetchPost를 실행하지 않음
