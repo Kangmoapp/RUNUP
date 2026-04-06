@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -64,7 +66,6 @@ fun CourseRecommendationScreen(
     viewModel: CourseRecommendationViewModel = hiltViewModel()
 ){
     val uiState by viewModel.uiState.collectAsState()
-
     CourseRecommendationContent(
         uiState = uiState,
         onDistanceClick = {viewModel.openDistanceDialog()},
@@ -83,7 +84,10 @@ fun CourseRecommendationScreen(
         onBackClick = onBackClick,
         onMenuClick = onMenuClick,
         onSearchClick = {viewModel.onSearchClick()},
+        addIndex = {viewModel.addIndex()},
+        subtractIndex = {viewModel.subtractIndex()}
     )
+
 
     DisposableEffect(Unit) {
         onDispose {
@@ -107,6 +111,8 @@ private fun CourseRecommendationContent(
     onBackClick:()->Unit,
     onMenuClick:()->Unit,
     onSearchClick:()->Unit,
+    addIndex:()->Unit,
+    subtractIndex:()->Unit
 ){
     val textLoopFirst :String = if(uiState.isLoop) "왕복" else "편도"
     val textLoopSecond :String = if(uiState.isLoop) "편도" else "왕복"
@@ -115,6 +121,15 @@ private fun CourseRecommendationContent(
     loopVisibleState.targetState = uiState.showLoop
     val hasCourse = uiState.recommendedCourses.isNotEmpty()
     val firstCourse = uiState.recommendedCourses.firstOrNull()
+
+    val RecommendBtnText =
+        if(uiState.isRecommendClick){
+            "코스 선택"
+        }
+        else {
+        "코스 추천 받기"
+        }
+
     Surface(
         modifier = Modifier
             .fillMaxSize(),
@@ -140,11 +155,23 @@ private fun CourseRecommendationContent(
                                 .background(color = White),
                             isCourse = uiState.isRecommendClick,
                             course = uiState.recommendedCourses
-                                .firstOrNull()
+                                .getOrNull(uiState.courseIndex)
                                 ?.path
                                 ?.points
                                 ?: emptyList()
                         )
+                    }
+                    if(uiState.isLoading){
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(450.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color.White.copy(alpha = 0.5f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
                     if(uiState.isRecommendClick){
                         Column(
@@ -167,10 +194,31 @@ private fun CourseRecommendationContent(
                                 )
                             }
                         }
-
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 350.dp,start = 18.dp, end = 18.dp)
+                                .fillMaxWidth()
+                        ){
+                            RecommendButton(
+                                text = "이전",
+                                modifier = Modifier
+                                    .height(100.dp)
+                                    .width(80.dp),
+                                onClick = subtractIndex
+                            )
+                            Spacer(Modifier.weight(1f))
+                            RecommendButton(
+                                text = "다음",
+                                modifier = Modifier
+                                    .height(100.dp)
+                                    .width(80.dp),
+                                onClick = addIndex
+                            )
+                        }
                     }
                 }
                 RecommendButton(
+                    text = RecommendBtnText,
                     modifier = Modifier
                         .align(Alignment.BottomCenter),
                     onClick = onSearchClick
@@ -299,6 +347,7 @@ private fun CategoryDialog(
 }
 @Composable
 private fun RecommendButton(
+    text:String,
     modifier:Modifier = Modifier,
     onClick:()->Unit
 ){
@@ -318,10 +367,10 @@ private fun RecommendButton(
                     color = PointColor,
                     shape = RoundedCornerShape(10.dp)
                 )
-                .clickable{onClick()}
+                .clickable { onClick() }
         ){
             Text(
-                text = "코스 추천 받기",
+                text = text,
                 fontSize = 25.sp
             )
 
@@ -355,7 +404,7 @@ private fun TextBottom(
             InfoText(text = text,
                 modifier = Modifier
                     .background(color = White, shape = RoundedCornerShape(5.dp))
-                    .clickable { onClick()}
+                    .clickable { onClick() }
             )
         }
 
@@ -454,28 +503,6 @@ private fun InfoText(
     }
 }
 
-/*
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun MapHorizontalPager() {
-    val pageCount = 4
-    val pagerState = rememberPagerState(pageCount = { pageCount }) //
-
-    Column(Modifier.fillMaxSize()
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { pageIndex ->
-            CourseRecommendationGoogleMap(pageIndex)
-        }
-    }
-}
-
- */
-
-
-
 @Preview
 @Composable
 private fun PreviewCourseRecommendationContent(){
@@ -483,6 +510,6 @@ private fun PreviewCourseRecommendationContent(){
         uiState = CourseRecommendationUiState(
             showLoop= false,
         ),
-        {},{},{},{}, {},{},{},{},{},{},{},
+        {},{},{},{},{},{}, {},{},{},{},{},{},{},
     )
 }

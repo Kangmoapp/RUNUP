@@ -12,6 +12,7 @@ import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,8 @@ data class CourseRecommendationUiState(
     val showSortDialog: Boolean = false,
     val isRecommendClick: Boolean = false,
     val recommendedCourses: List<CourseRecommendation> = emptyList(),
-    val courseIndex: Int = 0
+    val courseIndex: Int = 0,
+    val isLoading:Boolean = false
 )
 
 @HiltViewModel
@@ -49,25 +51,20 @@ class CourseRecommendationViewModel @Inject constructor(
         startCurrentLocationTracking()
     }
 
-    /**
-     * cameraLocation 규칙
-     * - isRecommendClick == false -> currentLocation
-     * - isRecommendClick == true  -> recommendedCourses[0].path.centerPoint
-     */
     private fun resolveCameraLocation(state: CourseRecommendationUiState): LatLng? {
         return if (state.isRecommendClick) {
-            state.recommendedCourses.firstOrNull()?.path?.centerPoint?.let {
-                LatLng(it.latitude, it.longitude)
-            }
+            state.recommendedCourses
+                .getOrNull(state.courseIndex)
+                ?.path
+                ?.centerPoint
+                ?.let {
+                    LatLng(it.latitude, it.longitude)
+                }
         } else {
             state.currentLocation
         }
     }
 
-    /**
-     * 공통 상태 업데이트 함수
-     * state를 바꾼 뒤, cameraLocation을 항상 규칙에 맞게 다시 계산함
-     */
     private fun updateState(
         transform: (CourseRecommendationUiState) -> CourseRecommendationUiState
     ) {
@@ -120,55 +117,67 @@ class CourseRecommendationViewModel @Inject constructor(
     }
 
     fun onSearchClick() {
-        updateState {
-            it.copy(
-                isRecommendClick = true
-            )
+        if(_uiState.value.isRecommendClick){
+
         }
+        else{
+            updateState {
+                it.copy(
+                    isLoading = true
+                )
+            }
 
-        val location = _uiState.value.currentLocation ?: run {
-            Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
-            return
-        }
+            val location = _uiState.value.currentLocation ?: run {
+                Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
+                return
+            }
+            viewModelScope.launch {
+                val result = getRecommendedCourseUseCase.invoke(
+                    _uiState.value.goalDistance,
+                    // GeoPoint(location.latitude, location.longitude),
+                    GeoPoint(35.88948381055103, 128.6095353131536),
+                    _uiState.value.isLoop,
+                    _uiState.value.currentSort,
+                    3
+                )
 
-        viewModelScope.launch {
-            val result = getRecommendedCourseUseCase.invoke(
-                _uiState.value.goalDistance,
-                // GeoPoint(location.latitude, location.longitude),
-                GeoPoint(35.88948381055103, 128.6095353131536),
-                _uiState.value.isLoop,
-                _uiState.value.currentSort,
-                3
-            )
+                when (result) {
+                    is AuthResult.Success -> {
+                        Log.d("RUNUP_TEST", "총 추천 개수: ${result.data.size}")
 
-            when (result) {
-                is AuthResult.Success -> {
-                    Log.d("RUNUP_TEST", "총 추천 개수: ${result.data.size}")
+                        updateState {
+                            it.copy(
+                                recommendedCourses = result.data,
+                                courseIndex = 0
+                            )
+                        }
 
-                    updateState {
-                        it.copy(
-                            recommendedCourses = result.data,
-                            courseIndex = 0
-                        )
-                    }
+                        Log.d("RUNUP_TEST", "추천 코스 목록: ${_uiState.value.recommendedCourses}")
 
-                    Log.d("RUNUP_TEST", "추천 코스 목록: ${_uiState.value.recommendedCourses}")
+                        result.data.forEachIndexed { i, item ->
+                            Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
+                            Log.d(
+                                "RUNUP_TEST",
+                                "    -> 거리: ${item.path.distance}m | 좌표수: ${item.path.points.size} | 중심: ${item.path.centerPoint}"
+                            )
 
-                    result.data.forEachIndexed { i, item ->
-                        Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
-                        Log.d(
-                            "RUNUP_TEST",
-                            "    -> 거리: ${item.path.distance}m | 좌표수: ${item.path.points.size} | 중심: ${item.path.centerPoint}"
-                        )
+                            item.path.points.firstOrNull()?.let {
+                                Log.d("RUNUP_TEST", "    -> 시작점 체크: ${it.latitude}, ${it.longitude}")
+                            }
+                        }
 
-                        item.path.points.firstOrNull()?.let {
-                            Log.d("RUNUP_TEST", "    -> 시작점 체크: ${it.latitude}, ${it.longitude}")
+                        delay(1500)
+                        updateState {
+                            it.copy(
+                                isRecommendClick = true,
+                                isLoading = false
+                            )
                         }
                     }
-                }
 
-                is AuthResult.Fail -> {
-                    Log.e("RUNUP_TEST", "에러 발생: ${result.message}")
+                    is AuthResult.Fail -> {
+                        Log.e("RUNUP_TEST", "에러 발생: ${result.message}")
+                    }
                 }
             }
         }
@@ -184,17 +193,6 @@ class CourseRecommendationViewModel @Inject constructor(
                 recommendedCourses = emptyList(),
                 courseIndex = 0
             )
-        }
-    }
-
-    /**
-     * 추천 코스 인덱스 변경 시
-     * cameraLocation 규칙이 "recommendedCourses[0]"로 고정이라면
-     * 여기서는 cameraLocation이 항상 첫 번째 코스 중심으로 유지됨
-     */
-    fun setCourseIndex(index: Int) {
-        updateState {
-            it.copy(courseIndex = index)
         }
     }
 
@@ -253,5 +251,19 @@ class CourseRecommendationViewModel @Inject constructor(
                 currentSort = sortType
             )
         }
+    }
+
+    fun addIndex(){
+        if(_uiState.value.courseIndex < (_uiState.value.recommendedCourses.size-1))
+            updateState{it.copy(courseIndex = _uiState.value.courseIndex+1)}
+        else
+            updateState{it.copy(courseIndex = 0)}
+    }
+
+    fun subtractIndex(){
+        if(_uiState.value.courseIndex >0)
+            updateState{it.copy(courseIndex = _uiState.value.courseIndex-1)}
+        else
+            updateState{it.copy(courseIndex = _uiState.value.recommendedCourses.size-1)}
     }
 }
