@@ -11,7 +11,8 @@ data class Post(
     val runRecord: RunRecord? = null,
     val likes: Int = 0,
     val commentCount: Int = 0,
-    val comments: List<Comment> = emptyList()
+    val comments: List<Comment> = emptyList(),
+    val timestamp: Long = 0L
 )
 
 data class Comment(
