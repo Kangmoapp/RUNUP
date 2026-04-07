@@ -38,11 +38,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.CenterBar
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.MyGoogleMap
 import com.example.runup.ui.components.TopBar
 
 import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.theme.BackGroudColor
-import com.example.runup.ui.theme.MapSize
 import com.example.runup.ui.theme.MapSpaceSize
 import com.example.runup.ui.theme.White
 import com.example.runup.ui.theme.TextWhite
@@ -51,9 +51,7 @@ import com.example.runup.viewmodel.HomeViewModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
 import com.google.maps.android.compose.rememberCameraPositionState
 
 @Preview
@@ -132,18 +130,14 @@ private fun HomeContent(
             Box(
                 modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp)
             ){
-                GoogleMap(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(color = White)
-                        .MapSize(),
-                    cameraPositionState = cameraPositionState,
-                    properties = mapProperties,
-                    uiSettings = MapUiSettings(
-                        zoomControlsEnabled = true,
-                        myLocationButtonEnabled = true
+                uiState.currentLocation?.let { location ->
+                    MyGoogleMap(
+                        cameraPosition = location,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(color = White)
                     )
-                )
+                }
                 BunIconButton(
                     onClick = onRunClick,
                     modifier = Modifier

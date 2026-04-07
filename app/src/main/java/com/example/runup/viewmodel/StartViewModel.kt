@@ -50,18 +50,27 @@ class StartViewModel @Inject constructor(
 
         }
     }
+    private fun successLogin(){
+
+    }
 
     private fun signInWithGoogle(idToken: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
+
+            Log.d("Delaytohome", "signInWithGoogle 호출")
             val result = loginUseCase.invoke(idToken)
             Log.d("test", "${result}")
             when (result) {
                 is AuthResult.Success -> {
+
+                    Log.d("Delaytohome", "signInWithGoogle 성공")
                     updateUserLoginStatusUseCase(true)
                     _uiState.update { it.copy(isLoading = false) }
                     onSuccess()
                 }
                 is AuthResult.Fail -> {
+                    Log.e("Delaytohome", "signInWithGoogle 실패: ${result.message}")
+                    Log.d("Delaytohome", "token: $idToken")
                     _uiState.update { it.copy(isLoading = false, errorMessage = result.message) }
                 }
             }

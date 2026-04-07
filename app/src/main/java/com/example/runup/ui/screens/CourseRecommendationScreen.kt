@@ -6,7 +6,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,10 +20,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -47,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.DistanceGoalSettingDialog
+import com.example.runup.ui.components.MyGoogleMap
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Gray
@@ -57,8 +57,6 @@ import com.example.runup.ui.theme.TextWhite
 import com.example.runup.ui.theme.White
 import com.example.runup.viewmodel.CourseRecommendationUiState
 import com.example.runup.viewmodel.CourseRecommendationViewModel
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapUiSettings
 import kotlin.Boolean
 
 @Composable
@@ -68,7 +66,6 @@ fun CourseRecommendationScreen(
     viewModel: CourseRecommendationViewModel = hiltViewModel()
 ){
     val uiState by viewModel.uiState.collectAsState()
-
     CourseRecommendationContent(
         uiState = uiState,
         onDistanceClick = {viewModel.openDistanceDialog()},
@@ -87,7 +84,10 @@ fun CourseRecommendationScreen(
         onBackClick = onBackClick,
         onMenuClick = onMenuClick,
         onSearchClick = {viewModel.onSearchClick()},
+        addIndex = {viewModel.addIndex()},
+        subtractIndex = {viewModel.subtractIndex()}
     )
+
 
     DisposableEffect(Unit) {
         onDispose {
@@ -111,12 +111,24 @@ private fun CourseRecommendationContent(
     onBackClick:()->Unit,
     onMenuClick:()->Unit,
     onSearchClick:()->Unit,
+    addIndex:()->Unit,
+    subtractIndex:()->Unit
 ){
     val textLoopFirst :String = if(uiState.isLoop) "왕복" else "편도"
     val textLoopSecond :String = if(uiState.isLoop) "편도" else "왕복"
 
     val loopVisibleState = remember { MutableTransitionState(false) }
     loopVisibleState.targetState = uiState.showLoop
+    val hasCourse = uiState.recommendedCourses.isNotEmpty()
+    val firstCourse = uiState.recommendedCourses.firstOrNull()
+
+    val RecommendBtnText =
+        if(uiState.isRecommendClick){
+            "코스 선택"
+        }
+        else {
+        "코스 추천 받기"
+        }
 
     Surface(
         modifier = Modifier
@@ -134,8 +146,79 @@ private fun CourseRecommendationContent(
                     .height(550.dp)
                     .fillMaxWidth()
             ){
-                MapHorizontalPager()
+                Box{
+                    uiState.cameraLocation?.let { location ->
+                        MyGoogleMap(
+                            cameraPosition = location,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(color = White),
+                            isCourse = uiState.isRecommendClick,
+                            course = uiState.recommendedCourses
+                                .getOrNull(uiState.courseIndex)
+                                ?.path
+                                ?.points
+                                ?: emptyList()
+                        )
+                    }
+                    if(uiState.isLoading){
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(450.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color.White.copy(alpha = 0.5f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    if(uiState.isRecommendClick){
+                        Column(
+                            modifier = Modifier.padding(start = 18.dp, top = 18.dp)
+                        ){
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .height(30.dp)
+                                    .width(70.dp)
+                                    .background(
+                                        color = White.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(5.dp)
+                                    )
+                            ){
+                                Text(
+                                    text = "코스 ${uiState.courseIndex+1}",
+                                    color = TextGray,
+                                    fontSize = 20.sp
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .padding(top = 350.dp,start = 18.dp, end = 18.dp)
+                                .fillMaxWidth()
+                        ){
+                            RecommendButton(
+                                text = "이전",
+                                modifier = Modifier
+                                    .height(100.dp)
+                                    .width(80.dp),
+                                onClick = subtractIndex
+                            )
+                            Spacer(Modifier.weight(1f))
+                            RecommendButton(
+                                text = "다음",
+                                modifier = Modifier
+                                    .height(100.dp)
+                                    .width(80.dp),
+                                onClick = addIndex
+                            )
+                        }
+                    }
+                }
                 RecommendButton(
+                    text = RecommendBtnText,
                     modifier = Modifier
                         .align(Alignment.BottomCenter),
                     onClick = onSearchClick
@@ -264,6 +347,7 @@ private fun CategoryDialog(
 }
 @Composable
 private fun RecommendButton(
+    text:String,
     modifier:Modifier = Modifier,
     onClick:()->Unit
 ){
@@ -283,10 +367,10 @@ private fun RecommendButton(
                     color = PointColor,
                     shape = RoundedCornerShape(10.dp)
                 )
-                .clickable{onClick()}
+                .clickable { onClick() }
         ){
             Text(
-                text = "코스 추천 받기",
+                text = text,
                 fontSize = 25.sp
             )
 
@@ -320,7 +404,7 @@ private fun TextBottom(
             InfoText(text = text,
                 modifier = Modifier
                     .background(color = White, shape = RoundedCornerShape(5.dp))
-                    .clickable { onClick()}
+                    .clickable { onClick() }
             )
         }
 
@@ -419,66 +503,6 @@ private fun InfoText(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun MapHorizontalPager() {
-    val pageCount = 4
-    val pagerState = rememberPagerState(pageCount = { pageCount }) //
-
-    Column(Modifier.fillMaxSize()
-    ) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize()
-        ) { pageIndex ->
-            CourseRecommendationGoogleMap(pageIndex)
-        }
-    }
-}
-
-@Composable
-private fun CourseRecommendationGoogleMap(
-    pageIndex:Int,
-    isRecommendClick: Boolean = true
-){
-    Box(
-
-    ){
-        GoogleMap(
-            modifier = Modifier
-                .background(color = Gray)
-                .fillMaxSize(),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = true,
-                myLocationButtonEnabled = true
-            )
-        )
-        if(isRecommendClick){
-            Column(
-                modifier = Modifier.padding(start = 18.dp, top = 18.dp)
-            ){
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .height(30.dp)
-                        .width(70.dp)
-                        .background(
-                            color = White.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(5.dp)
-                        )
-                ){
-                    Text(
-                        text = "코스 ${pageIndex}",
-                        color = TextGray,
-                        fontSize = 20.sp
-                    )
-                }
-            }
-
-        }
-    }
-}
-
 @Preview
 @Composable
 private fun PreviewCourseRecommendationContent(){
@@ -486,6 +510,6 @@ private fun PreviewCourseRecommendationContent(){
         uiState = CourseRecommendationUiState(
             showLoop= false,
         ),
-        {},{},{},{}, {},{},{},{},{},{},{},
+        {},{},{},{},{},{}, {},{},{},{},{},{},{},
     )
 }
