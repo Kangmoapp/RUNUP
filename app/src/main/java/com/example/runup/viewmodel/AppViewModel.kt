@@ -1,5 +1,6 @@
 package com.example.runup.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
@@ -71,6 +72,7 @@ class AppViewModel @Inject constructor(
 
     fun DelayToHome(screen: Screen){
         viewModelScope.launch{
+            Log.d("Delaytohome", "DelayToHome 호출")
             _currentScreen.value = screen
             _isSplashLoading.value = true
             delay(2000)
