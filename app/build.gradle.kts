@@ -166,4 +166,7 @@ dependencies {
 
     // Hilt Worker용 Annotation Processor (KSP 권장)
     ksp(libs.androidx.hilt.compiler)
+
+    //아이콘 확장팩 추가
+    implementation("androidx.compose.material:material-icons-extended")
 }

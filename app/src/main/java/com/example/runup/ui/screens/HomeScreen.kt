@@ -54,6 +54,11 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.rememberCameraPositionState
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
+
 @Preview
 @Composable
 fun PreviewHomeScreen(){
@@ -62,7 +67,7 @@ fun PreviewHomeScreen(){
         uiState = HomeUiState(
         goalDistance = 2500,
         goalPace = 390),
-        {},{},{},{},{},{},{},{ _, _ -> },
+        {},{},{},{},{},{},{},{ _, _ -> },{}
         )
 }
 
@@ -86,6 +91,10 @@ fun HomeScreen(
         onPaceConfirm = { minute, second ->
             viewModel.confirmPace(minute, second)
         },
+        onToggleAi = {
+            viewModel.toggleAi()               // 기존 AI 상태 변경
+            viewModel.startBluetoothScan()     // 🌟 스캔 같이 시작!
+        }
     )
 }
 @Composable
@@ -99,6 +108,7 @@ private fun HomeContent(
     onPaceClick:()->Unit,
     onPaceClose:()->Unit,
     onPaceConfirm:(Int,Int)->Unit,
+    onToggleAi: () -> Unit
 ){
     val defaultLocation = LatLng(35.8888, 128.6103)
 
@@ -138,6 +148,16 @@ private fun HomeContent(
                             .background(color = White)
                     )
                 }
+                AIStatusOverlay(
+                    isAiEnabled = uiState.isAiEnabled,
+                    postureLabel = uiState.currentPostureLabel,
+                    leftBleState = uiState.leftBleState,
+                    rightBleState = uiState.rightBleState,
+                    onToggle = onToggleAi,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp)
+                )
                 BunIconButton(
                     onClick = onRunClick,
                     modifier = Modifier
@@ -252,5 +272,61 @@ private fun HomeButton(
             color = TextWhite,
             modifier = Modifier
         )
+    }
+}
+@Composable
+fun AIStatusOverlay(
+    isAiEnabled: Boolean,
+    postureLabel: String,
+    leftBleState: String,
+    rightBleState: String,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            // 텍스트가 추가되었으니 폭을 살짝 넓혀줍니다. (0.85f -> 0.95f)
+            .fillMaxWidth(0.95f)
+            .height(56.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = if (isAiEnabled) Color(0xCC311B92) else Color(0xCC757575),
+        shadowElevation = 6.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. 왼쪽: 현재 AI 분석 결과 (팔자 걸음 등)
+            Text(
+                text = postureLabel,
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f) // 텍스트가 길어져도 우측 UI를 밀어내지 않게 방어
+            )
+
+            // 🌟 2. 오른쪽: 블루투스 상태 2줄 + 스피커 버튼 묶음
+            Row(verticalAlignment = Alignment.CenterVertically) {
+
+                // 블루투스 상태 텍스트 (위: 왼쪽, 아래: 오른쪽)
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    Text(text = leftBleState, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(text = rightBleState, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+
+                // 스피커 버튼
+                IconButton(onClick = onToggle) {
+                    Icon(
+                        imageVector = if (isAiEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                        contentDescription = "AI Voice Toggle",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
     }
 }
