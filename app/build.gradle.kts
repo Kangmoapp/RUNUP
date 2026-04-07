@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.google.services)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.secrets)
     id("io.objectbox")
 }
 
@@ -40,6 +41,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -158,4 +160,10 @@ dependencies {
 
     // Version Catalog를 통해 Gemini SDK 추가
     implementation(libs.google.generativeai)
+
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
+
+    // Hilt Worker용 Annotation Processor (KSP 권장)
+    ksp(libs.androidx.hilt.compiler)
 }

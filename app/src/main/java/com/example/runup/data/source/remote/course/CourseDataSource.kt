@@ -22,7 +22,4 @@ interface CourseDataSource {
         isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>
-
-    suspend fun startRealtimeSync()
-
 }

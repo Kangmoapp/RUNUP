@@ -2,11 +2,11 @@ package com.example.runup.ui.util
 
 import android.content.Context
 import android.util.Log
+import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import androidx.credentials.CustomCredential
 import androidx.credentials.exceptions.GetCredentialException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -37,18 +37,28 @@ class GoogleAuthManager @Inject constructor() {
 
         scope.launch {
             try {
-                val result = credentialManager.getCredential(context = context, request = request) //구글 계정 팝업 띄우기
+                val result = credentialManager.getCredential(context = context, request = request)
                 val credential = result.credential
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val idToken = googleIdTokenCredential.idToken
 
-                if (credential is CustomCredential &&
-                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-
-                    val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data) //디지털 증명서
-                    onTokenReceived(googleIdTokenCredential.idToken)
-                }
+                onTokenReceived(idToken)
             } catch (e: GetCredentialException) {
-                Log.e("GoogleLogin", "로그인 실패: ${e.message}")
+                Log.e("GoogleLogin", "Credential 에러: ${e.message}")
+            } catch (e: Exception) { // 모든 에러를 다 잡도록 추가
+                Log.e("GoogleLogin", "일반 에러 발생: ${e::class.java.simpleName} - ${e.message}")
             }
+        }
+    }
+
+    suspend fun signOut(context: Context) {
+        try {
+            val credentialManager = CredentialManager.create(context)
+            // 기존에 저장된(선택된) 자격 증명 상태를 초기화합니다.
+            credentialManager.clearCredentialState(ClearCredentialStateRequest())
+            Log.d("GoogleLogin", "로그아웃 성공: 자격 증명 상태 초기화됨")
+        } catch (e: Exception) {
+            Log.e("GoogleLogin", "로그아웃 실패: ${e.message}")
         }
     }
 }

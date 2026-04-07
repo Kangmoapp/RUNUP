@@ -1,9 +1,11 @@
 package com.example.runup.service
 
 import android.util.Log
+import com.example.runup.BuildConfig
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.Course
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig
 import com.google.gson.Gson
@@ -14,14 +16,15 @@ import io.objectbox.query.QueryBuilder
 class GeminiHelper(
     private val embeddingHelper: EmbeddingHelper, // 검색을 위해 필요
     private val courseBox: Box<CourseEntity>,
-    private val gson: Gson = Gson()
+    private val gson: Gson = Gson(),
+    private val courseMapper: CourseMapper,
 ) {
     private val TAG = "RUNUP_GEMINI_SEARCH"
 
     // 1. Gemini 모델 설정
     private val generativeModel = GenerativeModel(
         modelName = "gemini-3.1-flash-lite-preview",
-        apiKey = "AIzaSyC-B_-jWMqaPcD_OgzUWKCgGrWJXB7dXK8",
+        apiKey = BuildConfig.GEMINI_API_KEY,
         generationConfig = generationConfig {
             temperature = 0.1f // 판단의 일관성을 위해 낮게 설정
             topK = 40
@@ -91,9 +94,7 @@ class GeminiHelper(
 
                     // 3. 추출된 ID로 실제 Course 객체 매핑
                     val course = topEntities.find { it.firebaseId == extractedId }?.let { entity ->
-                        entity.courseDataJson?.let { json ->
-                            gson.fromJson(json, Course::class.java)
-                        }
+                        courseMapper.toDomain(entity)
                     }
 
                     if (course != null) {

@@ -11,7 +11,7 @@ import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
 import com.example.runup.domain.model.SortType
 import com.example.runup.service.GeminiHelper
-import com.google.firebase.firestore.DocumentChange
+import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
 import com.google.gson.Gson
@@ -30,7 +30,8 @@ class CourseDataSourceImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val courseBox: Box<CourseEntity>,
     private val geminiHelper: GeminiHelper,
-    private val gson: Gson // Hilt에서 주입
+    private val gson: Gson,
+    private val courseMapper: CourseMapper
 ) : CourseDataSource {
     // #1. [코스 병합 및 저장하는 함수]
     override suspend fun saveCourse(course: Course): AuthResult<Boolean> {
@@ -43,7 +44,7 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private suspend fun mergeAndSaveCourse(newCourse: Course){
-        val eps = 0.00006 // 6m
+        val eps = 0.0003 // 30m
         val margin = eps
         val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
 
@@ -58,7 +59,6 @@ class CourseDataSourceImpl @Inject constructor(
             .whereGreaterThanOrEqualTo("maxLat", newMinLat - margin)
             .whereLessThanOrEqualTo("minLat", newMaxLat + margin)
             .get().await().toObjects(Course::class.java)
-
         //경도로 2차필터링
         val targetClusters = candidates.filter { existing ->
             existing.maxLng >= (newMinLng - margin) && existing.minLng <= (newMaxLng + margin)
@@ -93,11 +93,12 @@ class CourseDataSourceImpl @Inject constructor(
                     lastNum++ // 번호 증가
                     val customId = "course$lastNum" // 예: course3
 
-                    val simplifiedPoints = gridSimplify(clusterPoints, 0.00005) // 5미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
+                    val simplifiedPoints = gridSimplify(clusterPoints, 0.00002) // 2미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
+                    val finalSimplifiedPoints = gridSimplify(simplifiedPoints, 0.00005) // 5미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
                     val newDocRef = firestore.collection("Course").document(customId)
 
                     // finalCourse 객체 생성 시 id도 customId로 전달
-                    val finalCourse = createCourseFromPoints(customId, simplifiedPoints)
+                    val finalCourse = createCourseFromPoints(customId, finalSimplifiedPoints)
                     transaction.set(newDocRef, finalCourse)
                 }
             }
@@ -270,7 +271,7 @@ class CourseDataSourceImpl @Inject constructor(
             val targetDist = if(isLoop) courseDistance/2.0 else courseDistance.toDouble()
 
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
-            val recommendedResult = generatePathsFromSources(sourcesWithReason, targetDist)
+            val recommendedResult = generatePathsFromSources(currentLocation, sourcesWithReason, targetDist)
 
             if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
@@ -306,7 +307,7 @@ class CourseDataSourceImpl @Inject constructor(
             val targetDist = if(isLoop) courseDistance/2.0 else courseDistance.toDouble()
 
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
-            val recommendedResult = generatePathsFromSources(sources, targetDist)
+            val recommendedResult = generatePathsFromSources(currentLocation, sources, targetDist)
 
             if (recommendedResult.isEmpty()) {
                 AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
@@ -320,20 +321,24 @@ class CourseDataSourceImpl @Inject constructor(
 
     // 사용자 위치와 가장 가까운 시작점 찾기
     private suspend fun findNearestStartPoints(userLoc: GeoPoint): List<Pair<Course, GeoPoint>> {
-        val maxRadius = 0.005 // 최대 500m
-        val docs = firestore.collection("Course")
-            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
-            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
-            .get().await()
+        val maxRadius = 0.005 // 약 500m 내외의 위경도 오차 범위
 
-        val allCandidates = docs.toObjects(Course::class.java).filter {
-            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
-        }
+        // ObjectBox 쿼리: 지리적 영역(Bounding Box) 필터링
+        val query = courseBox.query()
+            .greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            .less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            .greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            .less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
+            .build()
 
+        val candidates = query.find()
+        query.close()
         //코스, 시작좌표, 내위치에서 시작점까지의 거리를 담는 리스트
         val startPoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
 
-        allCandidates.forEach { course ->
+        candidates.forEach { entity ->
+            val course = courseMapper.toDomain(entity) // 매퍼 사용하여 복원
+
             course.locationPoints.forEach { node ->
                 val dist = calculateDistance(userLoc, node.locationPoint)
                 if (dist <= 500.0) { // 500m 이내인 모든 좌표 후보군
@@ -344,7 +349,7 @@ class CourseDataSourceImpl @Inject constructor(
 
         // 거리순 정렬 후, 동일 코스 내 중복 시작점 제거(가장 가까운 것만) 및 최대 5개 추출
         return startPoints.sortedBy { it.third }
-            .distinctBy { it.first.id } // 한 코스당 가장 가까운 지점 1개만 선택
+            .distinctBy { it.first.id }
             .take(3)
             .map { it.first to it.second }
     }
@@ -358,30 +363,38 @@ class CourseDataSourceImpl @Inject constructor(
         userLoc: GeoPoint,
         sortType: SortType
     ): List<Pair<Course, GeoPoint>> {
-        val maxRadius = 0.005 // 최대 500m 범위
-        val docs = firestore.collection("Course")
-            .whereGreaterThanOrEqualTo("maxLat", userLoc.latitude - maxRadius)
-            .whereLessThanOrEqualTo("minLat", userLoc.latitude + maxRadius)
-            .get().await()
+        val maxRadius = 0.005 // 약 500m 내외의 위경도 오차 범위
 
-        val allCandidates = docs.toObjects(Course::class.java).filter {
-            it.maxLng >= userLoc.longitude - maxRadius && it.minLng <= userLoc.longitude + maxRadius
-        }
+        // 1. ObjectBox 쿼리: 사용자 주변 영역(Bounding Box)에 걸쳐 있는 코스들 1차 필터링
+        val query = courseBox.query()
+            .greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            .less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            .greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            .less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
+            .build()
+
+        val candidates = query.find()
+        query.close()
 
         // 코스, 시작점, 특징점수를 한꺼번에 담을 리스트
         val featurePoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
 
-        allCandidates.forEach { course ->
+        candidates.forEach { entity ->
+            // CourseMapper를 사용하여 DB 엔티티를 도메인 모델(Course)로 복원
+            val course = courseMapper.toDomain(entity)
+
+            // 해당 코스의 점수 확인 (SortType에 따라 선택)
+            val targetScore = when (sortType) {
+                SortType.BRIGHT -> course.scores.brightScore
+                SortType.PEOPLE -> course.scores.crowdedScore
+                SortType.DIFFICULTY -> course.scores.hardScore
+                else -> 0.0
+            }
+
+            // 코스 내의 모든 포인트를 확인하여 사용자 위치와 500m 이내인 것들 수집
             course.locationPoints.forEach { node ->
                 val dist = calculateDistance(userLoc, node.locationPoint)
-                if (dist <= 500.0) { // 500m 이내인 코스만 대상으로 함
-                    // 인덱스에 따라 정렬 기준 점수(score)를 Triple의 세 번째 인자로 설정
-                    val targetScore = when (sortType) {
-                        SortType.BRIGHT -> course.scores.brightScore
-                        SortType.PEOPLE -> course.scores.crowdedScore
-                        SortType.DIFFICULTY -> course.scores.hardScore
-                        else -> 0.0
-                    }
+                if (dist <= 500.0) {
                     featurePoints.add(Triple(course, node.locationPoint, targetScore))
                 }
             }
@@ -414,6 +427,7 @@ class CourseDataSourceImpl @Inject constructor(
 
     // 공통 모듈: 여러 소스(Course)로부터 목표 거리에 맞는 경로들을 "그룹별로" 생성
     private suspend fun generatePathsFromSources(
+        currentLocation: GeoPoint,
         sources: List<Triple<Course, GeoPoint, String>>, // List[코스, 해당 코스의 시작점, 이유]
         targetDist: Double
     ): List<CoursePathGroup> { //[A_course[1,2,3],B_course[1,2],C_course[1,2,3]]
@@ -440,7 +454,7 @@ class CourseDataSourceImpl @Inject constructor(
                 val subGroup = courseResults.mapIndexed { pathIndex, (dist, path) ->
                     val distanceInt = dist.toInt()
 
-                    val centerPoint = calculateCenterPoint(path)
+                    val centerPoint = calculateCenterPoint(path, currentLocation)
 
                     // 저장 로직을 여기서 처리하여 그룹/경로 인덱스를 정확히 기록
                     saveToTestCollection(
@@ -500,47 +514,82 @@ class CourseDataSourceImpl @Inject constructor(
             return
         }
 
-        // 필터링 및 정렬
-        val scoredNeighbors = mutableListOf<Triple<GeoPoint, Double, Int>>()
-        if (allNeighbors.size == 1) { // 이웃이 한개밖에 없으면 우선순위 1
-            scoredNeighbors.add(Triple(allNeighbors[0].first.locationPoint, allNeighbors[0].second, 0)) // 좌표, 거리, 우선순위
-        } else { // 이웃 좌표가 2개 이상 있는 경우
+        // 1. 후보군을 모으는 임시 리스트 (좌표, 거리, 우선순위, 각도차이)
+        data class NeighborCandidate(
+            val point: GeoPoint,
+            val distance: Double,
+            val priority: Int,
+            val angle: Double
+        )
+
+        val candidates = mutableListOf<NeighborCandidate>()
+
+        if (allNeighbors.size == 1) {
+            candidates.add(NeighborCandidate(allNeighbors[0].first.locationPoint, allNeighbors[0].second, 0, 0.0))
+        } else {
             for ((pt, d) in allNeighbors) {
                 val angleToNext = if (parentPt != null) calculateAngleDiff(parentPt, lastPt, pt.locationPoint) else 0.0
                 var isValid = false
                 var priority = 1
 
-                if (angleToNext < 20.0) { //부모 좌표와 나의 좌표, 나의 좌표와 다음 이웃 좌표의 각도차이가 20도 미만(거의 직선) 이라면
+                // 1-1. 직선 우선순위 판단
+                if (angleToNext < 20.0) {
                     isValid = true
-                    priority = 0 // 우선순위 0
-                } else { // 20도를 벗어나는 경우에는 그 다음 좌표까지 확인
+                    priority = 0
+                } else {
+                    // 1-2. 곡선/꺾임 시 후속 경로 존재 여부 판단
                     val hasContinuingPath = pointsPool.any { nNext ->
                         val nNextKey = nNext.locationPoint.latitude to nNext.locationPoint.longitude
                         if (nNextKey in visited || nNextKey == (lastPt.latitude to lastPt.longitude)) false
                         else {
                             val dNext = calculateDistance(pt.locationPoint, nNext.locationPoint)
-                            dNext in 1.0..7.9 && calculateAngleDiff(lastPt, pt.locationPoint, nNext.locationPoint) < 20.0
+                            dNext in 1.0..7.9 && calculateAngleDiff(lastPt, pt.locationPoint, nNext.locationPoint) < 30.0
                         }
                     }
                     if (hasContinuingPath) {
                         isValid = true
-                        priority = 1 // 직선 이웃좌표보다는 우선순위 낮게 설정
+                        priority = 1
                     }
                 }
-                if (isValid) scoredNeighbors.add(Triple(pt.locationPoint, d, priority))
+
+                if (isValid) {
+                    candidates.add(NeighborCandidate(pt.locationPoint, d, priority, angleToNext))
+                }
             }
         }
-        // 우선순위 먼저 확인 후, 거리 짧은 순 정렬
-        val sortedNeighbors = scoredNeighbors.sortedWith(compareBy({ it.third }, { it.second }))
 
-        // 탐색 진행
-        for ((nextPt, d, _) in sortedNeighbors) {
-            if (results.size >= maxPerSource) break // 코스를 5개 이상 찾으면 종료
+        // 비슷한 각도(±10도) 내에서 가장 가까운 점 하나만 남기기
+        val filteredNeighbors = mutableListOf<NeighborCandidate>()
+
+        // 각도가 작은 순서(직선에 가까운 순)로 정렬해서 비교하거나, 그룹화 처리
+        candidates.sortBy { it.distance } // 일단 거리순 정렬
+
+        for (candidate in candidates) {
+            // 이미 결과 리스트에 비슷한 각도(±5도)를 가진 더 짧은 거리의 점이 있는지 확인
+            val isDuplicateDirection = filteredNeighbors.any { existing ->
+                Math.abs(existing.angle - candidate.angle) <= 5.0
+            }
+
+            if (!isDuplicateDirection) {
+                filteredNeighbors.add(candidate)
+            }
+        }
+
+        // 3. 최종 정렬 (우선순위 -> 거리 순)
+        val sortedNeighbors = filteredNeighbors.sortedWith(compareBy({ it.priority }, { it.distance }))
+
+        // 4. 탐색 진행 (기존과 동일)
+        for (neighbor in sortedNeighbors) {
+            if (results.size >= maxPerSource) break
+
+            val nextPt = neighbor.point
+            val d = neighbor.distance
+
             visited.add(nextPt.latitude to nextPt.longitude)
             currentPath.add(nextPt)
-            // 누적 거리(currentDist + d)를 넘겨줌
             searchRecursive(currentPath, currentDist + d, targetDist, pointsPool, visited, results, maxPerSource)
             currentPath.removeAt(currentPath.size - 1)
+            visited.remove(nextPt.latitude to nextPt.longitude)
         }
     }
 
@@ -585,92 +634,23 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     // 좌표 목록에서 중심 좌표 반환
-    private fun calculateCenterPoint(path: List<GeoPoint>): GeoPoint {
-        if (path.isEmpty()) return GeoPoint(0.0, 0.0)
+    private fun calculateCenterPoint(path: List<GeoPoint>, currentLocation: GeoPoint): GeoPoint {
+        if (path.isEmpty()) return currentLocation
 
+        // 1. 경로(path)의 경계값 계산
         val minLat = path.minOf { it.latitude }
         val maxLat = path.maxOf { it.latitude }
         val minLng = path.minOf { it.longitude }
         val maxLng = path.maxOf { it.longitude }
 
-        return GeoPoint((minLat + maxLat) / 2.0, (minLng + maxLng) / 2.0)
-    }
+        // 2. 경로의 중심점 계산
+        val pathCenterLat = (minLat + maxLat) / 2.0
+        val pathCenterLng = (minLng + maxLng) / 2.0
 
-
-    override suspend fun startRealtimeSync() {
-        Log.d("RUNUP_SYNC", "🚀 Firestore 실시간 동기화 시작...")
-
-        // 로컬에는 있는데 Firestore 에는 없는 유령 데이터 삭제
-        firestore.collection("Course").get().addOnSuccessListener { snapshot ->
-            val remoteIds = snapshot.documents.map { it.id }.toSet()
-
-            // 로컬 ObjectBox에 저장된 모든 데이터 가져오기
-            val localEntities = courseBox.all
-
-            // 로컬에는 있는데 Firestore(remoteIds)에는 없는 데이터 찾아내기
-            val toDelete = localEntities.filter { it.firebaseId !in remoteIds }
-
-            if (toDelete.isNotEmpty()) {
-                courseBox.remove(toDelete) // 로컬 DB에서 한 번에 삭제
-                Log.d("RUNUP_SYNC", "🗑️ 유령 데이터 ${toDelete.size}건 삭제 완료: ${toDelete.map { it.firebaseId }}")
-            } else {
-                Log.d("RUNUP_SYNC", "✅ 로컬 데이터가 최신 상태입니다. 삭제할 유령 데이터 없음.")
-            }
-        }.addOnFailureListener {
-            Log.e("RUNUP_SYNC", "❌ 전체 동기화 체크 실패: ${it.message}")
-        }
-
-        firestore.collection("Course")
-            .addSnapshotListener { snapshots, error ->
-                if (error != null) {
-                    Log.e("RUNUP_SYNC", "❌ 동기화 중 에러 발생: ${error.message}")
-                    return@addSnapshotListener
-                }
-
-                snapshots?.documentChanges?.forEach { dc ->
-                    val doc = dc.document
-
-                    try {
-                        // Firestore 데이터를 기존 Course 모델로 변환
-                        val courseModel = doc.toObject(Course::class.java)
-
-                        // 벡터 데이터 추출 (Double List -> FloatArray)
-                        val vectorList = doc.get("vector") as? List<Double>
-                        val floatVector = vectorList?.map { it.toFloat() }?.toFloatArray()
-
-                        // ObjectBox 엔티티 생성
-                        val entity = CourseEntity(
-                            firebaseId = doc.id,
-                            courseDataJson = gson.toJson(courseModel),
-                            embeddingText = doc.get("embedding_text") as? String,
-                            address = doc.get("address") as? String,
-                            vector = floatVector
-                        )
-
-                        when (dc.type) {
-                            // 데이터 추가 또는 수정
-                            DocumentChange.Type.ADDED -> {
-                                courseBox.put(entity)
-                                Log.d("RUNUP_SYNC", "✅ 새 코스 추가됨: ${courseModel.id}")
-                            }
-                            DocumentChange.Type.MODIFIED -> {
-                                courseBox.put(entity)
-                                Log.d("RUNUP_SYNC", "🔄 코스 정보 수정됨: ${courseModel.id}")
-                            }
-                            // 데이터 삭제
-                            DocumentChange.Type.REMOVED -> {
-                                // firebaseId로 로컬 데이터를 찾아서 삭제
-                                val target = courseBox.query(CourseEntity_.firebaseId.equal(doc.id)).build().findFirst()
-                                target?.let { courseBox.remove(it.id) }
-                                Log.d("RUNUP_SYNC", "🗑️ 코스 삭제됨: ${doc.id}")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e("RUNUP_SYNC", "⚠️ 데이터 변환 중 오류: ${e.message}")
-                    }
-                }
-
-                Log.d("RUNUP_SYNC", "현재 로컬 DB 코스 총 개수: ${courseBox.count()}")
-            }
+        // 3. 경로 중심점과 사용자 위치(currentLocation)의 중점 계산 및 반환
+        return GeoPoint(
+            (pathCenterLat + currentLocation.latitude) / 2.0,
+            (pathCenterLng + currentLocation.longitude) / 2.0
+        )
     }
 }

@@ -70,7 +70,9 @@ fun RunUpApp(
             )
 
             Screen.POST_UPLOAD -> PostUploadScreen(
-                onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) },
+                onBackClick = {
+                    viewModel.navigateTo(Screen.COMMUNITY)
+                },
                 onUploadSuccess = {
                     viewModel.navigateTo(Screen.COMMUNITY)
                 }
@@ -88,6 +90,10 @@ fun RunUpApp(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             )
             Screen.TEST -> TestScreen()
+
+            Screen.RUNNINGTEST -> RunningTestScreen()
+
+            Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
 
         }
         if(isSplashLoading){

@@ -59,6 +59,7 @@ class StartViewModel @Inject constructor(
 
             Log.d("Delaytohome", "signInWithGoogle 호출")
             val result = loginUseCase.invoke(idToken)
+            Log.d("test", "${result}")
             when (result) {
                 is AuthResult.Success -> {
 
@@ -75,5 +76,4 @@ class StartViewModel @Inject constructor(
             }
         }
     }
-
 }
