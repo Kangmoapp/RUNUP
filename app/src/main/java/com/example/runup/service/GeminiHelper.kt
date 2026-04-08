@@ -24,8 +24,7 @@ class GeminiHelper(
     // 1. Gemini 모델 설정
     private val generativeModel = GenerativeModel(
         modelName = "gemini-3.1-flash-lite-preview",
-        //apiKey = BuildConfig.GEMINI_API_KEY,
-        apiKey = "AIzaSyBPKT7iUjpwbYw_ES57LnVf2w7Ypp8uC9g",
+        apiKey = BuildConfig.GEMINI_API_KEY,
         generationConfig = generationConfig {
             temperature = 0.1f // 판단의 일관성을 위해 낮게 설정
             topK = 40
