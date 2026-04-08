@@ -30,6 +30,7 @@ fun RunUpApp(
     viewModel: AppViewModel = viewModel()
 ) {
 
+
     val currentScreen by viewModel.currentScreen.collectAsState()
     val isSplashLoading by viewModel.isSplashLoading.collectAsState()
     Box(modifier = Modifier.fillMaxSize()){
@@ -53,6 +54,8 @@ fun RunUpApp(
                 onHelpClick= { },
                 onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
                 onMypageClick= { },
+                onLocalDBClick={},
+                onLogoutClick = {}
             )
             Screen.RUNNING -> RunningScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
