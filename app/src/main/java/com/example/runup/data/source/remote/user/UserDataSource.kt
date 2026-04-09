@@ -20,11 +20,17 @@ interface UserDataSource {
     // 사용자 이름 추가/수정
     suspend fun updateUserName(name: String): AuthResult<Boolean>
 
+    // 유저 프로필 이미지 업데이트
+    suspend fun uploadUserProfileImage(imageUri: android.net.Uri): AuthResult<String>
+
     // 현재 로그인된 사용자 목표(거리, 시간) 추가
     suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean>
 
     // 사용자 러닝 기록 추가 (중첩된 Course 데이터 포함)
     suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean>
+
+    // 사용자 러닝 기록 삭제
+    suspend fun deleteRunRecord(courseId: String): AuthResult<Boolean>
 
     // 현재 로그인된 사용자의 상세 정보 가져오기 (실패 시 에러 메시지 포함 가능)
     suspend fun getMyUserData(): AuthResult<UserData>

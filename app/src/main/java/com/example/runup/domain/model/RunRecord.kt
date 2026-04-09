@@ -16,7 +16,8 @@ data class Course(
     val maxLat: Double = 0.0, // 최북단
     val minLng: Double = 0.0, // 최서단
     val maxLng: Double = 0.0, // 최동단
-    val scores: Scores = Scores(0.0,0.0,0.0)
+    val scores: Scores = Scores(0.0,0.0,0.0),
+    val landmark: String = ""
 )
 
 data class Node(

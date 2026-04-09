@@ -20,6 +20,7 @@ import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
@@ -74,7 +75,9 @@ class CommunityDataSourceImpl @Inject constructor(
 
                 post?.copy(
                     postId = doc.id,
+                    authorId = doc.getString("authorId") ?: "id",
                     authorName = doc.getString("authorName") ?: "익명",
+                    authorProfileUrl = doc.getString("userProfileUrlMini") ?: "",
                     content = doc.getString("content") ?: "",
                     locationImages = locationImagesList,
                     commonImages = commonImagesList,
@@ -114,7 +117,9 @@ class CommunityDataSourceImpl @Inject constructor(
             if (doc.exists()) {
                 val post = Post(
                     postId = doc.id,
+                    authorId = doc.getString("authorId") ?: "id",
                     authorName = doc.getString("authorName") ?: "익명",
+                    authorProfileUrl = doc.getString("userProfileUrlMini") ?: "",
                     content = doc.getString("content") ?: "",
                     locationImages = LocationImagesList,
                     commonImages = commonImagesList,
@@ -159,9 +164,11 @@ class CommunityDataSourceImpl @Inject constructor(
             val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
             val userDoc = firestore.collection("UserData").document(uid).get().await()
             val userName = userDoc.getString("userName") ?: "익명"
+            val userProfileUrlMini = userDoc.getString("userProfileUrlMini") ?: "userProfileUrl"
 
             val commentMap = mapOf(
                 "authorName" to userName,
+                "authorProfileUrlMini" to userProfileUrlMini,
                 "content" to content,
                 "timestamp" to System.currentTimeMillis()
             )
@@ -190,6 +197,7 @@ class CommunityDataSourceImpl @Inject constructor(
                     Comment(
                         commentId = doc.id,
                         authorName = doc.getString("authorName") ?: "익명",
+                        authorProfileUrlMini = doc.getString("authorProfileUrlMini") ?: "",
                         content = doc.getString("content") ?: "",
                         timestamp = doc.getLong("timestamp") ?: 0L
                     )
@@ -210,6 +218,7 @@ class CommunityDataSourceImpl @Inject constructor(
             val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
             val userDoc = firestore.collection("UserData").document(uid).get().await()
             val realUserName = userDoc.getString("userName") ?: "Runner"
+            val profileMiniUrl = userDoc.getString("userProfileUrlMini") ?: ""
 
             // --- [수정 시작] 트랜잭션을 통한 Post ID 생성 로직 ---
             val metadataRef = firestore.collection("Metadata").document("postInfo")
@@ -297,6 +306,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 "postId" to customPostId,
                 "authorId" to uid,
                 "authorName" to realUserName,
+                "userProfileUrlMini" to profileMiniUrl,
                 "content" to content,
                 "locationImages" to locationImageUrls,
                 "commonImages" to commonImageUrls,
@@ -370,33 +380,45 @@ class CommunityDataSourceImpl @Inject constructor(
         return rotatedImg
     }
 
-    private fun compressImageWithRotation(uri: Uri): ByteArray? {
-        return try {
-            val exifInputStream = context.contentResolver.openInputStream(uri)
-            val exif = exifInputStream?.use { ExifInterface(it) }
-            val orientation = exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-            val rotationDegrees = when (orientation) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
+    // 게시글 삭제 (Firestore 문서 + Storage 이미지 전체)
+    suspend fun deletePost(post: Post): AuthResult<Boolean> = coroutineScope {
+        try {
+            val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
+
+            // 1. 권한 확인 (본인 글인지 다시 한번 검증)
+            if (post.authorId != uid) return@coroutineScope AuthResult.Fail("삭제 권한이 없습니다.")
+
+            val deleteTasks = mutableListOf<Deferred<Unit>>()
+
+            post.locationImages.forEach { image ->
+                deleteTasks.add(async {
+                    storage.getReferenceFromUrl(image.url).delete().await()
+                    Unit // 명시적으로 Unit 반환
+                })
+                image.thumbnailUrl?.let { thumbUrl ->
+                    deleteTasks.add(async {
+                        storage.getReferenceFromUrl(thumbUrl).delete().await()
+                        Unit // 명시적으로 Unit 반환
+                    })
+                }
             }
-            val options = BitmapFactory.Options().apply { inSampleSize = 2 }
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream?.close()
-            if (originalBitmap == null) return null
-            val finalBitmap = if (rotationDegrees != 0) {
-                val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                val rotated = Bitmap.createBitmap(originalBitmap, 0, 0, originalBitmap.width, originalBitmap.height, matrix, true)
-                originalBitmap.recycle()
-                rotated
-            } else originalBitmap
-            val outputStream = ByteArrayOutputStream()
-            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-            val result = outputStream.toByteArray()
-            finalBitmap.recycle()
-            result
-        } catch (e: Exception) { null }
+
+            post.commonImages.forEach { image ->
+                deleteTasks.add(async {
+                    storage.getReferenceFromUrl(image.url).delete().await()
+                    Unit // 명시적으로 Unit 반환
+                })
+            }
+
+            // 3. 모든 이미지 삭제 병렬 실행
+            deleteTasks.awaitAll()
+
+            // 4. Firestore 게시글 문서 삭제
+            firestore.collection("Posts").document(post.postId).delete().await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+        }
     }
 }

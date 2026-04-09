@@ -10,7 +10,9 @@ data class UserData(
     val userEmail: String = "",
     val userPassword: String = "",
     val userName: String = "",
+    val userProfileUrl: String = "",
     val goalDistance: Int = 0, // 목표 거리 (meter 단위)
     val goalTime: Int = 0,     // 목표 시간 (milliseconds 단위)
+    val totalRunningDistance: Int = 0,
     val runs: List<RunRecord> = emptyList()// 사용자의 전체 러닝 기록 리스트
 )

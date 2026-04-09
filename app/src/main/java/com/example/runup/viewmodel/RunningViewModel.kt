@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.usecase.RecordRunningUseCase
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.LocationService
 import com.example.runup.ui.navigation.Screen
@@ -34,6 +35,7 @@ data class RunningUiState(
 class RunningViewModel @Inject constructor(
     private val repository: LocationRepository,
     private val saveCourseUseCase: SaveCourseUseCase,
+    private val recordRunningUseCase: RecordRunningUseCase,
     private val application: Application
 ) : ViewModel() {
 
@@ -49,6 +51,9 @@ class RunningViewModel @Inject constructor(
 
     private val _loadTimer = MutableStateFlow(0)
     val loadTimer: StateFlow<Int> = _loadTimer
+
+    // [추가] 실시간 시간 기록을 위한 StateFlow (초 단위)
+    private val _totalTime = MutableStateFlow(0)
 
     init {
         viewModelScope.launch {
@@ -72,17 +77,17 @@ class RunningViewModel @Inject constructor(
                 repository.recordedNodes,
                 repository.totalDistance,
                 repository.currentLocation, // 실시간 위치
-                _isTracking
-            ) { nodes, totalDistance, currentGeo, isTracking ->
+                _isTracking,
+                _totalTime,
+            ) { nodes, totalDistance, currentGeo, isTracking, totalTime ->
                 RunningUiState(
                     // 실시간 내 위치 (기록 중이 아니어도 표시됨)
                     currentLocation = currentGeo?.let { LatLng(it.latitude, it.longitude) },
-
                     // 지금까지 이동한 경로
                     latLngList = nodes.map { LatLng(it.locationPoint.latitude, it.locationPoint.longitude) },
-
                     totalDistance = totalDistance,
-                    isTracking = isTracking
+                    isTracking = isTracking,
+                    totalTime = totalTime
                 )
             }.collect { newState ->
                 Log.d("RunningPosition", "UI State Updated: ${newState.currentLocation}")
@@ -110,10 +115,14 @@ class RunningViewModel @Inject constructor(
         if (_isTracking.value) return // 이미 기록 중이면 무시
 
         _isTracking.value = true
+        _totalTime.value = 0
+
         recordingJob = viewModelScope.launch {
             while (true) {
                 // 1초마다 레포지토리의 현재 위치를 노드로 변환하여 저장
                 repository.addNodeFromCurrentLocation()
+                // 2. 시간 1초 증가 (초 단위)
+                _totalTime.value += 1
                 delay(1000L)
             }
         }
@@ -127,12 +136,14 @@ class RunningViewModel @Inject constructor(
         viewModelScope.launch {
             val nodes = repository.recordedNodes.value
             val distance = repository.totalDistance.value.toInt()
+            val timeInMillis = _totalTime.value * 1000
 
             if (nodes.isNotEmpty()) {
-                val result = saveCourseUseCase(nodes, distance)
+                val result = recordRunningUseCase(nodes, distance, timeInMillis)
                 if (result is AuthResult.Success) {
                     // 저장 성공 후 경로 데이터만 초기화
                     repository.clearData()
+                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
                 }
             }
         }

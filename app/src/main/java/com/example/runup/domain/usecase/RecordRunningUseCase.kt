@@ -1,17 +1,61 @@
 package com.example.runup.domain.usecase
 
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.Course
+import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.RunRecord
-import com.example.runup.domain.repository.CourseRepository
+import com.example.runup.domain.model.Scores
 import com.example.runup.domain.repository.UserRepository
 import javax.inject.Inject
 
 class RecordRunningUseCase @Inject constructor(
     private val userRepository: UserRepository,
-    private val courserepository: CourseRepository
-    //user DB와 course DB 두곳에 전부 코스를 저장해야함
 ) {
-    suspend operator fun invoke(runrecord : RunRecord) : AuthResult<Boolean> {
-        return userRepository.saveRunRecord(runrecord)
+    suspend operator fun invoke(
+        recordedNodes: List<Node>,
+        totalDistance: Int,
+        totalTime: Int,
+    ): AuthResult<Boolean> {
+
+        // 1. 노드 리스트가 비어있을 경우에 대한 예외 처리
+        if (recordedNodes.isEmpty()) {
+            return AuthResult.Fail("기록된 경로가 없습니다.")
+        }
+
+        // 2. 경계 좌표(Bounding Box) 계산
+        val minLat = recordedNodes.minOf { it.locationPoint.latitude }
+        val maxLat = recordedNodes.maxOf { it.locationPoint.latitude }
+        val minLng = recordedNodes.minOf { it.locationPoint.longitude }
+        val maxLng = recordedNodes.maxOf { it.locationPoint.longitude }
+
+        // 2. Scores 평균값 계산
+        val nodeCount = recordedNodes.size.toDouble()
+        val averageScores = Scores(
+            brightScore = recordedNodes.sumOf { it.score.brightScore } / nodeCount,
+            crowdedScore = recordedNodes.sumOf { it.score.crowdedScore } / nodeCount,
+            hardScore = recordedNodes.sumOf { it.score.hardScore } / nodeCount
+        )
+
+        // 3. Course 객체 구성
+        val course = Course(
+            id = "course_${System.currentTimeMillis()}", // 고유 ID 생성 (필요에 따라 수정)
+            distance = totalDistance,
+            locationPoints = recordedNodes,
+            minLat = minLat,
+            maxLat = maxLat,
+            minLng = minLng,
+            maxLng = maxLng,
+            scores = averageScores // 기본값 설정
+        )
+
+        // 4. RunRecord 객체 구성
+        val runRecord = RunRecord(
+            recordDate = System.currentTimeMillis(), // 저장 시점의 타임스탬프
+            time = totalTime,
+            course = course
+        )
+
+        // 5. Repository 호출
+        return userRepository.saveRunRecord(runRecord)
     }
 }

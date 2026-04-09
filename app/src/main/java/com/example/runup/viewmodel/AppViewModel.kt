@@ -87,6 +87,6 @@ class AppViewModel @Inject constructor(
     // --- 추가된 부분: ID를 저장하며 상세페이지로 이동하는 함수 ---
     fun navigateToDetail(postId: String) {
         selectedPostId = postId
-        _currentScreen.value = Screen.COMMUNITY_DETAIL
+        _currentScreen.value = Screen.COMMUNITY_COMMENT
     }
 }
