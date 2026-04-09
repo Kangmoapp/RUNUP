@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,10 +41,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.DistanceGoalSettingDialog
 import com.example.runup.ui.components.MyGoogleMap
@@ -174,24 +177,13 @@ private fun CourseRecommendationContent(
                         }
                     }
                     if(uiState.isRecommendClick){
+                        val currentCourse = uiState.recommendedCourses.getOrNull(uiState.courseIndex)
                         Column(
                             modifier = Modifier.padding(start = 18.dp, top = 18.dp)
                         ){
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .height(30.dp)
-                                    .width(70.dp)
-                                    .background(
-                                        color = White.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(5.dp)
-                                    )
-                            ){
-                                Text(
-                                    text = "코스 ${uiState.courseIndex+1}",
-                                    color = TextGray,
-                                    fontSize = 20.sp
-                                )
+                            // [추가] 상세 정보 카드
+                            currentCourse?.let { course ->
+                                CourseInfoCard(uiState, course = course)
                             }
                         }
                         Row(
@@ -499,6 +491,106 @@ private fun InfoText(
             text = text,
             fontSize = 22.sp,
             color = TextBlack,
+        )
+    }
+}
+
+@Composable
+private fun CourseInfoCard(
+    uiState: CourseRecommendationUiState,
+    course: CourseRecommendation,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(220.dp) // 가로를 살짝 넓혀서 정보를 병렬로 배치
+            .background(
+                color = White.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(10.dp)
+            )
+            .border(
+                width = 2.dp,
+                color = PointColor,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // 1. 상단 행: [번호. ID] [거리]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${uiState.courseIndex + 1}. ${course.originCourse.id}",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextBlack
+            )
+            Text(
+                text = String.format("%.2f km", course.path.distance / 1000.0),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = PointColor
+            )
+        }
+
+        Divider(color = Gray.copy(alpha = 0.3f), thickness = 1.dp)
+
+        // 2. 하단 행: [주변 장소(좌)] | [Score(우)]
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 좌측: 주변 장소
+            Column(modifier = Modifier.weight(1.2f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "주변 장소", fontSize = 10.sp, color = TextGray)
+                Text(
+                    text = course.originCourse.landmark.ifEmpty { "정보 없음" },
+                    fontSize = 13.sp,
+                    color = TextBlack,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2, // 장소 이름이 길어질 경우 대비
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // 중앙 구분선 (선택 사항)
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(modifier = Modifier.width(1.dp).height(30.dp).background(Gray.copy(alpha = 0.3f)))
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // 우측: Score 영역
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "score", fontSize = 9.sp, color = TextGray)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    ScoreSmallItem("밝기", course.originCourse.scores.brightScore)
+                    ScoreSmallItem("붐빔", course.originCourse.scores.crowdedScore)
+                    ScoreSmallItem("난이도", course.originCourse.scores.hardScore)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScoreSmallItem(label: String, score: Double) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, fontSize = 9.sp, color = TextGray)
+        Text(
+            text = String.format("%.1f", score),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextBlack
         )
     }
 }

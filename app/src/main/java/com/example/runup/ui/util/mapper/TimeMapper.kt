@@ -10,4 +10,25 @@ object TimeMapper {
         val sdf = SimpleDateFormat("yyyy년 M월 d일", Locale.KOREA)
         return sdf.format(date)
     }
+
+    fun formatTimeAgo(timestamp: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+        val months = days / 30
+        val years = days / 365
+
+        return when {
+            seconds < 60 -> "방금 전"
+            minutes < 60 -> "${minutes}분 전"
+            hours < 24 -> "${hours}시간 전"
+            days < 30 -> "${days}일 전"
+            months < 12 -> "${months}달 전"
+            else -> "${years}년 전"
+        }
+    }
 }

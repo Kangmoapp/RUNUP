@@ -1,5 +1,6 @@
 package com.example.runup.data.repositoryimpl
 
+import android.net.Uri
 import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.data.source.local.dao.UserDao
 import com.example.runup.data.source.local.entity.UserEntity
@@ -41,6 +42,11 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun updateUserName(username: String): AuthResult<Boolean> {
         return userdatasource.updateUserName(username)
     }
+
+    override suspend fun uploadUserProfileImage(imageUri: Uri): AuthResult<String> {
+        return userdatasource.uploadUserProfileImage(imageUri)
+    }
+
     // 달리기 목표 저장
     override suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean> {
         return userdatasource.updateUserGoal(goaldistance, goaltime)
@@ -49,6 +55,12 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
         return userdatasource.saveRunRecord(record)
     }
+
+    // 달리기 기록 삭제
+    override suspend fun deleteRunRecord(courseId: String): AuthResult<Boolean> {
+        return userdatasource.deleteRunRecord(courseId)
+    }
+
     // 내 데이터 가져오기
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return userdatasource.getMyUserData()

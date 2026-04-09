@@ -20,6 +20,7 @@ import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
+import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,7 +38,8 @@ data class CommunityUiState(
     val selectedPost: Post? = null,
     val comments: List<Comment> = emptyList(),
     val isLoading: Boolean = false,
-    val isInitialLoading: Boolean = true
+    val isInitialLoading: Boolean = true,
+    val isRefreshing: Boolean = false
 )
 
 data class PostUploadUiState(
@@ -100,7 +102,11 @@ class CommunityViewModel @Inject constructor(
         if (isInitial) {
             lastVisibleSnapshot = null // 마지막 보던 곳
             isLastPage = false // 마지막 페이지 여부
-            _communityUiState.update { it.copy(posts = emptyList(), isInitialLoading = true) } // 초기화 시 리스트 비우기
+            _communityUiState.update { it.copy(
+                posts = emptyList(),
+                isInitialLoading = !forceRefresh, // 새로고침일 때는 전체화면 로딩(중앙 아이콘) 안 띄움
+                isRefreshing = forceRefresh       // 새로고침일 때만 상단 당기기 인디케이터 활성화
+            ) } // 초기화 시 리스트 비우기
         }
 
         viewModelScope.launch {
@@ -125,7 +131,7 @@ class CommunityViewModel @Inject constructor(
                     preloadBitmaps(newPosts) {
                         // 프리로딩이 완료되면(혹은 상단 3개가 준비되면) 로딩 종료
                         if (isInitial) {
-                            _communityUiState.update { it.copy(isInitialLoading = false) }
+                            _communityUiState.update { it.copy(isInitialLoading = false, isRefreshing = false) }
                         }
                     }
                 }
@@ -133,7 +139,7 @@ class CommunityViewModel @Inject constructor(
                 _communityUiState.update { it.copy(isInitialLoading = false) }
             } finally {
                 // 성공/실패 여부와 상관없이 로딩 종료
-                _communityUiState.update { it.copy(isLoading = false) }
+                _communityUiState.update { it.copy(isLoading = false, isRefreshing = false) }
             }
         }
     }
@@ -144,35 +150,85 @@ class CommunityViewModel @Inject constructor(
             return
         }
 
-        var totalImages = posts.flatMap { it.locationImages }.size // 사진 개수
-        if (totalImages == 0) { // 0개면 바로 로드
-            onComplete()
-            return
+        val locationImages = posts.flatMap { it.locationImages }
+        val commonImages = posts.flatMap { it.commonImages }
+
+        // 1. 게시글 작성자 프로필 URL 추출
+        val postAuthorUrls = posts.map { it.authorProfileUrl }
+
+        // 2. 모든 게시글의 댓글 작성자 프로필 URL 추출 (중첩 리스트 풀기)
+        val commentAuthorUrls = posts.flatMap { post ->
+            post.comments.map { it.authorProfileUrlMini }
         }
 
-        var loadedCount = 0
+        // 3. 모든 프로필 URL 합치기 + 비어있는 값 제거 + 중복 제거
+        val allProfileUrls = (postAuthorUrls + commentAuthorUrls)
+            .filter { it.isNotEmpty() }
+            .distinct()
 
-        posts.forEach { post ->
-            post.locationImages.forEach { postImage ->
+        // 1. 필수 로딩 (마커 썸네일) - 얘네가 다 돼야 onComplete를 부름
+        var essentialLoadedCount = 0
+        val totalEssential = locationImages.size
+
+        if (totalEssential == 0) {
+            onComplete()
+        } else {
+            locationImages.forEach { postImage ->
                 viewModelScope.launch(Dispatchers.IO) {
-                    val targetUrl = postImage.thumbnailUrl.ifEmpty { postImage.url } // 썸네일 url 가져오되, 없으면 원본 url
-                    val request = ImageRequest.Builder(context)
-                        .data(targetUrl).size(150, 150).allowHardware(false).build()
+                    // 마커용 썸네일 (150px) 캐싱
+                    val targetUrl = postImage.thumbnailUrl.ifEmpty { postImage.url }
+                    preloadToStateManager(targetUrl, postImage.url, 150)
 
-                    val result = context.imageLoader.execute(request)
-                    if (result is SuccessResult) {
-                        val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
-                        if (bitmap != null) {
-                            _bitmapCache.update { it + (postImage.url to bitmap) } // url 주소와 비트맵을 함께 저장,
+                    // UI 스레드에서 카운트 체크
+                    launch(Dispatchers.Main) {
+                        essentialLoadedCount++
+                        if (essentialLoadedCount >= totalEssential) {
+                            onComplete() // 필수 로딩 완료! 로딩 바 제거
                         }
                     }
-
-                    // 성공/실패 상관없이 카운트
-                    loadedCount++
-                    if (loadedCount >= totalImages) {
-                        launch(Dispatchers.Main) { onComplete() }
-                    }
                 }
+            }
+        }
+
+        // 2. 백그라운드 로딩 (상세/원본 이미지) - onComplete와 상관없이 계속 진행
+        locationImages.forEach { postImage ->
+            viewModelScope.launch(Dispatchers.IO) {
+                // 마커 클릭 시 뜰 원본 (별도의 키로 저장하거나 원본 URL 그대로 사용)
+                // 키를 다르게 하고 싶다면 postImage.url + "_full" 형태 사용 가능
+                preloadToStateManager(postImage.url, postImage.url + "_full", 800)
+            }
+        }
+
+        commonImages.forEach { commonImage ->
+            viewModelScope.launch(Dispatchers.IO) {
+                // 페이저에서 보일 일반 이미지들
+                preloadToStateManager(commonImage.url, commonImage.url, 800)
+            }
+        }
+
+        // (2) [수정] 수집된 모든 프로필(게시글 작성자 + 댓글 작성자) 미리 로드
+        allProfileUrls.forEach { url ->
+            viewModelScope.launch(Dispatchers.IO) {
+                // 프로필은 150~200px 정도면 충분히 선명합니다.
+                preloadToStateManager(url, url, 150)
+            }
+        }
+    }
+
+    // UserStateManager에 비트맵을 꽂아주는 공통 함수
+    private suspend fun preloadToStateManager(url: String, cacheKey: String, size: Int) {
+        if (url.isEmpty()) return
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .size(size)
+            .allowHardware(false)
+            .build()
+
+        val result = context.imageLoader.execute(request)
+        if (result is SuccessResult) {
+            val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+            bitmap?.let {
+                _bitmapCache.update { current -> current + (cacheKey to it) }
             }
         }
     }
@@ -182,7 +238,6 @@ class CommunityViewModel @Inject constructor(
             _communityUiState.update { it.copy(
                 isLoading = true,
                 selectedPost = null,
-                comments = emptyList()
             ) }
             val result = dataSource.getPostById(postId)
             if (result is AuthResult.Success) {
@@ -208,6 +263,15 @@ class CommunityViewModel @Inject constructor(
             if (result is AuthResult.Success) {
                 // 댓글 작성 후 상세 정보를 갱신하여 댓글 수 카운트 업데이트
                 fetchPostDetail(postId)
+
+                // 2. 목록 화면의 posts 리스트에 있는 해당 포스트 숫자도 +1
+                _communityUiState.update { state ->
+                    val updatedPosts = state.posts.map { post ->
+                        if (post.postId == postId) post.copy(commentCount = post.commentCount + 1)
+                        else post
+                    }
+                    state.copy(posts = updatedPosts)
+                }
             }
         }
     }
@@ -266,6 +330,22 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
+    // 게시글 삭제 함수
+    fun deletePost(post: Post) {
+        viewModelScope.launch {
+            val result = dataSource.deletePost(post)
+            if (result is AuthResult.Success) {
+                // 삭제 성공 시 현재 리스트에서 해당 포스트 제거하여 UI 갱신
+                _communityUiState.update { state ->
+                    state.copy(posts = state.posts.filter { it.postId != post.postId })
+                }
+            } else if (result is AuthResult.Fail) {
+                // 에러 처리 (Toast 메시지 등)
+                Log.e("CommunityViewModel", "삭제 실패: ${result.message}")
+            }
+        }
+    }
+
     // CommunityViewModel.kt 의 onLikeClick 함수 수정
     fun onLikeClick(postId: String) {
         viewModelScope.launch {
@@ -308,3 +388,4 @@ class CommunityViewModel @Inject constructor(
         _postUploadUiState.update { it.copy(selectedRunRecord = record, isSheetOpen = false) }
     }
 }
+

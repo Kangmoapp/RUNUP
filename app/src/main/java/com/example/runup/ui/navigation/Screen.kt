@@ -8,10 +8,11 @@ enum class Screen {
     START,
     TEST,
     COMMUNITY,
-    COMMUNITY_DETAIL,
+    COMMUNITY_COMMENT,
     POST_UPLOAD,
     LOADING,
     RECOMMEND,
     RUNNINGTEST,
     LOCALDB,
+    MYPAGE
 }

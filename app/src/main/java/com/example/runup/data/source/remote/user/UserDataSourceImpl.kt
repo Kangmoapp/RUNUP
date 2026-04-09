@@ -1,5 +1,11 @@
 package com.example.runup.data.source.remote.user
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.net.Uri
 import android.util.Log
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
@@ -9,13 +15,19 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.tasks.await
+import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 
 class UserDataSourceImpl @Inject constructor(
     private val auth: FirebaseAuth,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val storage: FirebaseStorage,
+    @ApplicationContext private val context: Context
 ) : UserDataSource {
 
     // 이메일 확인
@@ -120,6 +132,91 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
+    override suspend fun uploadUserProfileImage(imageUri: Uri): AuthResult<String> {
+        return try {
+            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+
+            // 1. Storage 참조 (메인용과 미니용 두 개 설정)
+            val profileMainRef = storage.reference.child("userProfileImages/$uid/profile_main.jpg")
+            val profileMiniRef = storage.reference.child("userProfileImages/$uid/profile_mini.jpg")
+
+            // 2. 이미지 압축 및 리사이징
+            // 메인 프로필 (마이페이지용)
+            val mainData = resizeAndCompressImage(imageUri, width = 200, height = 200)
+                ?: return AuthResult.Fail("메인 이미지 압축 실패")
+
+            // 미니 프로필 (댓글/커뮤니티 목록용)
+            val miniData = resizeAndCompressImage(imageUri, width = 100, height = 100)
+                ?: return AuthResult.Fail("미니 이미지 압축 실패")
+
+            // 3. Storage 업로드
+            profileMainRef.putBytes(mainData).await()
+            profileMiniRef.putBytes(miniData).await()
+
+            // 4. 각각의 다운로드 URL 가져오기
+            val mainUrl = profileMainRef.downloadUrl.await().toString()
+            val miniUrl = profileMiniRef.downloadUrl.await().toString()
+
+            // 5. Firestore 업데이트 (두 필드를 동시에 업데이트)
+            firestore.collection("UserData").document(uid)
+                .update(
+                    mapOf(
+                        "userProfileUrl" to mainUrl,
+                        "userProfileUrlMini" to miniUrl
+                    )
+                ).await()
+
+            // 성공 시 메인 URL 반환 (필요에 따라 miniUrl을 반환해도 됨)
+            AuthResult.Success(mainUrl)
+        } catch (e: Exception) {
+            AuthResult.Fail("프로필 사진 업로드 실패: ${e.localizedMessage}", e)
+        }
+    }
+
+    private fun resizeAndCompressImage(uri: Uri, width: Int, height: Int): ByteArray? {
+        val inputStream = context.contentResolver.openInputStream(uri)
+        val originalBitmap = BitmapFactory.decodeStream(inputStream)
+
+        // [추가] 썸네일 생성 전에도 회전 각도 보정 실행
+        val rotatedBitmap = rotateImageIfRequired(originalBitmap, uri)
+
+        // 지정된 크기로 리사이징
+        val scaledBitmap = Bitmap.createScaledBitmap(rotatedBitmap, width, height, true)
+
+        val outputStream = ByteArrayOutputStream()
+        // 퀄리티를 50~60 정도로 낮춰도 150px에서는 충분히 깨끗합니다.
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+
+        // 사용한 비트맵들 메모리 해제 (선택 사항이지만 권장)
+        if (rotatedBitmap != originalBitmap) {
+            rotatedBitmap.recycle()
+        }
+
+        return outputStream.toByteArray()
+    }
+
+    // [필수 보조] 사진 회전 방지 로직
+    private fun rotateImageIfRequired(img: Bitmap, selectedImage: Uri): Bitmap {
+        val input = context.contentResolver.openInputStream(selectedImage) ?: return img
+        val ei = ExifInterface(input)
+        val orientation = ei.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+
+        return when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> rotateImage(img, 90f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> rotateImage(img, 180f)
+            ExifInterface.ORIENTATION_ROTATE_270 -> rotateImage(img, 270f)
+            else -> img
+        }
+    }
+
+    private fun rotateImage(img: Bitmap, degree: Float): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(degree)
+        val rotatedImg = Bitmap.createBitmap(img, 0, 0, img.width, img.height, matrix, true)
+        img.recycle() // 메모리 해제
+        return rotatedImg
+    }
+
     // 사용자 목표 업데이트
     override suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean> {
         return try {
@@ -136,11 +233,72 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-            firestore.collection("UserData").document(userid)
-                .collection("runs").document().set(record).await()
+
+            val userDocRef = firestore.collection("UserData").document(userid)
+            // metadata 서브 컬렉션 내의 runRecordInfo 문서 참조
+            val metaDocRef = userDocRef.collection("metadata").document("runRecordInfo")
+
+            firestore.runTransaction { transaction ->
+                // 1. 현재 마지막 번호 가져오기 (문서가 없으면 0으로 시작)
+                val snapshot = transaction.get(metaDocRef)
+                val lastNum = snapshot.getLong("lastRunRecordNum") ?: 0L
+                val nextNum = lastNum + 1
+
+                // 2. 새 기록을 위한 커스텀 ID 생성 (예: runrecord1)
+                val newRecordId = "runrecord$nextNum"
+                val runRecordRef = userDocRef.collection("runs").document(newRecordId)
+
+                // 3. 개별 러닝 기록 저장
+                transaction.set(runRecordRef, record)
+
+                // 4. metadata의 번호 업데이트
+                transaction.set(metaDocRef, mapOf("lastRunRecordNum" to nextNum))
+
+                // 5. UserData 문서의 totalRunningDistance 누적 업데이트
+                transaction.update(userDocRef, "totalRunningDistance", FieldValue.increment(record.course.distance.toLong()))
+
+                null // Transaction은 결과값을 반환해야 하므로 null 반환
+            }.await()
+
             AuthResult.Success(true)
         } catch (e: Exception) {
-            AuthResult.Fail("러닝 기록 저장 실패", e)
+            AuthResult.Fail("러닝 기록 저장 실패: ${e.message}", e)
+        }
+    }
+
+    override suspend fun deleteRunRecord(courseId: String): AuthResult<Boolean> {
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+            val userDocRef = firestore.collection("UserData").document(userid)
+            val runsCollectionRef = userDocRef.collection("runs")
+
+            // 1. 해당 courseId를 가진 문서를 쿼리로 찾기
+            val querySnapshot = runsCollectionRef
+                .whereEqualTo("course.id", courseId)
+                .get()
+                .await()
+
+            if (querySnapshot.isEmpty) {
+                return AuthResult.Fail("삭제할 기록을 찾을 수 없습니다.")
+            }
+
+            // 2. 일괄 처리를 위해 Batch 생성
+            firestore.runBatch { batch ->
+                for (document in querySnapshot.documents) {
+                    // 삭제할 문서에서 거리 정보 가져오기 (전체 거리 차감을 위해)
+                    val distance = document.getLong("course.distance") ?: 0L
+
+                    // 해당 기록 삭제
+                    batch.delete(document.reference)
+
+                    // UserData의 totalRunningDistance 필드에서 해당 거리만큼 빼기 (음수 increment)
+                    batch.update(userDocRef, "totalRunningDistance", FieldValue.increment(-distance))
+                }
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("러닝 기록 삭제 실패", e)
         }
     }
 
@@ -215,4 +373,6 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Fail("목표 정보를 가져오는 중 오류 발생", e)
         }
     }
+
+
 }

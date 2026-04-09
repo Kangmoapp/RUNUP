@@ -4,7 +4,9 @@ import com.google.firebase.firestore.GeoPoint
 
 data class Post(
     val postId: String = "",
+    val authorId: String = "",
     val authorName: String = "",
+    val authorProfileUrl: String = "",
     val content: String = "",
     val locationImages: List<PostImage> = emptyList(),
     val commonImages: List<PostImage> = emptyList(),
@@ -18,6 +20,7 @@ data class Post(
 data class Comment(
     val commentId: String = "",
     val authorName: String = "",
+    val authorProfileUrlMini: String = "",
     val content: String = "",
     val timestamp: Long = 0L
 )

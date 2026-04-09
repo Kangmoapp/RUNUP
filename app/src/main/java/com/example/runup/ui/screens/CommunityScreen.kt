@@ -3,6 +3,7 @@ package com.example.runup.ui.screens
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -128,7 +129,7 @@ fun CommunityScreen(
     ) { padding ->
         PullToRefreshBox(
             // 로딩 아이콘을 보여줄지 말지 ViewModel 상태에 맡깁니다.
-            isRefreshing = communityState.isLoading,
+            isRefreshing = communityState.isRefreshing,
             onRefresh = {
                 // 위로 당기면 실행될 로직
                 viewModel.fetchPosts(isInitial = true, forceRefresh = true)
@@ -189,9 +190,14 @@ fun PostItem(
     onLikeClick: () -> Unit,
     viewModel: CommunityViewModel // 1. ViewModel 추가
 ) {
-    val bitmapMap by viewModel.bitmapCache.collectAsState() // ViewModel의 캐시 구독
-    var hasReportedLoaded by remember(post.postId) { mutableStateOf(false) } // 이 포스트가 보고를 완료했는지 체크
+    val communityThumbnailBitmapMap by viewModel.bitmapCache.collectAsState() // ViewModel의 캐시 구독
+    val authorBitmap = communityThumbnailBitmapMap[post.authorProfileUrl]
     var enlargedImageUri by remember { mutableStateOf<String?>(null) }
+
+    // --- [추가] 삭제 메뉴 상태 및 본인 확인 ---
+    var showMenu by remember { mutableStateOf(false) }
+    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+    val isMyPost = post.authorId == currentUserId
 
     // 페이저 상태 관리 (총 페이지 수 = 지도(1) + 일반 이미지 개수)
     val totalPages = 1 + post.commonImages.size
@@ -207,11 +213,89 @@ fun PostItem(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(Color.Gray))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.Gray), // 이미지가 없을 때나 로딩 전 기본 배경
+                contentAlignment = Alignment.Center
+            ) {
+                if (authorBitmap != null) {
+                    Image(
+                        bitmap = authorBitmap.asImageBitmap(),
+                        contentDescription = "작성자 프로필",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else if (post.authorProfileUrl.isNotEmpty()) {
+                    // 캐시에 없는데 URL은 있다면 차선책으로 AsyncImage 실행
+                    AsyncImage(
+                        model = post.authorProfileUrl,
+                        contentDescription = "작성자 프로필",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    // 사진이 아예 없는 경우 기본 아이콘
+                    Text("👤", fontSize = 18.sp)
+                }
+            }
             Spacer(modifier = Modifier.width(10.dp))
             Text(post.authorName, color = WhiteTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(modifier = Modifier.weight(1f))
-            Icon(Icons.Default.MoreVert, null, tint = WhiteTextColor)
+            // --- [수정] 본인일 경우에만 삭제 메뉴 노출 ---
+            if (isMyPost) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically // 아이콘과 배지 높이 맞춤
+                ) {
+                    // 1. [추가] "MY" 배지 표시
+                    Surface(
+                        color = Color(0xFFFFD700).copy(alpha = 0.15f), // 은은한 노란색 배경 (골드)
+                        shape = CircleShape, // 둥근 모양
+                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f)), // 흐릿한 노란색 테두리
+                        modifier = Modifier.padding(end = 4.dp) // 삭제 메뉴와 간격
+                    ) {
+                        Text(
+                            text = "MY",
+                            color = Color(0xFFFFD700), // 진한 노란색 글씨
+                            fontSize = 10.sp, // 작게
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp) // 내부 여백
+                        )
+                    }
+
+                    // 2. [기존 유지] 삭제 메뉴 (MoreVert 아이콘)
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(32.dp) // 아이콘 터치 영역 살짝 조절
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "더보기",
+                                tint = WhiteTextColor.copy(alpha = 0.7f) // 아이콘은 살짝 연하게 처리해서 배지를 돋보이게 함
+                            )
+                        }
+
+                        // 삭제 드롭다운 메뉴 (기존과 동일)
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier.background(Color(0xFF2C2C2C))
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text("게시글 삭제", color = Color.Red, fontWeight = FontWeight.Medium)
+                                },
+                                onClick = {
+                                    viewModel.deletePost(post)
+                                    showMenu = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // 지도 및 마커 오버레이 영역
@@ -282,7 +366,7 @@ fun PostItem(
                             }
 
                             slotAssignments.forEach { (postImage, slot) ->
-                                val bitmap = bitmapMap[postImage.url] ?: return@forEach
+                                val bitmap = communityThumbnailBitmapMap[postImage.url] ?: return@forEach
                                 val location = postImage.location ?: return@forEach
                                 val (origX, origY) = latLngToPixel(location.latitude, location.longitude, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx, highResRequestSize)
                                 val closerOffset = calculateCloserOffset(origX, origY, slot, mapWidthPx, mapHeightPx, cMinX, cMaxX, cMinY, cMaxY, markerSizePx)
@@ -304,15 +388,25 @@ fun PostItem(
                     // [페이지 1 ~ N] commonImages 보여주기
                     val imageIndex = page - 1
                     val commonImage = post.commonImages[imageIndex]
-
-                    AsyncImage(
-                        model = commonImage.url, // 일반 이미지는 원본 URL 바로 사용
-                        contentDescription = "Post Image ${imageIndex + 1}",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable { enlargedImageUri = commonImage.url }, // 클릭 시 확대
-                        contentScale = ContentScale.Crop // 영역에 맞게 자름
-                    )
+                    val preloadedBitmap = communityThumbnailBitmapMap[commonImage.url]
+                    if (preloadedBitmap != null) {
+                        Image(
+                            bitmap = preloadedBitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // 아직 백그라운드 로딩이 안 끝났다면 일반 AsyncImage로 로딩 처리
+                        AsyncImage(
+                            model = commonImage.url, // 일반 이미지는 원본 URL 바로 사용
+                            contentDescription = "Post Image ${imageIndex + 1}",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable { enlargedImageUri = commonImage.url }, // 클릭 시 확대
+                            contentScale = ContentScale.Crop // 영역에 맞게 자름
+                        )
+                    }
                 }
             }
 
@@ -594,7 +688,12 @@ fun PhotoMarkerFromBitmap(bitmap: Bitmap) {
 
 // 클릭한 마커의 사진 원본 가져오기
 @Composable
-fun EnlargedImageDialog(imageUrl: String, onDismiss: () -> Unit) {
+fun EnlargedImageDialog(imageUrl: String, onDismiss: () -> Unit, viewModel: CommunityViewModel = hiltViewModel()) {
+    val bitmapCache by viewModel.bitmapCache.collectAsState()
+
+    // 2. 백그라운드에서 프리로드했던 '원본용 비트맵'이 있는지 확인 (키: url + "_full")
+    val fullBitmap = bitmapCache[imageUrl + "_full"] ?: bitmapCache[imageUrl]
+
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -603,12 +702,23 @@ fun EnlargedImageDialog(imageUrl: String, onDismiss: () -> Unit) {
         containerColor = Color.Black.copy(alpha = 0.9f),
         text = {
             Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().align(Alignment.Center),
-                    contentScale = ContentScale.Fit
-                )
+                if (fullBitmap != null) {
+                    // [케이스 1] 이미 프리로드된 비트맵이 있다면 즉시 표시
+                    Image(
+                        bitmap = fullBitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    // [케이스 2] 아직 프리로드가 안 끝났다면 서버에서 로드
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
             }
         }
     )

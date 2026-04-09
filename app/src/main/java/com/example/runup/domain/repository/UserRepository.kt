@@ -1,4 +1,5 @@
 package com.example.runup.domain.repository
+import android.net.Uri
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
@@ -20,11 +21,16 @@ interface UserRepository {
     // 사용자 이름 업데이트
     suspend fun updateUserName(username: String): AuthResult<Boolean>
 
+    suspend fun uploadUserProfileImage(imageUri: Uri): AuthResult<String>
+
     // 나의 달리기 목표 저장
     suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean>
 
     // 나의 달리기 기록 저장
     suspend fun saveRunRecord(record: RunRecord): AuthResult<Boolean>
+
+    // 나의 달리기 기록 삭제
+    suspend fun deleteRunRecord(courseId: String): AuthResult<Boolean>
 
     // 현재 로그인 된 사용자의 모든 데이터 반환 (마이페이지)
     suspend fun getMyUserData(): AuthResult<UserData>

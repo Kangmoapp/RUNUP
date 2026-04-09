@@ -24,7 +24,7 @@ class CourseMapper @Inject constructor(private val gson: Gson) {
             locationPointsJson = gson.toJson(course.locationPoints),
             scoresJson = gson.toJson(course.scores),
             vector = vector,
-            address = address
+            address = address,
         )
     }
 
@@ -39,7 +39,8 @@ class CourseMapper @Inject constructor(private val gson: Gson) {
             minLng = entity.minLng,
             maxLng = entity.maxLng,
             locationPoints = gson.fromJson(entity.locationPointsJson, typeToken) ?: listOf(),
-            scores = gson.fromJson(entity.scoresJson, Scores::class.java) ?: Scores(0.0, 0.0, 0.0)
+            scores = gson.fromJson(entity.scoresJson, Scores::class.java) ?: Scores(0.0, 0.0, 0.0),
+            landmark = entity.landmark ?:"",
         )
     }
 }
