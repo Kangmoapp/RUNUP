@@ -52,7 +52,9 @@ fun RunUpApp(
                 onOptionClick= { },
                 onHelpClick= { },
                 onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
-                onMypageClick= { },
+                onMypageClick= {viewModel.navigateTo(Screen.MYPAGE)},
+                onLocalDBClick = { viewModel.navigateTo(Screen.LOCALDB)},
+                onLogoutClick = {viewModel.navigateTo(Screen.START)}
             )
             Screen.RUNNING -> RunningScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
@@ -78,7 +80,7 @@ fun RunUpApp(
                 }
             )
 
-            Screen.COMMUNITY_DETAIL -> CommunityDetailScreen(
+            Screen.COMMUNITY_COMMENT -> CommunityCommentScreen(
                 // viewModel에 저장된 따끈따끈한 ID를 전달합니다.
                 postId = viewModel.selectedPostId,
                 onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) }
@@ -94,6 +96,10 @@ fun RunUpApp(
             Screen.RUNNINGTEST -> RunningTestScreen()
 
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
+
+            Screen.MYPAGE -> MyPageScreen(
+                onBackClick = {viewModel.navigateTo(Screen.MENU)},
+            )
 
         }
         if(isSplashLoading){
