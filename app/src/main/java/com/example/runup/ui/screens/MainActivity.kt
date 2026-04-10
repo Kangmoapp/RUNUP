@@ -30,6 +30,7 @@ fun RunUpApp(
     viewModel: AppViewModel = viewModel()
 ) {
 
+
     val currentScreen by viewModel.currentScreen.collectAsState()
     val isSplashLoading by viewModel.isSplashLoading.collectAsState()
     Box(modifier = Modifier.fillMaxSize()){

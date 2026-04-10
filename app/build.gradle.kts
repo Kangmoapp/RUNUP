@@ -171,7 +171,10 @@ dependencies {
     implementation(libs.naver.map.compose)
     implementation(libs.naver.map.sdk)  // 이거 추가
     implementation("io.github.fornewid:naver-map-location:21.0.2")
+    //아이콘 확장팩 추가
+    implementation("androidx.compose.material:material-icons-extended")
 }
+
 
 
 
