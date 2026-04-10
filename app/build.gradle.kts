@@ -167,6 +167,30 @@ dependencies {
     // Hilt Worker용 Annotation Processor (KSP 권장)
     ksp(libs.androidx.hilt.compiler)
 
+    // TOML에서 정의한 네이버 지도 라이브러리 추가
+    implementation(libs.naver.map.compose)
+    implementation(libs.naver.map.sdk)  // 이거 추가
+    implementation("io.github.fornewid:naver-map-location:21.0.2")
     //아이콘 확장팩 추가
     implementation("androidx.compose.material:material-icons-extended")
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

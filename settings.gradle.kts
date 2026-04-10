@@ -28,6 +28,11 @@ dependencyResolutionManagement {
                 includeGroup("io.objectbox") // ObjectBox 것만 허용
             }
         }
+
+        // --- 네이버 지도 저장소 추가 ---
+        maven {
+            url = uri("https://repository.map.naver.com/archive/maven")
+        }
     }
 }
 
