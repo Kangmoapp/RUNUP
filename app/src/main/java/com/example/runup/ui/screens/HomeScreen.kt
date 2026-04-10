@@ -1,332 +1,228 @@
 package com.example.runup.ui.screens
 
-
+import android.os.Bundle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.example.runup.ui.components.CenterBar
-import com.example.runup.ui.components.DistanceGoalSettingDialog
-import com.example.runup.ui.components.MyGoogleMap
-import com.example.runup.ui.components.TopBar
-
-import com.example.runup.ui.components.PaceGoalSettingDialog
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.runup.ui.theme.BackGroudColor
-import com.example.runup.ui.theme.MapSpaceSize
+import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.White
-import com.example.runup.ui.theme.TextWhite
+import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.viewmodel.CourseRecommendationViewModel
 import com.example.runup.viewmodel.HomeUiState
 import com.example.runup.viewmodel.HomeViewModel
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.rememberCameraPositionState
-
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeOff
+import com.naver.maps.map.MapView
+import com.naver.maps.map.CameraAnimation
+import com.naver.maps.map.CameraUpdate
+import com.naver.maps.geometry.LatLng
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.naver.maps.map.CameraPosition
+import com.naver.maps.map.NaverMap
+import com.naver.maps.map.overlay.Marker
 
 @Preview
 @Composable
-fun PreviewHomeScreen(){
-
-    HomeContent(
-        uiState = HomeUiState(
-        goalDistance = 2500,
-        goalPace = 390),
-        {},{},{},{},{},{},{},{ _, _ -> },{}
-        )
+private fun Preview_HomeContent(){
+    HomeContent(uiState = HomeUiState(),{})
 }
+
 
 @Composable
 fun HomeScreen(
     onMenuClick:()->Unit,
-    onRunClick:()->Unit,
     viewModel: HomeViewModel = hiltViewModel()
-) {
+){
     val uiState by viewModel.uiState.collectAsState()
-
     HomeContent(
         uiState = uiState,
-        onMenuClick = onMenuClick,
-        onRunClick = onRunClick,
-        onDistanceClick = {viewModel.openDistanceDialog()},
-        onDistanceClose = {viewModel.closeDistanceDialog()},
-        onDistanceConfirm = {viewModel.confirmDistance(it)},
-        onPaceClick = {viewModel.openPaceDialog()},
-        onPaceClose = {viewModel.closePaceDialog()},
-        onPaceConfirm = { minute, second ->
-            viewModel.confirmPace(minute, second)
-        },
-        onToggleAi = {
-            viewModel.toggleAi()               // 기존 AI 상태 변경
-            viewModel.startBluetoothScan()     // 🌟 스캔 같이 시작!
-        }
+        onMenuClick = onMenuClick
     )
 }
+
 @Composable
 private fun HomeContent(
     uiState: HomeUiState,
     onMenuClick:()->Unit,
-    onRunClick:()->Unit,
-    onDistanceClick:()->Unit,
-    onDistanceClose:()->Unit,
-    onDistanceConfirm:(Int)->Unit,
-    onPaceClick:()->Unit,
-    onPaceClose:()->Unit,
-    onPaceConfirm:(Int,Int)->Unit,
-    onToggleAi: () -> Unit
 ){
-    val defaultLocation = LatLng(35.8888, 128.6103)
+    val isPreview = LocalInspectionMode.current
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(defaultLocation, 17f)
-    }
-    val mapProperties = MapProperties(
-        isMyLocationEnabled = true
-    )
-
-    LaunchedEffect(uiState.currentLocation) {
-        uiState.currentLocation?.let { location ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(location, 17f)
-            )
-        }
-    }
     Surface(
         modifier = Modifier
             .fillMaxSize(),
         color = BackGroudColor
     ){
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            //modifier = Modifier.padding(start = 18.dp, end = 18.dp)
-        ){
-            TopBar(onMenuClick = onMenuClick, isBack = false)
-
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp)
-            ){
-                uiState.currentLocation?.let { location ->
-                    MyGoogleMap(
-                        cameraPosition = location,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(color = White)
-                    )
-                }
-                AIStatusOverlay(
-                    isAiEnabled = uiState.isAiEnabled,
-                    postureLabel = uiState.currentPostureLabel,
-                    leftBleState = uiState.leftBleState,
-                    rightBleState = uiState.rightBleState,
-                    onToggle = onToggleAi,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 16.dp)
-                )
-                BunIconButton(
-                    onClick = onRunClick,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .size(180.dp)
-                        .offset(y=90.dp)
-                )
-            }
-            Spacer(modifier = Modifier.MapSpaceSize())
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .wrapContentSize()
-                    .padding(top = 35.dp, start = 18.dp, end = 18.dp)
-            ){
-                HomeButton(
-                    texttop = "목표 페이스",
-                    textbottom = "${uiState.goalPace/60}분 ${uiState.goalPace%60}초",
-                    onClick = onPaceClick,
-                    modifier = Modifier.height(130.dp).weight(1f)
-                )
-                CenterBar()
-                HomeButton(
-                    texttop = "목표 거리",
-                    textbottom = "${uiState.goalDistance.toDouble()/1000} km",
-                    onClick = onDistanceClick,
-                    modifier = Modifier.height(130.dp).weight(1f)
-                )
-            }
-        }
-        if (uiState.showDistanceDialog) {
-            DistanceGoalSettingDialog(
-                range = 0..100,
-                startNumber = (uiState.goalDistance/100 + 1),
-                onConfirm = onDistanceConfirm,
-                onDismiss = onDistanceClose
-            )
-        }
-        else if (uiState.showPaceDialog) {
-            PaceGoalSettingDialog(
-                rangeMinutes = 0..20,
-                rangeSeconds = 0..60,
-                startMinute = (uiState.goalPace/60 + 1),
-                startSecond = (uiState.goalPace%60 + 1),
-                onConfirm = onPaceConfirm,
-                onDismiss = onPaceClose
-            )
-        }
-    }
-}
-
-@Composable
-private fun BunIconButton(
-    onClick:()->Unit,
-    modifier: Modifier = Modifier
-){
-    IconButton(
-        onClick = onClick,
-        modifier = modifier
-            .clip(CircleShape) // 원형으로 자르기
-    ){
-        Icon(
-            painter = painterResource(id = com.example.runup.R.drawable.yellow_shoes),
-            contentDescription = "달리기 버튼",
-            tint = Color.Unspecified,
+        Box(
             modifier = Modifier.fillMaxSize()
-        )
-    }
-}
-
-@Preview
-@Composable
-fun PreviewBtn(){
-    Box(
-        modifier = Modifier
-            .height(130.dp)
-            .width(180.dp)
-    ){
-        HomeButton(
-            texttop = "목표 페이스",
-            textbottom = "6분 30초",
-            {},
-        )
-    }
-}
-
-@Composable
-private fun HomeButton(
-    texttop: String,
-    textbottom:String,
-    onClick:()->Unit,
-    fontsize: TextUnit = 25.sp,
-    modifier:Modifier = Modifier
-        .fillMaxSize()
-){
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier
-            .clickable(onClick = onClick)
-    ){
-        Text(
-            text = texttop,
-            fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
-        )
-        Text(
-            text = textbottom,
-            fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
-        )
-    }
-}
-@Composable
-fun AIStatusOverlay(
-    isAiEnabled: Boolean,
-    postureLabel: String,
-    leftBleState: String,
-    rightBleState: String,
-    onToggle: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier
-            // 텍스트가 추가되었으니 폭을 살짝 넓혀줍니다. (0.85f -> 0.95f)
-            .fillMaxWidth(0.95f)
-            .height(56.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = if (isAiEnabled) Color(0xCC311B92) else Color(0xCC757575),
-        shadowElevation = 6.dp
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 1. 왼쪽: 현재 AI 분석 결과 (팔자 걸음 등)
-            Text(
-                text = postureLabel,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f) // 텍스트가 길어져도 우측 UI를 밀어내지 않게 방어
-            )
-
-            // 🌟 2. 오른쪽: 블루투스 상태 2줄 + 스피커 버튼 묶음
-            Row(verticalAlignment = Alignment.CenterVertically) {
-
-                // 블루투스 상태 텍스트 (위: 왼쪽, 아래: 오른쪽)
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    modifier = Modifier.padding(end = 4.dp)
-                ) {
-                    Text(text = leftBleState, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    Text(text = rightBleState, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        ){
+            if(isPreview){
+                FakeMap(modifier = Modifier.fillMaxSize())
+            }
+            else{
+                uiState.currentLocation?.let { geoPoint ->
+                    MapViewContainer(
+                        cameraPosition = LatLng(geoPoint.latitude, geoPoint.longitude),
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
-
-                // 스피커 버튼
-                IconButton(onClick = onToggle) {
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .wrapContentSize()
+                    .padding(top = 35.dp, end = 18.dp)
+            ){
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .background(color = BackGroudColor,shape = RoundedCornerShape(5.dp))
+                        .clickable{onMenuClick()},
+                    contentAlignment = Alignment.Center
+                ){
                     Icon(
-                        imageVector = if (isAiEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
-                        contentDescription = "AI Voice Toggle",
-                        tint = Color.White
+                        Icons.Default.Menu,
+                        "메뉴",
+                        tint = WhiteTextColor,
+                        modifier = Modifier.size(40.dp)
                     )
                 }
             }
         }
+
+    }
+}
+
+
+@Composable
+private fun MapViewContainer(
+    cameraPosition:LatLng,
+    modifier:Modifier = Modifier
+) {
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val mapView = remember {
+        MapView(context).apply {
+            onCreate(Bundle())
+        }
+    }
+
+    val marker = remember { Marker() }
+
+    DisposableEffect(lifecycleOwner) {
+
+        val observer = object : DefaultLifecycleObserver {
+
+            override fun onStart(owner: LifecycleOwner) {
+                mapView.onStart()
+            }
+
+            override fun onResume(owner: LifecycleOwner) {
+                mapView.onResume()
+            }
+
+            override fun onPause(owner: LifecycleOwner) {
+                mapView.onPause()
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                mapView.onStop()
+            }
+
+            override fun onDestroy(owner: LifecycleOwner) {
+                mapView.onDestroy()
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    AndroidView(
+        factory = {
+            mapView
+        },
+        modifier = modifier,
+        update = { view ->
+            view.getMapAsync { naverMap: NaverMap ->
+                naverMap.moveCamera(
+                    CameraUpdate.toCameraPosition(
+                        CameraPosition(cameraPosition, 16.0)
+                    ).animate(CameraAnimation.Easing, 1200)
+                )
+
+                marker.position = cameraPosition
+                marker.captionText = "현재 위치"
+                marker.map = naverMap
+            }
+        }
+    )
+    /*
+    AndroidView(
+        factory = {
+            mapView.apply {
+                getMapAsync { naverMap ->
+                    naverMap.moveCamera(
+                        CameraUpdate.toCameraPosition(
+                            com.naver.maps.map.CameraPosition(cameraPosition, 16.0)
+                        ).animate(CameraAnimation.Easing, 1200)
+                    )
+                    marker.position = cameraPosition
+                    marker.captionText = "현재 위치"
+                    marker.map = naverMap
+                }
+            }
+        },
+        modifier = modifier
+    )
+
+     */
+}
+@Composable
+private fun FakeMap(
+    modifier:Modifier = Modifier
+){
+
+    Box(
+        modifier = modifier.background(White),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.Text(
+            text = "Map Preview Placeholder",
+            color = TextBlack
+        )
     }
 }

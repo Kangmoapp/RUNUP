@@ -40,7 +40,6 @@ fun RunUpApp(
             )
             Screen.HOME -> HomeScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-                onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
             )
             Screen.GOALSETTING -> GoalSettingScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
@@ -57,9 +56,12 @@ fun RunUpApp(
                 onLocalDBClick={},
                 onLogoutClick = {}
             )
+            /*
             Screen.RUNNING -> RunningScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             )
+
+             */
 
             Screen.COMMUNITY -> CommunityScreen(
                 onBackClick = { viewModel.navigateTo(Screen.MENU) },
@@ -81,7 +83,7 @@ fun RunUpApp(
                 }
             )
 
-            Screen.COMMUNITY_DETAIL -> CommunityDetailScreen(
+            Screen.COMMUNITY_DETAIL -> CommunityCommentScreen(
                 // viewModel에 저장된 따끈따끈한 ID를 전달합니다.
                 postId = viewModel.selectedPostId,
                 onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) }
@@ -94,10 +96,9 @@ fun RunUpApp(
             )
             Screen.TEST -> TestScreen()
 
-            Screen.RUNNINGTEST -> RunningTestScreen()
-
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
 
+            else -> {}
         }
         if(isSplashLoading){
             LoadingScreen()
