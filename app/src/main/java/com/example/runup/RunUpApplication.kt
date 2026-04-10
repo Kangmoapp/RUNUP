@@ -19,7 +19,7 @@ class RunUpApplication : Application(),
         super.onCreate()
 
         NaverMapSdk.getInstance(this).client =
-            NaverMapSdk.NcpKeyClient("am7yyb8jkq")
+            NaverMapSdk.NcpKeyClient(BuildConfig.NAVER_API_KEY)
 
         syncManager.setupDataSync()
     }
