@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -44,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -55,6 +57,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import com.example.runup.BuildConfig
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
@@ -371,30 +374,74 @@ fun ExpandableRunItem(
                 }
 
                 val staticMapUrl = remember(run.recordDate) {
-                    val pathParam = run.course.locationPoints.joinToString("|") {
-                        "${it.locationPoint.latitude},${it.locationPoint.longitude}"
-                    }
-                    buildString {
-                        append("https://maps.googleapis.com/maps/api/staticmap?")
-                        append("center=${centerLat},${centerLng}&zoom=${dynamicZoom}&size=600x400&scale=2")
-                        append("&path=color:0x4A90E2FF|weight:5|${pathParam}") // 코스 경로를 파란색 선으로 표시
-                        append("&key=AIzaSyDqeWVV33wzA4O2ZwHQpMazISZ-EMcjzTw") // 사용자의 API 키 입력
-                    }
+                    buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom)
                 }
+
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(Color.Black)
                 ) {
+
+                    // 1. Static Map
                     AsyncImage(
-                        model = staticMapUrl,
-                        contentDescription = "Run Course Map",
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(staticMapUrl)
+                            .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
+                            .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                            .build(),
+                        contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+
+                    // 2. 경로 그리기 (시작/종료 마커 포함)
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+
+                        val points = run.course.locationPoints.map {
+                            val (x, y) = latLngToPixel(
+                                it.locationPoint.latitude,
+                                it.locationPoint.longitude,
+                                centerLat,
+                                centerLng,
+                                dynamicZoom.toDouble(),
+                                size.width,
+                                size.height,
+                            )
+                            Offset(x, y)
+                        }
+
+                        // 2-1. 경로 선 그리기
+                        for (i in 0 until points.size - 1) {
+                            drawLine(
+                                color = Color(0xFF4A90E2), // 기존 파란색 유지
+                                start = points[i],
+                                end = points[i + 1],
+                                strokeWidth = 5f
+                            )
+                        }
+
+                        // 2-2. 시작 및 종료 마커 추가
+                        if (points.isNotEmpty()) {
+                            val startPoint = points.first()
+                            val endPoint = points.last()
+
+                            // 시작 마커 (초록색)
+                            drawMarker(
+                                center = startPoint,
+                                color = Color(0xFF4CAF50),
+                                "START"
+                            )
+
+                            // 종료 마커 (빨간색)
+                            drawMarker(
+                                center = endPoint,
+                                color = Color(0xFFF44336),
+                                "END"
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -411,6 +458,20 @@ fun ExpandableRunItem(
             }
         }
     }
+}
+
+fun buildNaverStaticMapUrl(
+    centerLat: Double,
+    centerLng: Double,
+    zoom: Int
+): String {
+    return "https://maps.apigw.ntruss.com/map-static/v2/raster" +
+            "?w=600&h=400" +
+            "&center=$centerLng,$centerLat" + // ⚠️ 순서 중요 (경도,위도)
+            "&level=$zoom" +
+            "&maptype=basic" +
+            "&format=png" +
+            "&scale=2"
 }
 
 @Composable
