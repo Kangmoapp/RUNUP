@@ -1,75 +1,132 @@
 package com.example.runup.viewmodel
 
-
-import android.app.Application
-import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
+import com.example.runup.domain.usecase.RecordRunningUseCase
+import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
-import com.example.runup.service.LocationService
 import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TtsManager
-import com.google.android.gms.maps.model.LatLng
+import com.naver.maps.geometry.LatLng
+import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 
 data class HomeUiState(
     val goalDistance: Int = 0,
     val goalPace: Int = 0,
-    val currentLocation: LatLng? = null,   //현재 위치
+    val currentLocation: GeoPoint? = null,   //현재 위치
+    val isScroll:Boolean = true,
+    val isLoading:Boolean = false,
     val showDistanceDialog: Boolean = false,
     val showPaceDialog: Boolean = false,
+    val isRunning:Boolean = false,
+
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
     val leftBleState: String = "L: 대기 중",
     val rightBleState: String = "R: 대기 중"
 )
+
+data class RunningUiState(
+    val latLngList: List<LatLng> = emptyList(),   //지금까지 이동 경로 좌표 목록
+    val totalTime:Int = 0,
+    val totalDistance: Double = 0.0, //현재까지 달린 거리
+    val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
+)
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    private val saveCourseUseCase: SaveCourseUseCase,
+    private val recordRunningUseCase: RecordRunningUseCase,
+
     private val goalsettingUseCase: GoalSettingUseCase,
     private val getUserGoalUseCase: GetUserGoalUseCase,
     private val locationRepository: LocationRepository,
-    private val application: Application,
 
     private val postureAnalyzer: PostureAnalyzer,
     private val ttsManager: TtsManager,
     private val bleSensorManager: BleSensorManager,
     private val bleConnectionManager: BleConnectionManager
 ): ViewModel(){
-    private val _uiState = MutableStateFlow(HomeUiState())
-    val uiState: StateFlow<HomeUiState> = _uiState
+    private val _homeUiState = MutableStateFlow(HomeUiState())
+    val homeUiState: StateFlow<HomeUiState> = _homeUiState
 
-    // AI 추론용 버퍼
+    private val _loadingTimer = MutableStateFlow(0)
+    val loadingTimer: StateFlow<Int> = _loadingTimer
+
     private val inferenceBuffer = mutableListOf<FloatArray>()
     private var lastInferenceResult = ""
 
-    init {
-        loadUserGoal()
-        observeCurrentLocation()
-        startCurrentLocationTracking()
+    private val _isTracking = MutableStateFlow(false)
+    private val _totalTime = MutableStateFlow(0)
 
-        // 센서 데이터 수집기 시작
+    private var recordingJob: Job? = null // 러닝 기록용 코루틴 잡
+
+    // lifecycle 로 값이 업데이트 될 때마다 자동 업데이트 + 하나의 생명 주기만 적용
+    val runningUiState: StateFlow<RunningUiState> = combine(
+        locationRepository.recordedNodes,
+        locationRepository.totalDistance,
+        _isTracking,
+        _totalTime
+    ) { nodes, totalDistance, isTracking, totalTime ->
+        RunningUiState(
+            latLngList = nodes.map {
+                LatLng(it.locationPoint.latitude, it.locationPoint.longitude)
+            },
+            totalDistance = totalDistance,
+            isTracking = isTracking,
+            totalTime = totalTime
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = RunningUiState()
+    )
+
+    init {
+        observeLocation()
+        loadUserGoal()
+
+
         bleSensorManager.startDataProcessing()
         observeSensorData()
         observeBleConnection()
     }
 
+    private fun observeLocation() {
+        viewModelScope.launch {
+            locationRepository.currentLocation.collect { geoPoint ->
+                _homeUiState.update { currentState ->
+                    currentState.copy(
+                        currentLocation = geoPoint
+                    )
+                }
+            }
+        }
+    }
     private fun loadUserGoal() {
         viewModelScope.launch {
             getUserGoalUseCase().collectLatest { goal ->
                 goal?.let { (distance, pace) ->
-                    _uiState.update {
+                    _homeUiState.update {
                         it.copy(
                             goalDistance = distance,
                             goalPace = pace
@@ -79,51 +136,30 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
-    private fun observeCurrentLocation() {
-        viewModelScope.launch {
-            locationRepository.currentLocation.collectLatest { location ->
-                _uiState.update {
-                    it.copy(
-                        currentLocation = location?.let {
-                            LatLng(it.latitude, it.longitude)
-                        }
-                    )
-                }
-            }
-        }
-    }
 
-    // [1] 단순 위치 추적 시작 (GPS 서비스 ON)
-    fun startCurrentLocationTracking() {
-        locationRepository.startTracking()
-    }
-
-    fun stopCurrentLocationTracking() {
-        locationRepository.stopTracking()
-    }
 
     // 목표 설정 함수들
     fun openDistanceDialog() {
-        _uiState.update { it.copy(showDistanceDialog = true) }
+        _homeUiState.update { it.copy(showDistanceDialog = true) }
     }
     fun closeDistanceDialog() {
-        _uiState.update { it.copy(showDistanceDialog = false) }
+        _homeUiState.update { it.copy(showDistanceDialog = false) }
     }
 
     fun openPaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = true) }
+        _homeUiState.update { it.copy(showPaceDialog = true) }
     }
     fun closePaceDialog() {
-        _uiState.update { it.copy(showPaceDialog = false) }
+        _homeUiState.update { it.copy(showPaceDialog = false) }
     }
 
     fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val distanceMeter:Int = distanceKm*100
-        _uiState.update {
+        _homeUiState.update {
             it.copy(showDistanceDialog = false)
         }
         viewModelScope.launch {
-            when (val result = goalsettingUseCase(distanceMeter, _uiState.value.goalPace)) {
+            when (val result = goalsettingUseCase(distanceMeter, _homeUiState.value.goalPace)) {
                 is AuthResult.Success -> {
 
                 }
@@ -137,11 +173,11 @@ class HomeViewModel @Inject constructor(
 
     fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
         val paceTotal:Int = paceMinute*60 + paceSecond
-        _uiState.update {
+        _homeUiState.update {
             it.copy(showPaceDialog = false)
         }
         viewModelScope.launch {
-            when (val result = goalsettingUseCase(_uiState.value.goalDistance, paceTotal)) {
+            when (val result = goalsettingUseCase(_homeUiState.value.goalDistance, paceTotal)) {
                 is AuthResult.Success -> {
 
                 }
@@ -157,7 +193,7 @@ class HomeViewModel @Inject constructor(
     // AI 추론 및 음성 제어 로직
     // =====================================
     fun toggleAi() {
-        _uiState.update { currentState ->
+        _homeUiState.update { currentState ->
             val newState = !currentState.isAiEnabled
             if (!newState) {
                 inferenceBuffer.clear()
@@ -173,7 +209,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.Default) {
             bleSensorManager.sensorDataFlow.collectLatest { snapshot ->
                 // AI가 활성화 상태일 때만 데이터 수집
-                if (!_uiState.value.isAiEnabled) return@collectLatest
+                if (!_homeUiState.value.isAiEnabled) return@collectLatest
 
                 inferenceBuffer.add(snapshot)
 
@@ -192,7 +228,7 @@ class HomeViewModel @Inject constructor(
             val (posture, probability) = result
 
             // UI 업데이트
-            _uiState.update { it.copy(currentPostureLabel = posture) }
+            _homeUiState.update { it.copy(currentPostureLabel = posture) }
 
             // 자세가 바뀌었고, 확률이 70% 이상일 때 음성 알림
             if (posture != lastInferenceResult && probability > 0.7f) {
@@ -208,14 +244,109 @@ class HomeViewModel @Inject constructor(
         // 왼쪽 신발 상태 관찰
         viewModelScope.launch {
             bleConnectionManager.leftConnectionState.collectLatest { state ->
-                _uiState.update { it.copy(leftBleState = "L: $state") }
+                _homeUiState.update { it.copy(leftBleState = "L: $state") }
             }
         }
         // 오른쪽 신발 상태 관찰
         viewModelScope.launch {
             bleConnectionManager.rightConnectionState.collectLatest { state ->
-                _uiState.update { it.copy(rightBleState = "R: $state") }
+                _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
+    }
+
+
+    // =====================================
+    // 러닝 시 로직
+    // =====================================
+
+    fun onRunClick() {
+        viewModelScope.launch {
+            _homeUiState.update { it.copy(isLoading = true, isRunning = true) }
+            for (i in 3 downTo 1) {
+                _loadingTimer.value = i
+                delay(1000)
+            }
+            _homeUiState.update { it.copy(isLoading = false) }
+            startCurrentLocationTracking()
+            startRunningTracking()
+        }
+
+    }
+
+    fun startCurrentLocationTracking() {
+        locationRepository.startTracking()
+    }
+
+    // [2] 단순 위치 추적 종료 (GPS 서비스 OFF)
+    fun stopCurrentLocationTracking() {
+        // 러닝 기록 중이었다면 그것부터 멈춤
+        if (_isTracking.value) stopRunningTracking()
+        locationRepository.stopTracking()
+    }
+
+    // [3] 러닝 경로 기록 시작
+    fun startRunningTracking() {
+        if (_isTracking.value) return // 이미 기록 중이면 무시
+
+        _isTracking.value = true
+
+        recordingJob = viewModelScope.launch {
+            while (true) {
+                // 1초마다 레포지토리의 현재 위치를 노드로 변환하여 저장
+                if(_isTracking.value){
+                    locationRepository.addNodeFromCurrentLocation()
+                    // 2. 시간 1초 증가 (초 단위)
+                    _totalTime.value += 1
+                    delay(1000L)
+                } else {
+                    delay(500L) // false일 때도 잠깐 쉬기
+                }
+                Log.d("RunningTracking", "TrackingState: ${_isTracking.value}")
+            }
+        }
+    }
+
+    // [4] 러닝 경로 기록 중단
+    fun stopRunningTracking() {
+        if(_isTracking.value) _isTracking.value = false
+        else _isTracking.value = true
+        //recordingJob?.cancel()
+        /*
+        viewModelScope.launch {
+            val nodes = locationRepository.recordedNodes.value
+            val distance = locationRepository.totalDistance.value.toInt()
+            val timeInMillis = _totalTime.value * 1000
+
+            if (nodes.isNotEmpty()) {
+                val result = recordRunningUseCase(nodes, distance, timeInMillis)
+                if (result is AuthResult.Success) {
+                    // 저장 성공 후 경로 데이터만 초기화
+                    locationRepository.clearData()
+                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
+                }
+            }
+        }
+         */
+    }
+
+    fun recordRunningCourse() {
+        _isTracking.value = false
+        recordingJob?.cancel()
+        viewModelScope.launch {
+            val nodes = locationRepository.recordedNodes.value
+            val distance = locationRepository.totalDistance.value.toInt()
+            val timeInMillis = _totalTime.value * 1000
+
+            if (nodes.isNotEmpty()) {
+                val result = recordRunningUseCase(nodes, distance, timeInMillis)
+                if (result is AuthResult.Success) {
+                    // 저장 성공 후 경로 데이터만 초기화
+                    locationRepository.clearData()
+                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
+                }
+            }
+        }
+        _homeUiState.update { it.copy(isRunning = false) }
     }
 }

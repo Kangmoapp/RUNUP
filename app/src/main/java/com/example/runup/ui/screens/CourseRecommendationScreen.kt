@@ -445,7 +445,9 @@ private fun LoopDialog(
         ) {
             Column (
                 modifier = Modifier
-                    .background(shape = RoundedCornerShape(bottomStart = 5.dp, bottomEnd = 5.dp), color = White)
+                    .background(shape = RoundedCornerShape(bottomStart = 5.
+
+                    dp, bottomEnd = 5.dp), color = White)
             ){
                 Spacer(
                     modifier = Modifier

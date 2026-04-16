@@ -30,6 +30,7 @@ hiltWork = "1.2.0"
 androidxWork = "2.9.0"
 naver-map-compose = "1.7.2"
 naver-map-sdk = "3.23.2"
+foundationLayout = "1.10.6"
 
 
 [libraries]
@@ -87,6 +88,7 @@ androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.re
 
 # Google AI Client SDK
 google-generativeai = { group = "com.google.ai.client.generativeai", name = "generativeai", version.ref = "generativeai" }
+androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -40,7 +40,6 @@ fun RunUpApp(
             )
             Screen.HOME -> HomeScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-                onRunClick = {viewModel.navigateTo(Screen.RUNNING)},
             )
             Screen.GOALSETTING -> GoalSettingScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
@@ -57,9 +56,12 @@ fun RunUpApp(
                 onLocalDBClick = { viewModel.navigateTo(Screen.LOCALDB)},
                 onLogoutClick = {viewModel.navigateTo(Screen.START)}
             )
+            /*
             Screen.RUNNING -> RunningScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             )
+
+             */
 
             Screen.COMMUNITY -> CommunityScreen(
                 onBackClick = { viewModel.navigateTo(Screen.MENU) },
@@ -94,14 +96,13 @@ fun RunUpApp(
             )
             Screen.TEST -> TestScreen()
 
-            Screen.RUNNINGTEST -> RunningTestScreen()
-
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
 
             Screen.MYPAGE -> MyPageScreen(
                 onBackClick = {viewModel.navigateTo(Screen.MENU)},
             )
 
+            else -> {}
         }
         if(isSplashLoading){
             LoadingScreen()
