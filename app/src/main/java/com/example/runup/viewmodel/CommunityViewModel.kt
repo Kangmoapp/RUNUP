@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.imageLoader
@@ -49,6 +50,12 @@ data class PostUploadUiState(
     val isLoading: Boolean = false
 )
 
+data class MapSnapshot(
+    val staticMapUrl: String,
+    val markerPositions: Map<String, Offset>, // 실제 좌표(점)
+    val closerOffsets: Map<String, Offset>,   // 마커의 최종 위치
+    val courseBounds: androidx.compose.ui.geometry.Rect // 코스 경계 픽셀
+)
 private var lastVisibleSnapshot: DocumentSnapshot? = null
 private var isLastPage = false
 
@@ -67,10 +74,6 @@ class CommunityViewModel @Inject constructor(
     private val _postUploadUiState = MutableStateFlow(PostUploadUiState())
     val postUploadUiState: StateFlow<PostUploadUiState> = _postUploadUiState.asStateFlow()
 
-    // 비트맵 캐시를 ViewModel에서 관리
-    private val _bitmapCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
-    val bitmapCache = _bitmapCache.asStateFlow()
-
     var selectedLocationImageUris by mutableStateOf<List<Uri>>(emptyList())
         private set
 
@@ -81,6 +84,23 @@ class CommunityViewModel @Inject constructor(
         private set
     var savedScrollOffset by mutableStateOf(0)
         private set
+
+    // [A] 지도 전용 캐시
+    private val _mapSnapshotCache = MutableStateFlow<Map<String, MapSnapshot>>(emptyMap())
+    val mapSnapshotCache = _mapSnapshotCache.asStateFlow()
+
+    // [B] 리스트 마커용 썸네일 캐시 (URL 기준) - 기존 _bitmapCache를 마커 전용으로 명시
+    private val _thumbnailCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val thumbnailCache = _thumbnailCache.asStateFlow()
+
+    // [C] 원본/페이지 이동용 고해상도 캐시 (URL 기준)
+    private val _fullBitmapCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val fullBitmapCache = _fullBitmapCache.asStateFlow()
+
+    // 데이터 저장 함수들
+    fun saveMapSnapshot(postId: String, snapshot: MapSnapshot) {
+        _mapSnapshotCache.update { it + (postId to snapshot) }
+    }
 
     fun saveScrollState(index: Int, offset: Int) {
         savedScrollIndex = index
@@ -177,7 +197,7 @@ class CommunityViewModel @Inject constructor(
                 viewModelScope.launch(Dispatchers.IO) {
                     // 마커용 썸네일 (150px) 캐싱
                     val targetUrl = postImage.thumbnailUrl.ifEmpty { postImage.url }
-                    preloadToStateManager(targetUrl, postImage.url, 150)
+                    preloadToStateManager(targetUrl, postImage.url, 150, "THUMB")
 
                     // UI 스레드에서 카운트 체크
                     launch(Dispatchers.Main) {
@@ -195,14 +215,14 @@ class CommunityViewModel @Inject constructor(
             viewModelScope.launch(Dispatchers.IO) {
                 // 마커 클릭 시 뜰 원본 (별도의 키로 저장하거나 원본 URL 그대로 사용)
                 // 키를 다르게 하고 싶다면 postImage.url + "_full" 형태 사용 가능
-                preloadToStateManager(postImage.url, postImage.url + "_full", 800)
+                preloadToStateManager(postImage.url, postImage.url + "_full", 800, "FULL")
             }
         }
 
         commonImages.forEach { commonImage ->
             viewModelScope.launch(Dispatchers.IO) {
                 // 페이저에서 보일 일반 이미지들
-                preloadToStateManager(commonImage.url, commonImage.url, 800)
+                preloadToStateManager(commonImage.url, commonImage.url, 800, "FULL")
             }
         }
 
@@ -210,13 +230,13 @@ class CommunityViewModel @Inject constructor(
         allProfileUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
                 // 프로필은 150~200px 정도면 충분히 선명합니다.
-                preloadToStateManager(url, url, 150)
+                preloadToStateManager(url, url, 150, "THUMB")
             }
         }
     }
 
-    // UserStateManager에 비트맵을 꽂아주는 공통 함수
-    private suspend fun preloadToStateManager(url: String, cacheKey: String, size: Int) {
+    // 프리로딩 함수 수정 (용도별로 캐시 분리 적재)
+    private suspend fun preloadToStateManager(url: String, cacheKey: String, size: Int, type: String) {
         if (url.isEmpty()) return
         val request = ImageRequest.Builder(context)
             .data(url)
@@ -228,7 +248,10 @@ class CommunityViewModel @Inject constructor(
         if (result is SuccessResult) {
             val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
             bitmap?.let {
-                _bitmapCache.update { current -> current + (cacheKey to it) }
+                when (type) {
+                    "THUMB" -> _thumbnailCache.update { current -> current + (cacheKey to it) }
+                    "FULL" -> _fullBitmapCache.update { current -> current + (cacheKey to it) }
+                }
             }
         }
     }

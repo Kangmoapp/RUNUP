@@ -34,7 +34,9 @@ class LocationService : LifecycleService() {
         override fun onLocationResult(result: LocationResult) { // 위치 정보가 도착했을 때 실행되는 함수
             super.onLocationResult(result)
             result.lastLocation?.let { location ->
-                repository.updateCurrentLocation(GeoPoint(location.latitude, location.longitude)) //이제 실행되면 계속 위치 갱신만 한다
+                repository.updateCurrentLocation(
+                    GeoPoint(location.latitude, location.longitude)
+                )
             }
         }
     }

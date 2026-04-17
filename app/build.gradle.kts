@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.tv.material)
+    implementation(libs.androidx.compose.foundation.layout)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -173,6 +174,10 @@ dependencies {
     implementation("io.github.fornewid:naver-map-location:21.0.2")
     //아이콘 확장팩 추가
     implementation("androidx.compose.material:material-icons-extended")
+
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.0")
+    // Coil 기본 라이브러리
+    implementation("io.coil-kt.coil3:coil-compose:3.0.0")
 }
 
 

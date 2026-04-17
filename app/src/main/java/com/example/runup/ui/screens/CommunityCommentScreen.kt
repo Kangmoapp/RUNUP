@@ -42,7 +42,7 @@ fun CommunityCommentScreen(
     val comments = uiState.comments
     val isLoading = uiState.isLoading
 
-    val bitmapCache by viewModel.bitmapCache.collectAsState()
+    val bitmapCache by viewModel.thumbnailCache.collectAsState()
 
     // 스크롤 상태 기억 (데이터가 변경되어도 위치 유지)
     val listState = rememberLazyListState()

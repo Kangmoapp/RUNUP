@@ -14,5 +14,6 @@ enum class Screen {
     RECOMMEND,
     RUNNINGTEST,
     LOCALDB,
-    MYPAGE
+    MYPAGE,
+    COMMUNITY_DETAIL
 }

@@ -8,6 +8,7 @@ interface LocationRepository {
     val recordedNodes: StateFlow<List<Node>>
     val totalDistance: StateFlow<Double>
     val currentLocation: StateFlow<GeoPoint?>
+    val currentBearing: StateFlow<Float>
 
     fun updateCurrentLocation(geoPoint: GeoPoint)
     fun addNodeFromCurrentLocation()
@@ -15,4 +16,5 @@ interface LocationRepository {
 
     fun startTracking()
     fun stopTracking()
+    fun markLastNodeAsStopped()
 }
