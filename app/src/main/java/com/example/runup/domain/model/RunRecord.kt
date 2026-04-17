@@ -22,7 +22,8 @@ data class Course(
 
 data class Node(
     val locationPoint: GeoPoint = GeoPoint(35.0,128.0),
-    val score : Scores = Scores(0.0, 0.0, 0.0)
+    val score : Scores = Scores(0.0, 0.0, 0.0),
+    val stop: Boolean = false
 )
 
 data class Scores(
