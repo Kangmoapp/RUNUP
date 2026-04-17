@@ -439,7 +439,17 @@ fun PostItem(
                                     }
 
                                     for (i in 0 until points.size - 1) {
-                                        drawLine(color = Color.Black, start = points[i], end = points[i + 1], strokeWidth = 4f)
+                                        val currentNode = record.course.locationPoints[i]
+
+                                        // 정지 상태(isStop)가 true라면 다음 점과 잇지 않고 건너뜀
+                                        if (currentNode.stop) continue
+
+                                        drawLine(
+                                            color = Color.Black,
+                                            start = points[i],
+                                            end = points[i + 1],
+                                            strokeWidth = 4f
+                                        )
                                     }
 
                                     // (2) 시작/종료 마커 그리기
