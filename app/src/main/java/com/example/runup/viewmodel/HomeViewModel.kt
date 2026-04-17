@@ -43,7 +43,9 @@ data class HomeUiState(
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
     val leftBleState: String = "L: 대기 중",
-    val rightBleState: String = "R: 대기 중"
+    val rightBleState: String = "R: 대기 중",
+
+    val selectedTab: HomeTab = HomeTab.RUNNING,
 )
 
 data class RunningUiState(
@@ -52,6 +54,8 @@ data class RunningUiState(
     val totalDistance: Double = 0.0, //현재까지 달린 거리
     val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
 )
+
+enum class HomeTab { RUNNING, RECOMMEND, COURSE }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -258,6 +262,7 @@ class HomeViewModel @Inject constructor(
                 _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
+        _homeUiState.update { it.copy(isRunning = false) }
     }
 
 
@@ -356,5 +361,9 @@ class HomeViewModel @Inject constructor(
             }
         }
         _homeUiState.update { it.copy(isRunning = false) }
+    }
+
+    fun selectTab(tab: HomeTab) {
+        _homeUiState.update { it.copy(selectedTab = tab) }
     }
 }
