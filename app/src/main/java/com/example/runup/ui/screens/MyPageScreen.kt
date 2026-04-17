@@ -414,6 +414,21 @@ fun ExpandableRunItem(
 
                         // 2-1. 경로 선 그리기
                         for (i in 0 until points.size - 1) {
+                            // 현재 노드(Node)의 정보를 가져옴
+                            val currentNode = run.course.locationPoints[i]
+
+                            // 만약 현재 노드가 '정지(isStop)' 상태라면, 다음 노드와 선을 잇지 않고 건너뜀
+                            if (currentNode.stop) {
+                                // 멈춘 지점에 작은 회색 점 표시 (선택 사항)
+                                drawCircle(
+                                    color = Color.Gray,
+                                    radius = 8f,
+                                    center = points[i]
+                                )
+                                Log.d("path", "건너뜀")
+                                continue
+                            }
+
                             drawLine(
                                 color = Color(0xFF4A90E2), // 기존 파란색 유지
                                 start = points[i],
