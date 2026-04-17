@@ -33,6 +33,7 @@ data class HomeUiState(
     val goalDistance: Int = 0,
     val goalPace: Int = 0,
     val currentLocation: GeoPoint? = null,   //현재 위치
+    val currentBearing: Float = 0.0f, // 방향 추가
     val isScroll:Boolean = true,
     val isLoading:Boolean = false,
     val showDistanceDialog: Boolean = false,
@@ -113,11 +114,15 @@ class HomeViewModel @Inject constructor(
 
     private fun observeLocation() {
         viewModelScope.launch {
-            locationRepository.currentLocation.collect { geoPoint ->
-                _homeUiState.update { currentState ->
-                    currentState.copy(
-                        currentLocation = geoPoint
-                    )
+            launch {
+                locationRepository.currentLocation.collect { geoPoint ->
+                    _homeUiState.update { it.copy(currentLocation = geoPoint) }
+                }
+            }
+
+            launch {
+                locationRepository.currentBearing.collect { bearing ->
+                    _homeUiState.update { it.copy(currentBearing = bearing) }
                 }
             }
         }
@@ -309,7 +314,10 @@ class HomeViewModel @Inject constructor(
 
     // [4] 러닝 경로 기록 중단
     fun stopRunningTracking() {
-        if(_isTracking.value) _isTracking.value = false
+        if(_isTracking.value){
+            locationRepository.markLastNodeAsStopped()
+            _isTracking.value = false
+        }
         else _isTracking.value = true
         //recordingJob?.cancel()
         /*

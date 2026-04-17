@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.os.Bundle
+import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -78,6 +79,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.viewmodel.RunningUiState
+import com.naver.maps.map.overlay.LocationOverlay
+import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PolylineOverlay
 
 @Preview
@@ -166,6 +169,7 @@ private fun HomeContent(
                 homeUiState.currentLocation?.let { geoPoint ->
                     MapViewContainer(
                         cameraPosition = LatLng(geoPoint.latitude, geoPoint.longitude),
+                        bearing = homeUiState.currentBearing,
                         isRunning = homeUiState.isRunning,
                         latLngList = runningUiState.latLngList,
                         modifier = Modifier.fillMaxSize()
@@ -314,7 +318,8 @@ private fun BottomSection(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
                         sheetHeightPx = (sheetHeightPx - delta)
-                            .coerceIn(minHeightPx, maxHeightPx) },
+                            .coerceIn(minHeightPx, maxHeightPx)
+                    },
                     onDragStopped = {
                         val midPoint = (minHeightPx + maxHeightPx) / 2f
                         sheetHeightPx = if (sheetHeightPx > midPoint) maxHeightPx else minHeightPx
@@ -329,14 +334,15 @@ private fun BottomSection(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(minHeight-bottomPadding)
+                        .height(minHeight - bottomPadding)
                 ){
                     Box(
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .width(48.dp)
                             .height(6.dp)
-                            .background( Color.Gray.copy(alpha = 0.5f),
+                            .background(
+                                Color.Gray.copy(alpha = 0.5f),
                                 RoundedCornerShape(50)
                             )
                     )   // 위 토글 모양
@@ -378,11 +384,13 @@ private fun HomeComponent(
             texttop = textTop,
             textbottom = textTopValue,
             onClick = onPaceClick,
-            modifier = Modifier.height(130.dp).weight(1f)
+            modifier = Modifier
+                .height(130.dp)
+                .weight(1f)
         )
         Box(
             modifier = Modifier
-                .background(color = White, shape = RoundedCornerShape(20 .dp))
+                .background(color = White, shape = RoundedCornerShape(20.dp))
                 .width(1.dp)
                 .height(120.dp)
         )
@@ -390,7 +398,9 @@ private fun HomeComponent(
             texttop = textBottom,
             textbottom = textBottomValue,
             onClick = onDistanceClick,
-            modifier = Modifier.height(130.dp).weight(1f)
+            modifier = Modifier
+                .height(130.dp)
+                .weight(1f)
         )
     }
 }
@@ -412,8 +422,8 @@ private fun HomeExpandedContent(
             modifier = Modifier
                 .height(60.dp)
                 .width(300.dp)
-                .background(color = White, shape=RoundedCornerShape(5.dp))
-                .clickable{onClick()}
+                .background(color = White, shape = RoundedCornerShape(5.dp))
+                .clickable { onClick() }
         ){
             Text(
                 text = text,
@@ -457,6 +467,7 @@ private fun InfoBtn(
 @Composable
 private fun MapViewContainer(
     cameraPosition:LatLng,
+    bearing: Float = 0.0f, // 추가
     isRunning: Boolean = false,
     latLngList: List<LatLng> = emptyList(),   // 지금까지 이동 경로
     modifier:Modifier = Modifier
@@ -464,6 +475,8 @@ private fun MapViewContainer(
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val density = context.resources.displayMetrics.density
 
 
     val mapView = remember {
@@ -529,28 +542,28 @@ private fun MapViewContainer(
                     ).animate(CameraAnimation.Easing, 1200)
                 )
 
-                marker.position = cameraPosition
-                marker.captionText = "현재 위치"
-                marker.map = naverMap
-                if(isRunning){
-                    // 경로 표시
-                    if (latLngList.size >= 2) {
-                        polyline.coords = latLngList
-                        polyline.width = 10
-                        polyline.color = PointColor.toArgb()
-                        polyline.map = naverMap
+                // 네이버 지도 자체 위치 오버레이 설정
+                val locationOverlay = naverMap.locationOverlay
+                locationOverlay.isVisible = true
+                locationOverlay.position = cameraPosition
+                locationOverlay.bearing = bearing // 화살표가 가리키는 방향
+                //Log.d("MAP", "bearing: $bearing")
 
-                        // PathOverlay 버전 쓰고 싶으면 아래처럼
-                        /*
-                        pathOverlay.coords = latLngList
-                        pathOverlay.width = 20
-                        pathOverlay.outlineWidth = 3
-                        pathOverlay.map = naverMap
-                        */
-                    } else {
-                        polyline.map = null
-                        // pathOverlay.map = null
-                    }
+                locationOverlay.subIcon = OverlayImage.fromResource(
+                    com.naver.maps.map.R.drawable.navermap_default_location_overlay_sub_icon_arrow
+                )
+                locationOverlay.iconWidth = LocationOverlay.SIZE_AUTO
+                locationOverlay.iconHeight = LocationOverlay.SIZE_AUTO
+                locationOverlay.subIconWidth = LocationOverlay.SIZE_AUTO
+                locationOverlay.subIconHeight = LocationOverlay.SIZE_AUTO
+
+                if (latLngList.size >= 2) {
+                    polyline.coords = latLngList
+                    polyline.width = 10
+                    polyline.color = PointColor.toArgb()
+                    polyline.map = naverMap
+                } else {
+                    polyline.map = null
                 }
             }
         }
@@ -571,8 +584,8 @@ private fun MenuBtn(    // 우측 상단 메튜 버튼
         Box(
             modifier = Modifier
                 .size(50.dp)
-                .background(color = BackGroudColor,shape = RoundedCornerShape(5.dp))
-                .clickable{onMenuClick()},
+                .background(color = BackGroudColor, shape = RoundedCornerShape(5.dp))
+                .clickable { onMenuClick() },
             contentAlignment = Alignment.Center
         ){
             Icon(
@@ -659,7 +672,9 @@ fun AIStatusOverlay(
         shadowElevation = 6.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
