@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.os.Bundle
+import com.example.runup.ui.components.ControlButton
 import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -78,6 +81,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.runup.ui.theme.PointColor
+import com.example.runup.viewmodel.HomeTab
 import com.example.runup.viewmodel.RunningUiState
 import com.naver.maps.map.overlay.LocationOverlay
 import com.naver.maps.map.overlay.OverlayImage
@@ -148,7 +152,8 @@ private fun HomeContent(
     onPaceClose:()->Unit,
     onPaceConfirm:(Int,Int)->Unit,
 
-    onToggleAi: () -> Unit
+    onToggleAi: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
 ){
     val isPreview = LocalInspectionMode.current
 
@@ -204,57 +209,79 @@ private fun HomeContent(
                 modifier = Modifier
                     .fillMaxSize()
             ){
-                if(homeUiState.isRunning){
-                    HomeExpandedContent(text = "일시 정지", stopRunningTracking)
-                }
                 BottomSection(
-                    modifier = Modifier,
-                    isLoading = homeUiState.isLoading,
-                    headerContent = {
-                        if(homeUiState.isRunning){
-                            HomeComponent(
-                                textTop = "거리",
-                                textTopValue = "${runningUiState.totalDistance.toInt()}m",
-                                textBottom = "시간",
-                                textBottomValue = "${runningUiState.totalTime/60}분 ${runningUiState.totalTime%60}초",
-                                onPaceClick = {},
-                                onDistanceClick = {}
-                            )
-                        }
-                        else {
-                            HomeComponent(
-                                textTop = "목표 페이스",
-                                textTopValue = "${homeUiState.goalPace/60}분 ${homeUiState.goalPace%60}초",
-                                textBottom = "목표 거리",
-                                textBottomValue = "${homeUiState.goalDistance.toDouble()/1000} km",
-                                onPaceClick = onPaceClick,
-                                onDistanceClick = onDistanceClick
-                            )
-                        }
-                    },
-                    expandedContent = {
-                        if(homeUiState.isRunning){
-                            Column(
+                    selectedTab = homeUiState.selectedTab,
+                    onTabSelect = { viewModel.selectTab(it) },
+                    isRunning = homeUiState.isRunning,         // 🔹 추가
+                    runningUiState = runningUiState            // 🔹 추가
+                ) {
+                    when (homeUiState.selectedTab) {
 
-                            ){
-                                HomeComponent(
-                                    textTop = "페이스",
-                                    textTopValue = "${(runningPace / 60).toInt()}분 ${(runningPace % 60).toInt()}초",
-                                    textBottom = "활동 칼로리",  // 활동 칼로리는 weightKg * (distanceMeter / 1000.0) 이렇게 계산
-                                    textBottomValue = "119kcal",
-                                    onPaceClick = {},
-                                    onDistanceClick = {},
+                        HomeTab.RUNNING -> {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                // --- 1. 상단 제어 및 목표 영역 (단일 Row) ---
+                                Row(
                                     modifier = Modifier
-                                        .padding(start = 18.dp, end = 18.dp)
-                                )
-                                HomeExpandedContent(text = "완료", recordRunningCourse)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 20.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    // [왼쪽] 목표 정보 영역 (순서를 위로 올림)
+                                    Row(
+                                        modifier = Modifier.wrapContentWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // 목표 거리 클릭 영역
+                                        Column(
+                                            horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                            modifier = Modifier.clickable { onDistanceClick() }
+                                        ) {
+                                            Text(text = "목표 거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                            Text(
+                                                text = "${homeUiState.goalDistance.toDouble() / 1000}km",
+                                                color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        // 목표 페이스 클릭 영역
+                                        Column(
+                                            horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                            modifier = Modifier.clickable { onPaceClick() }
+                                        ) {
+                                            Text(text = "목표 페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                            Text(
+                                                text = "${homeUiState.goalPace / 60}'${homeUiState.goalPace % 60}\"",
+                                                color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    // [오른쪽] 제어 버튼 영역 (순서를 아래로 내림)
+                                    Row(
+                                        modifier = Modifier.wrapContentWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (!homeUiState.isRunning) {
+                                            ControlButton(text = "Run", color = PointColor) { onRunClick() }
+                                        } else {
+                                            val pauseOrResumeText = if (runningUiState.isTracking) "일시 정지" else "재개"
+                                            ControlButton(text = pauseOrResumeText, color = Color.Gray) { stopRunningTracking() }
+                                            ControlButton(text = "완료", color = Color.Red) { recordRunningCourse() }
+                                        }
+                                    }
+                                }
                             }
                         }
-                        else {
-                            HomeExpandedContent(text = "Run", onRunClick)
+                        HomeTab.RECOMMEND -> {
+                            Text("추천 코스 리스트가 여기에 나타납니다.", color = Color.White, modifier = Modifier.padding(20.dp))
+                        }
+                        HomeTab.COURSE -> {
+                            Text("나의 저장된 경로가 여기에 나타납니다.", color = Color.White, modifier = Modifier.padding(20.dp))
                         }
                     }
-                )
+                }
             }
         }
 
@@ -285,79 +312,171 @@ private fun HomeContent(
 @Composable
 private fun BottomSection(
     modifier: Modifier = Modifier,
-    isLoading:Boolean,
-    headerContent: @Composable () -> Unit,
-    expandedContent: @Composable () -> Unit,
+    selectedTab: HomeTab,
+    onTabSelect: (HomeTab) -> Unit,
+    isRunning: Boolean,            // 추가
+    runningUiState: RunningUiState, // 추가
+    content: @Composable () -> Unit // 탭에 따른 내용
 ) {
-    val minHeight = 250.dp
-    val maxHeight = 550.dp
     val density = LocalDensity.current
-    val minHeightPx = with(density) { minHeight.toPx() }
-    val maxHeightPx = with(density) { maxHeight.toPx() }
-    var sheetHeightPx by remember { mutableFloatStateOf(minHeightPx) }
-    val animatedHeight by animateDpAsState( targetValue = with(density) { sheetHeightPx.toDp() }, label = "sheetHeight" )
+    // 네이버 지도 스타일 높이 설정
+    val navBarHeight = 80.dp // 하단 메뉴바 높이
 
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    if(isLoading){
-        sheetHeightPx = minHeightPx
-    }
+    // 1. 높이 정의
+    val hiddenHeightPx = with(density) { 60.dp.toPx() } // 시트가 아예 내려가 있는 상태 (처음)
+    val collapsedHeightPx = with(density) { 100.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
+    val expandedHeightPx = with(density) { 550.dp.toPx() }  // 최대로 올렸을 때 높이
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .wrapContentHeight(),
-    ) {
+
+    var sheetHeightPx by remember { mutableFloatStateOf(hiddenHeightPx) }
+    val animatedHeight by animateDpAsState(targetValue = with(density) { sheetHeightPx.toDp() })
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // 정보창 영역 (시트 바로 위에 부착되어 함께 이동) ---
+        if (isRunning && sheetHeightPx > hiddenHeightPx + 10f) {
+            val runningPace = if (runningUiState.totalDistance < 100.0) 0.0
+            else (runningUiState.totalTime / runningUiState.totalDistance) * 1000
+
+            Column(
+                modifier = Modifier
+                    .padding(start = 20.dp, bottom = 10.dp) // 시트와의 간격
+                    .background(BackGroudColor.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp) // 각 항목 간격
+            ) {
+                // 1. 거리 정보
+                Column {
+                    Text(text = "거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                    Text(
+                        text = "${runningUiState.totalDistance.toInt()}m",
+                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // 2. 시간 정보
+                Column {
+                    Text(text = "시간", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                    Text(
+                        text = "${runningUiState.totalTime / 60}분 ${runningUiState.totalTime % 60}초",
+                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // 3. 페이스 정보
+                val runningPace = if (runningUiState.totalDistance < 100.0) 0.0
+                else (runningUiState.totalTime / runningUiState.totalDistance) * 1000
+
+                Column {
+                    Text(text = "페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                    Text(
+                        text = "${(runningPace / 60).toInt()}'${(runningPace % 60).toInt()}\"",
+                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // 4. 칼로리 정보
+                Column {
+                    Text(text = "칼로리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                    Text(
+                        text = "119kcal",
+                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+        // 1. 드래그 가능한 바텀 시트
         Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(animatedHeight)
-                .clip(RoundedCornerShape(topStart = 80.dp, topEnd = 80.dp))
+                .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
                 .background(BackGroudColor)
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        sheetHeightPx = (sheetHeightPx - delta)
-                            .coerceIn(minHeightPx, maxHeightPx)
+                        sheetHeightPx = (sheetHeightPx - delta).coerceIn(hiddenHeightPx, expandedHeightPx)
                     },
                     onDragStopped = {
-                        val midPoint = (minHeightPx + maxHeightPx) / 2f
-                        sheetHeightPx = if (sheetHeightPx > midPoint) maxHeightPx else minHeightPx
+                        // 🔹 수정: 각 구간 사이의 중간값을 기준으로 스냅핑 위치 결정
+                        sheetHeightPx = when {
+                            // 중간보다 높으면 최대로 확장
+                            sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
+
+                            // 중간과 숨김 사이에서 판단 (숨김~중간지점)
+                            sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
+
+                            // 그 외에는 숨김 상태로
+                            else -> hiddenHeightPx
+                        }
                     }
                 )
         ) {
             Column(
-                modifier = Modifier.fillMaxSize()
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
             ) {
-
-                Column (
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(minHeight - bottomPadding)
-                ){
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .width(48.dp)
-                            .height(6.dp)
-                            .background(
-                                Color.Gray.copy(alpha = 0.5f),
-                                RoundedCornerShape(50)
-                            )
-                    )   // 위 토글 모양
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 10.dp)
-                    ){
-                        headerContent()
-                    }
-                }
+                // 1) 핸들러: 항상 중앙 상단에 노출
                 Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .size(40.dp, 4.dp)
+                        .background(Color.Gray.copy(0.5f), RoundedCornerShape(2.dp))
+                )
 
-                ){
-                    expandedContent()
+                // 2) 실제 컨텐츠: 높이가 어느 정도 확보되었을 때만 노출
+                if (sheetHeightPx > hiddenHeightPx + 10f) {
+                    content()
+                }
+            }
+        }
+
+        // 2. 하단 네비게이션 바 (구분선 포함)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(BackGroudColor)
+        ) {
+            // 주황색 상단 구분선
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(PointColor)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(navBarHeight)
+                    .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val menuItems = listOf(
+                    HomeTab.RUNNING to "러닝",
+                    HomeTab.RECOMMEND to "코스 추천",
+                    HomeTab.COURSE to "경로 표시"
+                )
+
+                menuItems.forEach { (tab, title) ->
+                    // weight(1f)를 주어 모든 칸이 동일한 너비를 가짐
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable {
+                                onTabSelect(tab)
+                                sheetHeightPx = collapsedHeightPx
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = title,
+                            color = if (selectedTab == tab) PointColor else WhiteTextColor,
+                            fontSize = 16.sp,
+                            fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
                 }
             }
         }
