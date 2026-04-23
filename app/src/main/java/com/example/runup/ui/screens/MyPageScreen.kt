@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,7 +33,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.example.runup.BuildConfig
 import com.example.runup.domain.model.RunRecord
@@ -65,12 +64,13 @@ import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.ui.util.mapper.TimeMapper
 import com.example.runup.viewmodel.MyPageViewModel
-import com.example.runup.viewmodel.RunFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.ui.theme.PointColor
+import com.example.runup.ui.util.calculatePace
 
 @Composable
 fun MyPageScreen(
@@ -80,6 +80,8 @@ fun MyPageScreen(
     val userData by viewModel.userState.collectAsState()
 
     val profileBitmap by viewModel.profileBitmap.collectAsState()
+
+    val pagedRuns by viewModel.pagedRuns.collectAsState()
 
     // 갤러리 실행기 설정
     val profileGalleryLauncher = rememberLauncherForActivityResult(
@@ -92,13 +94,9 @@ fun MyPageScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
 
-    val filteredRuns = remember(userData, viewModel.selectedFilter) {
-        viewModel.getFilteredRuns()
-    }
-
     // 화면 진입 시 데이터 호출
     LaunchedEffect(Unit) {
-        viewModel.fetchMyUserData()
+        viewModel.initData()
     }
 
     // 이름 수정 다이얼로그
@@ -216,7 +214,7 @@ fun MyPageScreen(
                 }
             }
 
-            // [추가] 2-1. 전체 통계 영역 (달린 횟수, 총 거리)
+            // 전체 통계 영역 (달린 횟수, 총 거리)
             item {
                 Column {
                     Text("전체 통계", color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -241,7 +239,7 @@ fun MyPageScreen(
                 }
             }
 
-            // 3. 나의 러닝 섹션 헤더 + 필터 칩
+            // 나의 러닝 섹션 헤더 + 필터 칩
             item {
                 Column {
                     Text("나의 러닝", color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -255,7 +253,7 @@ fun MyPageScreen(
                                 colors = FilterChipDefaults.filterChipColors(
                                     labelColor = Color.Gray,
                                     selectedLabelColor = Color.White,
-                                    selectedContainerColor = Color(0xFF4A90E2)
+                                    selectedContainerColor = PointColor
                                 )
                             )
                         }
@@ -263,27 +261,29 @@ fun MyPageScreen(
                 }
             }
 
-            // 4. 데이터 로드 상태에 따른 리스트 처리 (이 부분이 핵심입니다)
+            // 4. 데이터 로드 상태 및 나의 러닝 리스트 처리 🔹
             when {
-                userData == null -> {
-                    // 데이터 로딩 중일 때
+                // A. 초기 로딩 중 (유저 데이터 자체가 아직 없을 때)
+                userData == null && viewModel.isLoadingMore -> {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = Color.White)
                         }
                     }
                 }
-                filteredRuns.isEmpty() -> {
-                    // 데이터는 왔는데 해당 필터에 결과가 없을 때
+
+                // B. 데이터는 불러왔는데 리스트가 비어있을 때
+                pagedRuns.isEmpty() && !viewModel.isLoadingMore -> {
                     item {
                         Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                             Text("해당 기간의 러닝 기록이 없습니다.", color = Color.Gray, fontSize = 14.sp)
                         }
                     }
                 }
+
+                // C. 리스트가 있을 때 (페이지네이션 적용)
                 else -> {
-                    // 데이터가 있고 필터 결과도 있을 때
-                    items(filteredRuns, key = { it.recordDate }) { run ->
+                    items(pagedRuns, key = { it.recordDate }) { run ->
                         ExpandableRunItem(
                             run = run,
                             onDeleteConfirm = { courseId ->
@@ -291,10 +291,32 @@ fun MyPageScreen(
                             }
                         )
                     }
+
+                    // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
+                    if (viewModel.hasMore) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (viewModel.isLoadingMore) {
+                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
+                                } else {
+                                    Text(
+                                        text = "더 보기 ▾",
+                                        color = PointColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable { viewModel.loadMoreRuns() }
+                                            .padding(8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
-
-            item { Spacer(modifier = Modifier.height(20.dp)) }
         }
     }
 }
@@ -351,13 +373,15 @@ fun ExpandableRunItem(
                     Text("코스: ${run.course.id}", color = WhiteTextColor, fontWeight = FontWeight.Bold)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("${run.course.distance}m", color = Color(0xFF4A90E2), fontWeight = FontWeight.Bold)
+                    Text("${run.course.distance}m", color = PointColor, fontWeight = FontWeight.Bold)
                     Text(formatDuration(run.time), color = Color.LightGray, fontSize = 12.sp)
                 }
             }
 
             // --- [수정] 펼쳐졌을 때 나타나는 상세 영역 ---
             if (expanded) {
+                var isMapLoaded by remember { mutableStateOf(false) }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Divider(color = Color.DarkGray)
                 Spacer(modifier = Modifier.height(16.dp))
@@ -388,95 +412,122 @@ fun ExpandableRunItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
+                        .clip(RoundedCornerShape(12.dp)) // 지도 모서리도 둥글게 하면 세련돼 보입니다
+                        .background(Color(0xFF2C2C2C))  // 지도 로드 전 배경색 (스켈레톤 느낌)
                 ) {
 
                     // 1. Static Map
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(staticMapUrl)
+                            .crossfade(true) // 부드러운 전환 효과
                             .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
                             .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        onSuccess = { isMapLoaded = true }
                     )
 
-                    // 2. 경로 그리기 (시작/종료 마커 포함)
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    if (isMapLoaded) {
+                        // 2. 경로 그리기 (시작/종료 마커 포함)
+                        Canvas(modifier = Modifier.fillMaxSize()) {
 
-                        val points = run.course.locationPoints.map {
-                            val (x, y) = latLngToPixel(
-                                it.locationPoint.latitude,
-                                it.locationPoint.longitude,
-                                centerLat,
-                                centerLng,
-                                dynamicZoom.toDouble(),
-                                size.width,
-                                size.height,
-                            )
-                            Offset(x, y)
-                        }
-
-                        // 🔹 2-1. 경로 데이터 생성 (Path 객체 사용)
-                        val path = Path().apply {
-                            points.forEachIndexed { index, point ->
-                                if (index == 0) {
-                                    moveTo(point.x, point.y)
-                                } else {
-                                    // 🔹 이전 노드가 '정지(stop)' 상태가 아닐 때만 선을 잇습니다.
-                                    val prevNode = run.course.locationPoints[index - 1]
-                                    if (!prevNode.stop) {
-                                        lineTo(point.x, point.y)
-                                    } else {
-                                        // 정지 상태였다면 선을 긋지 않고 새로운 시작점으로 이동
-                                        moveTo(point.x, point.y)
-                                    }
-                                }
+                            val points = run.course.locationPoints.map {
+                                val (x, y) = latLngToPixel(
+                                    it.locationPoint.latitude,
+                                    it.locationPoint.longitude,
+                                    centerLat,
+                                    centerLng,
+                                    dynamicZoom.toDouble(),
+                                    size.width,
+                                    size.height,
+                                )
+                                Offset(x, y)
                             }
                         }
 
-                        // 테두리
-                        drawPath(
-                            path = path,
-                            color = Color.Black,
-                            style = Stroke(
-                                width = 14f,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
-                            )
-                        )
+                            // 🔹 2-1. 경로 데이터 생성 (Path 객체 사용)
+                            val path = Path().apply {
+                                points.forEachIndexed { index, point ->
+                                    if (index == 0) {
+                                        moveTo(point.x, point.y)
+                                    } else {
+                                        // 🔹 이전 노드가 '정지(stop)' 상태가 아닐 때만 선을 잇습니다.
+                                        val prevNode = run.course.locationPoints[index - 1]
+                                        if (!prevNode.stop) {
+                                            lineTo(point.x, point.y)
+                                        } else {
+                                            // 정지 상태였다면 선을 긋지 않고 새로운 시작점으로 이동
+                                            moveTo(point.x, point.y)
+                                        }
+                                    }
+                                }
+                            }
 
-                        // 내부 선
-                        drawPath(
-                            path = path,
-                            color = PointColor,
-                            style = Stroke(
-                                width = 8f,
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round
-                            )
-                        )
-
-                        // 2-2. 시작 및 종료 마커 추가
-                        if (points.isNotEmpty()) {
-                            val startPoint = points.first()
-                            val endPoint = points.last()
-
-                            // 시작 마커 (초록색)
-                            drawMarker(
-                                center = startPoint,
-                                color = Color(0xFF4CAF50),
-                                "START"
+                            // 테두리
+                            drawPath(
+                                path = path,
+                                color = Color.Black,
+                                style = Stroke(
+                                    width = 14f,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
+                                )
                             )
 
-                            // 종료 마커 (빨간색)
-                            drawMarker(
-                                center = endPoint,
-                                color = Color(0xFFF44336),
-                                "END"
+                            // 내부 선
+                            drawPath(
+                                path = path,
+                                color = PointColor,
+                                style = Stroke(
+                                    width = 8f,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
                             )
+
+                            // 2-2. 시작 및 종료 마커 추가
+                            if (points.isNotEmpty()) {
+                                val startPoint = points.first()
+                                val endPoint = points.last()
+
+                                // 시작 마커 (초록색)
+                                drawMarker(
+                                    center = startPoint,
+                                    color = Color(0xFF4CAF50),
+                                    "START"
+                                )
+
+                                // 종료 마커 (빨간색)
+                                drawMarker(
+                                    center = endPoint,
+                                    color = Color(0xFFF44336),
+                                    "END"
+                                )
+                            }
                         }
+                        // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopStart) // 좌측 상단 정렬
+                                .padding(10.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) // 반투명 검정 배경
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
+                            ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
+                            ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
+                        }
+                    } else {
+                        // 🔹 로딩 중일 때 보여줄 인디케이터 (선택 사항)
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center).size(24.dp),
+                            color = PointColor,
+                            strokeWidth = 2.dp
+                        )
                     }
 
                     // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
@@ -575,12 +626,3 @@ fun formatSeconds(totalSeconds: Int): String {
     return String.format("%02d:%02d:%02d", hours, minutes, seconds)
 }
 
-fun calculatePace(ms: Int, distanceMeters: Double): String {
-    if (distanceMeters <= 0) return "0'00\""
-    val distanceKm = distanceMeters / 1000.0
-    val totalSeconds = ms / 1000
-    val secondsPerKm = (totalSeconds / distanceKm).toInt()
-    val minutes = secondsPerKm / 60
-    val seconds = secondsPerKm % 60
-    return String.format("%d'%02d\"", minutes, seconds)
-}

@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.google.firebase.auth.EmailAuthProvider
@@ -17,10 +18,12 @@ import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
+import java.util.Calendar
 import javax.inject.Inject
 
 class UserDataSourceImpl @Inject constructor(
@@ -302,28 +305,52 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    // 사용자 데이터 불러오기
+    // 유저 기본 정보만 가져오기 (runs 제외)
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-
-            // 1. UserData 문서 가져오기
-            val userDocRef = firestore.collection("UserData").document(userid)
-            val userSnapshot = userDocRef.get().await()
+            val userSnapshot = firestore.collection("UserData").document(userid).get().await()
             val userData = userSnapshot.toObject(UserData::class.java) ?: UserData()
 
-            // 2. 'runs' 서브 컬렉션 데이터 가져오기
-            val runsSnapshot = userDocRef.collection("runs").get().await()
-            val runRecords = runsSnapshot.toObjects(RunRecord::class.java) // 리스트로 변환
-
-            // 3. UserData 객체에 리스트 주입 (UserData 클래스에 records 필드가 있다고 가정)
-            val finalUserData = userData.copy(runs = runRecords)
-
-            Log.d("runrecord", "총 ${runRecords.size}개의 기록 로드 완료: $finalUserData")
-            AuthResult.Success(finalUserData)
-
+            AuthResult.Success(userData)
         } catch (e: Exception) {
             AuthResult.Fail("사용자 정보 로드 실패", e)
+        }
+    }
+
+    // 2. [신규] 러닝 기록만 페이지 단위로 가져오기
+    override suspend fun getRunsPaged(
+        filter: RunFilter,
+        lastDate: Long?,
+        pageSize: Long
+    ): AuthResult<List<RunRecord>> {
+        return try {
+            val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
+
+            // 기본 쿼리 설정: 날짜 내림차순(최신순)
+            var query = firestore.collection("UserData")
+                .document(userid)
+                .collection("runs")
+                .orderBy("recordDate", Query.Direction.DESCENDING)
+
+            // 🔹 필터링 로직 추가 (날짜 범위 제한)
+            val startTime = getFilterStartTime(filter)
+            if (startTime > 0) {
+                query = query.whereGreaterThanOrEqualTo("recordDate", startTime)
+            }
+
+            // 🔹 페이지네이션 핵심: 마지막 데이터 다음부터 가져오기
+            if (lastDate != null) {
+                query = query.startAfter(lastDate)
+            }
+
+            // 🔹 개수 제한
+            val snapshot = query.limit(pageSize).get().await()
+            val runRecords = snapshot.toObjects(RunRecord::class.java)
+
+            AuthResult.Success(runRecords)
+        } catch (e: Exception) {
+            AuthResult.Fail("기록 로드 실패", e)
         }
     }
 
@@ -374,5 +401,24 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
+    // 🔹 필터별 시작 시간 계산 헬퍼 함수
+    private fun getFilterStartTime(filter: RunFilter): Long {
+        val cal = Calendar.getInstance()
+        return when (filter) {
+            RunFilter.TODAY -> {
+                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+                cal.timeInMillis
+            }
+            RunFilter.WEEK -> {
+                cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+                cal.timeInMillis
+            }
+            RunFilter.MONTH -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.timeInMillis
+            }
+            RunFilter.ALL -> 0L
+        }
+    }
 
 }

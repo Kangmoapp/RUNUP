@@ -4,6 +4,7 @@ import android.os.Bundle
 import com.example.runup.ui.components.ControlButton
 import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -32,6 +33,9 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -62,6 +66,7 @@ import com.naver.maps.map.CameraAnimation
 import com.naver.maps.map.CameraUpdate
 import com.naver.maps.geometry.LatLng
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -94,6 +99,7 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
+import com.example.runup.ui.util.calculateCalories
 
 @Preview
 @Composable
@@ -188,6 +194,8 @@ private fun HomeContent(
     var sheetHeightPx by remember { mutableFloatStateOf(hiddenHeightPx) }
     // 현재 주소 상태
     val addressUiState by viewModel.addressUiState.collectAsState()
+
+    var isResultLocked by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier
@@ -288,7 +296,8 @@ private fun HomeContent(
                     isRunning = homeUiState.isRunning,
                     runningUiState = runningUiState,
                     sheetHeightPx = sheetHeightPx,
-                    onHeightChange = { sheetHeightPx = it }
+                    onHeightChange = { sheetHeightPx = it },
+                    isResultLocked = isResultLocked
                 ) {
                     when (homeUiState.selectedTab) {
 
@@ -300,10 +309,12 @@ private fun HomeContent(
                                     onSave = { b, c, d ->
                                         recordRunningCourse(Scores(b.toDouble(), c.toDouble(), d.toDouble())) // 실제 데이터 저장 로직
                                         sheetHeightPx = hiddenHeightPx // 시트 닫기
+                                        isResultLocked = false  // 🔹 저장하면 잠금 해제
                                     },
                                     onSkip = {
                                         viewModel.cancelRunningCourse()
                                         sheetHeightPx = hiddenHeightPx // 저장 없이 닫기
+                                        isResultLocked = false
                                     }
                                 )
                             }
@@ -361,6 +372,7 @@ private fun HomeContent(
                                                 ControlButton(text = "완료", color = Color.Red) {
                                                     stopRunningTracking()
                                                     sheetHeightPx = expandedHeightPx
+                                                    isResultLocked = true
                                                 }
                                             }
                                         }
@@ -461,6 +473,7 @@ private fun BottomSection(
     runningUiState: RunningUiState, // 추가
     sheetHeightPx: Float,
     onHeightChange: (Float) -> Unit,
+    isResultLocked: Boolean,
     content: @Composable () -> Unit // 탭에 따른 내용
 ) {
     val density = LocalDensity.current
@@ -530,9 +543,10 @@ private fun BottomSection(
 
                 // 4. 칼로리 정보
                 Column {
+                    val caloriesValue = calculateCalories(runningUiState.totalDistance)
                     Text(text = "칼로리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
                     Text(
-                        text = "119kcal",
+                        text = caloriesValue,
                         color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
                     )
                 }
@@ -548,23 +562,22 @@ private fun BottomSection(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        onHeightChange((sheetHeightPx - delta).coerceIn(hiddenHeightPx, maxAllowedHeight))
+                        if (!isResultLocked) {  // 🔹 lock이면 무시
+                            onHeightChange((sheetHeightPx - delta).coerceIn(hiddenHeightPx, maxAllowedHeight))
+                        }
                     },
+                    enabled = true,
                     onDragStopped = {
-                        val finalHeight = when {
-                            // 1. 코스 탭이나 추천 탭일 때: 중간 지점 넘기면 끝까지 확장
-                            (selectedTab == HomeTab.COURSE || selectedTab == HomeTab.RECOMMEND) &&
-                                    sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
-
-                            // 2. 러닝 탭이면서 러닝이 끝난 상태일 때: 중간 지점 넘기면 결과창 확장
-                            selectedTab == HomeTab.RUNNING && !isRunning && runningUiState.totalDistance > 0 &&
-                                    sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
-
-                            // 3. 모든 탭 공통: 최소 높이(hidden)와 기본 높이(collapsed) 사이 결정
-                            sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
-
-                            // 4. 그 외에는 가장 아래로 숨김
-                            else -> hiddenHeightPx
+                        if (!isResultLocked) {  // 🔹 lock이면 snap도 무시
+                            val finalHeight = when {
+                                (selectedTab == HomeTab.COURSE || selectedTab == HomeTab.RECOMMEND) &&
+                                        sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
+                                selectedTab == HomeTab.RUNNING && !isRunning && runningUiState.totalDistance > 0 &&
+                                        sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
+                                sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
+                                else -> hiddenHeightPx
+                            }
+                            onHeightChange(finalHeight)
                         }
                         onHeightChange(finalHeight)
                     }
@@ -624,8 +637,10 @@ private fun BottomSection(
                             .weight(1f)
                             .fillMaxHeight()
                             .clickable {
-                                onTabSelect(tab)
-                                onHeightChange(collapsedHeightPx)
+                                if (!isResultLocked) { // 👈 평가 중에는 탭 클릭 무시
+                                    onTabSelect(tab)
+                                    onHeightChange(collapsedHeightPx)
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -1134,10 +1149,9 @@ fun AIStatusOverlay(
 @Composable
 fun RunningResultContent(
     runningUiState: RunningUiState,
-    onSave: (Float, Float, Float) -> Unit, // 밝기, 붐빔, 난이도 점수 전달
+    onSave: (Float, Float, Float) -> Unit,
     onSkip: () -> Unit
 ) {
-    // 별점 상태 관리 (임시)
     var brightnessScore by remember { mutableFloatStateOf(0f) }
     var crowdedScore by remember { mutableFloatStateOf(0f) }
     var difficultyScore by remember { mutableFloatStateOf(0f) }
@@ -1148,83 +1162,131 @@ fun RunningResultContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(20.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp), // 🔹 상하 패딩 축소 (24dp -> 12dp)
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("오늘의 러닝 결과", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PointColor)
+        // 상단 타이틀 섹션 (간격 축소)
+        Text(
+            "RUN COMPLETE!",
+            fontSize = 12.sp, // 🔹 폰트 살짝 축소
+            letterSpacing = 2.sp,
+            fontWeight = FontWeight.Black,
+            color = PointColor
+        )
+        Text(
+            "오늘의 러닝 결과",
+            fontSize = 20.sp, // 🔹 24sp -> 20sp
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White
+        )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp)) // 🔹 32dp -> 16dp
 
-        // 1. 결과 수치 그리드 (2x2)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            ResultItem("거리", "${runningUiState.totalDistance.toInt()}m")
-            ResultItem("시간", "${runningUiState.totalTime / 60}분 ${runningUiState.totalTime % 60}초")
-        }
-        Spacer(modifier = Modifier.height(15.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            ResultItem("페이스", "${(runningPace / 60).toInt()}'${(runningPace % 60).toInt()}\"")
-            ResultItem("칼로리", "119kcal")
-        }
-
-        Spacer(modifier = Modifier.height(30.dp))
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(WhiteTextColor.copy(alpha = 0.2f)))
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 2. 별점 평가 영역
-        RatingSection("밝기 (조명)", brightnessScore) { brightnessScore = it }
-        RatingSection("붐빔 (인구)", crowdedScore) { crowdedScore = it }
-        RatingSection("난이도 (경사)", difficultyScore) { difficultyScore = it }
-
-        Spacer(modifier = Modifier.height(40.dp))
-
-        // 3. 하단 버튼 영역
-        Row(
+        // 🔹 1. 주요 수치 카드 (패딩 및 간격 최적화)
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White.copy(alpha = 0.05f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) { // 🔹 20dp -> 16dp
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ResultItem("거리", "${String.format("%.2f", runningUiState.totalDistance / 1000)} km", Modifier.weight(1f))
+                    ResultItem("시간", "${runningUiState.totalTime / 60}:${String.format("%02d", runningUiState.totalTime % 60)}", Modifier.weight(1f))
+                }
+                Spacer(modifier = Modifier.height(16.dp)) // 🔹 24dp -> 16dp
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    ResultItem("페이스", "${(runningPace / 60).toInt()}'${(runningPace % 60).toInt()}\"", Modifier.weight(1f))
+                    ResultItem("칼로리", calculateCalories(runningUiState.totalDistance), Modifier.weight(1f))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp)) // 🔹 32dp -> 20dp
+
+        // 🔹 2. 평가 섹션 (이모지 크기 및 간격 축소)
+        Text(
+            "코스는 어떠셨나요?",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.align(Alignment.Start).padding(start = 4.dp, bottom = 8.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.White.copy(alpha = 0.03f))
+                .padding(12.dp), // 🔹 16dp -> 12dp
+            verticalArrangement = Arrangement.spacedBy(10.dp) // 🔹 16dp -> 10dp
+        ) {
+            RatingSection("💡 밝기", brightnessScore) { brightnessScore = it }
+            RatingSection("👥 붐빔", crowdedScore) { crowdedScore = it }
+            RatingSection("⛰️ 난이도", difficultyScore) { difficultyScore = it }
+        }
+
+        // 🔹 중요: 버튼이 씹히지 않도록 Spacer를 고정값이 아닌 weight로 조절
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 🔹 3. 하단 버튼 영역 (바텀 시트 하단 여백 확보)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp), // 🔹 하단 기기 네비바 영역 고려
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Skip",
-                color = WhiteTextColor.copy(alpha = 0.5f),
+                color = Color.Gray,
+                fontSize = 14.sp,
                 modifier = Modifier
                     .clickable { onSkip() }
-                    .padding(end = 30.dp)
+                    .padding(12.dp)
             )
 
-            ControlButton(text = "기록 저장", color = PointColor) {
-                onSave(brightnessScore, crowdedScore, difficultyScore)
+            Spacer(modifier = Modifier.weight(1f))
+
+            Button(
+                onClick = { onSave(brightnessScore, crowdedScore, difficultyScore) },
+                colors = ButtonDefaults.buttonColors(containerColor = PointColor),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.height(48.dp).width(140.dp) // 🔹 버튼 크기 살짝 축소
+            ) {
+                Text("기록 저장", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.Black)
             }
         }
     }
 }
 
 @Composable
-private fun ResultItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = WhiteTextColor.copy(alpha = 0.6f), fontSize = 12.sp)
-        Text(value, color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+private fun ResultItem(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
     }
 }
 
 @Composable
 private fun RatingSection(label: String, score: Float, onScoreChange: (Float) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = WhiteTextColor, fontSize = 15.sp)
-        // 별 5개 (개당 2점씩 총 10점 만점 컨셉)
-        Row {
+        Text(label, color = WhiteTextColor.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (i in 1..5) {
-                val starThreshold = i * 0.2f
+                val starValue = i * 0.2f
+                val isSelected = score >= starValue - 0.01f
                 Icon(
-                    imageVector = Icons.Default.Star , // 적절한 별 아이콘으로 교체 필요
+                    imageVector = if (isSelected) Icons.Filled.Star else Icons.Outlined.Star,
                     contentDescription = null,
-                    tint = if (score >= starThreshold - 0.01f) PointColor else Color.Gray.copy(alpha = 0.5f),
+                    tint = if (isSelected) PointColor else Color.White.copy(alpha = 0.2f),
                     modifier = Modifier
-                        .size(30.dp)
-                        .clickable { onScoreChange(starThreshold) }
+                        .size(28.dp)
+                        .clickable { onScoreChange(starValue) }
                 )
             }
         }

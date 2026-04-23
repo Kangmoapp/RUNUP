@@ -1,6 +1,5 @@
 package com.example.runup.data.source.remote.course
 
-import android.util.Log
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.AuthResult

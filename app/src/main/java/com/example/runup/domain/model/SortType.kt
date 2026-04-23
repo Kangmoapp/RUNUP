@@ -6,3 +6,7 @@ enum class SortType(val label: String) {
     PEOPLE("사람순"),
     DIFFICULTY("난이도순")
 }
+
+enum class RunFilter(val label: String) {
+    TODAY("오늘"), WEEK("이번 주"), MONTH("이번 달"), ALL("전체")
+}

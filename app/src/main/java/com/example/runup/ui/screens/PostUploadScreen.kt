@@ -28,7 +28,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
+import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.CommunityViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,23 +105,60 @@ fun PostUploadScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .heightIn(max = 400.dp)
+                    .padding(bottom = 32.dp)
+                    .heightIn(max = 500.dp)
             ) {
                 item {
                     Text("내 러닝 기록", color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
-                items(uiState.runRecords) { record ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.selectRunRecord(record) }
-                            .padding(vertical = 12.dp)
-                    ) {
-                        Text("${record.recordDate}", color = Color.Gray, fontSize = 12.sp)
-                        Text("${record.course.distance}km 러닝", color = WhiteTextColor, fontWeight = FontWeight.Bold)
+                // 초기 로딩 중일 때
+                if (uiState.isLoading && uiState.runRecords.isEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = PointColor)
+                        }
                     }
-                    HorizontalDivider(color = Color.DarkGray)
+                } else {
+                    items(uiState.runRecords) { record ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.selectRunRecord(record) }
+                                .padding(vertical = 12.dp)
+                        ) {
+                            // 🔹 날짜 포맷팅 적용 (TimeMapper 사용 추천)
+                            Text(formatTimestamp(record.recordDate), color = Color.Gray, fontSize = 12.sp)
+                            Text("${String.format("%.2f", record.course.distance / 1000.0)}km 러닝", color = WhiteTextColor, fontWeight = FontWeight.Bold)
+                        }
+                        HorizontalDivider(color = Color.DarkGray)
+                    }
+
+                    // 🔹 [추가] 더 보기 버튼 섹션
+                    if (uiState.hasMore) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (uiState.isPaging) {
+                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
+                                } else {
+                                    Text(
+                                        text = "이전 기록 더 보기 ▾",
+                                        color = PointColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable { viewModel.fetchMyRunRecords(isInitial = false) }
+                                            .padding(8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

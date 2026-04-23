@@ -20,9 +20,11 @@ import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Comment // 추가됨
 import com.example.runup.domain.model.Post
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.repository.UserRepository
 import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
 import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
@@ -54,7 +56,11 @@ data class PostUploadUiState(
     val runRecords: List<RunRecord> = emptyList(),
     val selectedRunRecord: RunRecord? = null,
     val isSheetOpen: Boolean = false,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    // 🔹 페이지네이션 상태 추가
+    val hasMore: Boolean = true,
+    val lastDate: Long? = null,
+    val isPaging: Boolean = false
 )
 
 data class MapSnapshot(
@@ -80,7 +86,8 @@ class CommunityViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataSource: CommunityDataSourceImpl,
     private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase,
-    private val locationRepository: LocationRepository
+    private val locationRepository: LocationRepository,
+    private val userRepository: UserRepository
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -121,7 +128,6 @@ class CommunityViewModel @Inject constructor(
     private val _districtLocations = MutableStateFlow<List<AdmVO>>(emptyList())
     private val _dongLocations = MutableStateFlow<List<AdmVO>>(emptyList())
 
-    val cityLocations: StateFlow<List<AdmVO>> = _cityLocations
     val districtLocations: StateFlow<List<AdmVO>> = _districtLocations
     val dongLocations: StateFlow<List<AdmVO>> = _dongLocations
 
@@ -449,13 +455,43 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
-    // 3. 상태 업데이트 함수 (copy 활용)
-    fun fetchMyRunRecords() {
+    // 상태 업데이트
+    fun fetchMyRunRecords(isInitial: Boolean = true) {
+        if (isInitial) {
+            _postUploadUiState.update { it.copy(
+                runRecords = emptyList(),
+                lastDate = null,
+                hasMore = true,
+                isLoading = true
+            ) }
+        }
+
+        val currentState = _postUploadUiState.value
+        if (!currentState.hasMore || currentState.isPaging) return
+
         viewModelScope.launch {
-            val result = getUserRunningRecordUseCase.invoke()
+            if (!isInitial) _postUploadUiState.update { it.copy(isPaging = true) }
+
+            // 🔹 Repository의 페이지네이션 함수 호출 (전체 필터, 5개씩)
+            val result = userRepository.getRunsPaged(
+                filter = RunFilter.ALL,
+                lastDate = currentState.lastDate,
+                pageSize = 5
+            )
+
             if (result is AuthResult.Success) {
-                _postUploadUiState.update { it.copy(runRecords = result.data) }
-                Log.d("runrecord", "${_postUploadUiState.value.runRecords}")
+                val newRecords = result.data
+                _postUploadUiState.update { state ->
+                    state.copy(
+                        runRecords = state.runRecords + newRecords,
+                        lastDate = newRecords.lastOrNull()?.recordDate ?: state.lastDate,
+                        hasMore = newRecords.size == 5,
+                        isLoading = false,
+                        isPaging = false
+                    )
+                }
+            } else {
+                _postUploadUiState.update { it.copy(isLoading = false, isPaging = false) }
             }
         }
     }
