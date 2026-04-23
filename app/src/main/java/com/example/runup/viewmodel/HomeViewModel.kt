@@ -289,6 +289,7 @@ class HomeViewModel @Inject constructor(
                 _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
+        _homeUiState.update { it.copy(isRunning = false) }
     }
 
 
