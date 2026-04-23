@@ -7,11 +7,14 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
+import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Comment
 import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.PostImage
 import com.example.runup.domain.model.RunRecord
+import com.example.runup.viewmodel.FilterState
+import com.example.runup.viewmodel.FilterType
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -29,6 +32,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
+import java.util.Locale.filter
 import javax.inject.Inject
 
 class CommunityDataSourceImpl @Inject constructor(
@@ -40,14 +44,32 @@ class CommunityDataSourceImpl @Inject constructor(
     // 1. 게시글 목록 가져오기
     suspend fun getPosts(
         lastVisibleSnapshot: DocumentSnapshot? = null,
-        limit: Long = 3
+        limit: Long = 3,
+        filter: FilterState
     ): AuthResult<Pair<List<Post>, DocumentSnapshot?>> {
         return try {
-            var query = firestore.collection("Posts")
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(limit)
+            // 1. 컬렉션 시작
+            var query: Query = firestore.collection("Posts")
 
-            // 이전에 읽은 마지막 문서가 있다면 그 다음부터 가져옴
+            // 2. 🔹 필터(where)를 '먼저' 적용해야 합니다.
+            if (filter.type != FilterType.ALL) {
+                // "동" 정보가 있으면 가장 구체적인 필터 하나만 거는 것이 성능상 좋습니다.
+                // (혹은 시, 구, 동을 다 걸어도 되지만 순서는 상관없습니다.)
+                if (filter.city.isNotEmpty()) query = query.whereEqualTo("city", filter.city)
+                if (filter.district.isNotEmpty()) query = query.whereEqualTo("district", filter.district)
+                if (filter.dong.isNotEmpty()) query = query.whereEqualTo("dong", filter.dong)
+            }
+            Log.d("FilterCheck", "Type: ${filter.type}")
+            Log.d("FilterCheck", "City: '${filter.city}'")     // 작은 따옴표 붙여서 공백 확인
+            Log.d("FilterCheck", "District: '${filter.district}'")
+            Log.d("FilterCheck", "Dong: '${filter.dong}'")
+
+            // 3. 🔹 필터 적용이 끝난 후 '나중에' 정렬을 붙입니다.
+            query = query.orderBy("timestamp", Query.Direction.DESCENDING)
+
+            // 4. 페이징 및 리밋 설정
+            query = query.limit(limit)
+
             if (lastVisibleSnapshot != null) {
                 query = query.startAfter(lastVisibleSnapshot)
             }
@@ -57,6 +79,7 @@ class CommunityDataSourceImpl @Inject constructor(
 
             val postList = snapshot.documents.mapNotNull { doc ->
                 val post = doc.toObject(Post::class.java)
+                Log.d("filtercheck", "${post?.city}")
                 val locationImages = doc.get("locationImages") as? List<Map<String, Any>> ?: emptyList()
                 val locationImagesList = locationImages.map { map ->
                     PostImage(
@@ -83,7 +106,11 @@ class CommunityDataSourceImpl @Inject constructor(
                     commonImages = commonImagesList,
                     likes = (doc.get("likes") as? Number)?.toInt() ?: 0,
                     commentCount = (doc.get("commentCount") as? Number)?.toInt() ?: 0,
-                    runRecord = doc.get("runRecord", RunRecord::class.java)
+                    runRecord = doc.get("runRecord", RunRecord::class.java),
+                    // 🔹 주소 정보 추가
+                    city = doc.getString("city") ?: "",
+                    district = doc.getString("district") ?: "",
+                    dong = doc.getString("dong") ?: "",
                 )
 
             }
@@ -212,7 +239,8 @@ class CommunityDataSourceImpl @Inject constructor(
         content: String,
         LocaitonimageUris: List<Uri>,
         CommonimageUris: List<Uri>,
-        runRecord: RunRecord?
+        runRecord: RunRecord?,
+        address: AddressModel?
     ): AuthResult<Boolean> = coroutineScope {
         try {
             val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
@@ -313,7 +341,10 @@ class CommunityDataSourceImpl @Inject constructor(
                 "timestamp" to System.currentTimeMillis(),
                 "likes" to 0,
                 "commentCount" to 0,
-                "runRecord" to runRecord
+                "runRecord" to runRecord,
+                "city" to (address?.city ?: ""),      // 🔹 주소 추가
+                "district" to (address?.district ?: ""),
+                "dong" to (address?.dong ?: ""),
             )
 
             postRef.set(postMap).await()

@@ -11,6 +11,7 @@ import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
 import com.example.runup.domain.model.SortType
 import com.example.runup.service.GeminiHelper
+import com.example.runup.ui.util.calculateDistance
 import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
@@ -614,14 +615,7 @@ class CourseDataSourceImpl @Inject constructor(
         firestore.collection("test").document(docName).set(testData).await()
     }
 
-    // 두 좌표의 거리 계산 (지구 반지름 기반)
-    private fun calculateDistance(p1: GeoPoint, p2: GeoPoint): Double {
-        val r = 6371000.0
-        val dLat = Math.toRadians(p2.latitude - p1.latitude)
-        val dLon = Math.toRadians(p2.longitude - p1.longitude)
-        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(p1.latitude)) * cos(Math.toRadians(p2.latitude)) * sin(dLon / 2).pow(2)
-        return 2 * atan2(sqrt(a), sqrt(1 - a)) * r
-    }
+
     // 3좌표의 각도 차이 계산
     private fun calculateAngleDiff(p1: GeoPoint, p2: GeoPoint, p3: GeoPoint): Double {
         val v1 = Pair(p1.latitude - p2.latitude, p1.longitude - p2.longitude)
