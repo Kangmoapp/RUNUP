@@ -1,6 +1,7 @@
 package com.example.runup.domain.repository
 import android.net.Uri
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,12 @@ interface UserRepository {
 
     // 현재 로그인 된 사용자의 모든 데이터 반환 (마이페이지)
     suspend fun getMyUserData(): AuthResult<UserData>
+
+    suspend fun getRunsPaged(
+        filter: RunFilter,
+        lastDate: Long?,
+        pageSize: Long
+    ): AuthResult<List<RunRecord>>
 
     // 회원 탈퇴
     suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean>

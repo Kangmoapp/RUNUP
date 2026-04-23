@@ -6,6 +6,7 @@ import com.example.runup.data.source.local.dao.UserDao
 import com.example.runup.data.source.local.entity.UserEntity
 import com.example.runup.data.source.remote.user.UserDataSource
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
@@ -65,6 +66,15 @@ class UserRepositoryImpl @Inject constructor(
     override suspend fun getMyUserData(): AuthResult<UserData> {
         return userdatasource.getMyUserData()
     }
+
+    override suspend fun getRunsPaged(
+        filter: RunFilter,
+        lastDate: Long?,
+        pageSize: Long
+    ): AuthResult<List<RunRecord>> {
+        return userdatasource.getRunsPaged(filter, lastDate, pageSize)
+    }
+
     // 사용자 계정 삭제
     override suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean> {
         return userdatasource.deleteUserAccount(userpw)

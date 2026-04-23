@@ -1,6 +1,7 @@
 package com.example.runup.data.source.remote.user
 
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 
@@ -34,6 +35,12 @@ interface UserDataSource {
 
     // 현재 로그인된 사용자의 상세 정보 가져오기 (실패 시 에러 메시지 포함 가능)
     suspend fun getMyUserData(): AuthResult<UserData>
+
+    suspend fun getRunsPaged(
+        filter: RunFilter,
+        lastDate: Long?,
+        pageSize: Long
+    ): AuthResult<List<RunRecord>>
 
     // 회원 탈퇴(계정 삭제)
     suspend fun deleteUserAccount(password: String): AuthResult<Boolean>
