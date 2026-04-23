@@ -125,6 +125,8 @@ fun CommunityScreen(
         initialFirstVisibleItemScrollOffset = viewModel.savedScrollOffset
     )
 
+    var enlargedImageUri by remember { mutableStateOf<String?>(null) }
+
     // 처음 진입 시 데이터 호출
     LaunchedEffect(Unit) {
         viewModel.fetchPosts(isInitial = true) // 포스트 불러옴
@@ -210,8 +212,14 @@ fun CommunityScreen(
                                             .align(Alignment.BottomCenter)
                                             .offset(y = 4.dp)
                                             // 🔹 [핵심] 텍스트가 아무리 길어져도 Box의 크기에 영향을 주지 않도록 wrapContentWidth 사용
-                                            .wrapContentWidth(align = Alignment.CenterHorizontally, unbounded = true)
-                                            .background(PointColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                                            .wrapContentWidth(
+                                                align = Alignment.CenterHorizontally,
+                                                unbounded = true
+                                            )
+                                            .background(
+                                                PointColor.copy(alpha = 0.1f),
+                                                RoundedCornerShape(3.dp)
+                                            )
                                             .padding(horizontal = 4.dp, vertical = 1.dp)
                                     )
                                 }
@@ -382,8 +390,14 @@ fun CommunityScreen(
                 // 위로 당기면 실행될 로직
                 viewModel.fetchPosts(isInitial = true, forceRefresh = true)
             },
-            modifier = Modifier.fillMaxSize().padding(padding)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
         ){
+            val mapSnapshots by viewModel.mapSnapshotCache.collectAsState()
+            val thumbnails by viewModel.thumbnailCache.collectAsState()
+            val fullBitmaps by viewModel.fullBitmapCache.collectAsState()
+
             // 메인 콘텐츠: 초기 로딩이 끝났을 때만 보여줌
             if (!communityState.isInitialLoading) {
                 LazyColumn(
@@ -391,18 +405,29 @@ fun CommunityScreen(
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(communityState.posts, key = { it.postId }) { post ->
+                        val snapshot = mapSnapshots[post.postId]
+                        val authorBitmap = thumbnails[post.authorProfileUrl]
+
                         PostItem(
                             post = post,
-                            onClick = { onPostClick(post.postId) },
+                            cachedSnapshot = snapshot,     // ✅ 이 포스트용 지도 정보
+                            authorBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
+                            thumbnailCache = thumbnails,    // ✅ 마커용 썸네일들
+                            fullBitmapCache = fullBitmaps,  // ✅ 페이저용 원본들
                             onLikeClick = { viewModel.onLikeClick(post.postId) },
-                            viewModel = viewModel
+                            onPostClick = { onPostClick(post.postId) },
+                            onDeletePost = { viewModel.deletePost(post) },
+                            onImageClick = { url -> enlargedImageUri = url },
+                            onSaveSnapshot = { viewModel.saveMapSnapshot(post.postId, it) }
                         )
                     }
 
                     // 추가 로딩 바
                     if (communityState.isLoading) {
                         item {
-                            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            Box(modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
                             }
                         }
@@ -414,7 +439,9 @@ fun CommunityScreen(
             // 데이터 수신 + 비트맵 캐시 완료까지 이 화면이 유지됩니다.
             if (communityState.isInitialLoading) {
                 Box(
-                    modifier = Modifier.fillMaxSize().background(BackGroudColor),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(BackGroudColor),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -426,39 +453,29 @@ fun CommunityScreen(
             }
         }
     }
+    // 🔹 [여기!] Scaffold가 끝나고, 함수가 닫히기 직전에 이 블록을 넣으세요.
+    if (enlargedImageUri != null) {
+        EnlargedImageDialog(
+            imageUrl = enlargedImageUri!!,
+            onDismiss = { enlargedImageUri = null } // 닫을 때 다시 null로 초기화하여 화면에서 제거
+        )
+    }
 }
 
 @OptIn(ExperimentalNaverMapApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun PostItem(
     post: Post,
-    onClick: () -> Unit,
+    cachedSnapshot: MapSnapshot?,         // 👈 추가
+    authorBitmap: Bitmap?,                // 👈 추가
+    thumbnailCache: Map<String, Bitmap>,   // 👈 추가
+    fullBitmapCache: Map<String, Bitmap>,  // 👈 추가
     onLikeClick: () -> Unit,
-    viewModel: CommunityViewModel // 1. ViewModel 추가
+    onPostClick: () -> Unit,              // 👈 onClick을 더 명확하게
+    onDeletePost: () -> Unit,             // 👈 삭제 콜백
+    onImageClick: (String) -> Unit,
+    onSaveSnapshot: (MapSnapshot) -> Unit // 👈 계산된 지도 저장 콜백
 ) {
-    // 용도별 캐시 구독
-    val mapSnapshotCache by viewModel.mapSnapshotCache.collectAsState()
-    val thumbnailCache by viewModel.thumbnailCache.collectAsState()
-    val fullBitmapCache by viewModel.fullBitmapCache.collectAsState()
-
-    // 현재 포스트의 캐시 데이터 추출
-    val cachedSnapshot = mapSnapshotCache[post.postId]
-
-    // 상태 초기화 (캐시가 있으면 캐시값 사용)
-    var markerPositions by remember(post.postId) {
-        mutableStateOf(cachedSnapshot?.markerPositions ?: emptyMap())
-    }
-    var closerOffsets by remember(post.postId) {
-        mutableStateOf(cachedSnapshot?.closerOffsets ?: emptyMap())
-    }
-    var courseBounds by remember(post.postId) {
-        mutableStateOf(cachedSnapshot?.courseBounds)
-    }
-
-    // 작성자 프로필은 썸네일 캐시나 별도 로직 유지
-    val authorBitmap = thumbnailCache[post.authorProfileUrl]
-    var enlargedImageUri by remember { mutableStateOf<String?>(null) }
-
     // 삭제 메뉴 상태 및 본인 확인
     var showMenu by remember { mutableStateOf(false) }
     val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
@@ -468,128 +485,85 @@ fun PostItem(
     val totalPages = 1 + post.commonImages.size
     val pagerState = rememberPagerState(pageCount = { totalPages })
 
-    var isCapturing by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val context = LocalContext.current
+
+    // 🔹 BoxWithConstraints 대신 화면 폭을 기준으로 픽셀값 미리 계산 (스크롤 성능 핵심)
+    val screenWidthPx = remember { context.resources.displayMetrics.widthPixels.toFloat() }
+    val markerSizePx = with(density) { 64.dp.toPx() }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 24.dp)
     ) {
-        // 유저 헤더 영역
+        // --- [1] 유저 헤더 ---
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.Gray), // 이미지가 없을 때나 로딩 전 기본 배경
+                    .background(Color.Gray),
                 contentAlignment = Alignment.Center
             ) {
                 if (authorBitmap != null) {
-                    Image(
-                        bitmap = authorBitmap.asImageBitmap(),
-                        contentDescription = "작성자 프로필",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else if (post.authorProfileUrl.isNotEmpty()) {
-                    // 캐시에 없는데 URL은 있다면 차선책으로 AsyncImage 실행
-                    AsyncImage(
-                        model = post.authorProfileUrl,
-                        contentDescription = "작성자 프로필",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
+                    Image(bitmap = authorBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
-                    // 사진이 아예 없는 경우 기본 아이콘
                     Text("👤", fontSize = 18.sp)
                 }
             }
             Spacer(modifier = Modifier.width(10.dp))
             Text(post.authorName, color = WhiteTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(modifier = Modifier.weight(1f))
-            // --- [수정] 본인일 경우에만 삭제 메뉴 노출 ---
             if (isMyPost) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically // 아이콘과 배지 높이 맞춤
-                ) {
-                    // 1. [추가] "MY" 배지 표시
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        color = Color(0xFFFFD700).copy(alpha = 0.15f), // 은은한 노란색 배경 (골드)
-                        shape = CircleShape, // 둥근 모양
-                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f)), // 흐릿한 노란색 테두리
-                        modifier = Modifier.padding(end = 4.dp) // 삭제 메뉴와 간격
+                        color = Color(0xFFFFD700).copy(alpha = 0.15f),
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
                     ) {
-                        Text(
-                            text = "MY",
-                            color = Color(0xFFFFD700), // 진한 노란색 글씨
-                            fontSize = 10.sp, // 작게
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp) // 내부 여백
-                        )
+                        Text("MY", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
                     }
-
-                    // 2. [기존 유지] 삭제 메뉴 (MoreVert 아이콘)
                     Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(32.dp) // 아이콘 터치 영역 살짝 조절
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "더보기",
-                                tint = WhiteTextColor.copy(alpha = 0.7f) // 아이콘은 살짝 연하게 처리해서 배지를 돋보이게 함
-                            )
+                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.MoreVert, "더보기", tint = WhiteTextColor.copy(alpha = 0.7f))
                         }
-
-                        // 삭제 드롭다운 메뉴 (기존과 동일)
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            modifier = Modifier.background(Color(0xFF2C2C2C))
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text("게시글 삭제", color = Color.Red, fontWeight = FontWeight.Medium)
-                                },
-                                onClick = {
-                                    viewModel.deletePost(post)
-                                    showMenu = false
-                                }
-                            )
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(Color(0xFF2C2C2C))) {
+                            DropdownMenuItem(text = { Text("게시글 삭제", color = Color.Red) }, onClick = { onDeletePost(); showMenu = false })
                         }
                     }
                 }
             }
         }
 
-        // 지도 및 마커 오버레이 영역
-        // --- 수정된 메인 콘텐츠 영역 (페이저 적용) ---
-        Box(
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f) // 정사각형 비율 유지
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
+        // --- [2] 메인 콘텐츠 (페이저) ---
+        Box(modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)) {
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                // HorizontalPager의 page == 0 내부
                 if (page == 0) {
-                    // [페이지 0] 기존의 지도 및 마커 오버레이 영역
+                    var isMapLoaded by remember(post.postId) { mutableStateOf(false) }
                     post.runRecord?.let { record ->
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val density = LocalDensity.current
-                            val mapWidthPx = constraints.maxWidth.toFloat()
-                            val mapHeightPx = constraints.maxHeight.toFloat()
-                            val markerSizePx = with(density) { 64.dp.toPx() }
+                        // 🔹 1. BoxWithConstraints 대신 화면의 가로 픽셀을 직접 가져옵니다.
+                        val context = LocalContext.current
+                        val density = LocalDensity.current
+                        val screenWidthPx = remember { context.resources.displayMetrics.widthPixels.toFloat() }
+                        val markerSizePx = with(density) { 64.dp.toPx() }
 
-                            // 캐시가 없을 때만 무거운 계산 수행
+                        // 🔹 2. 일반 Box 사용 (성능 최적화)
+                        Box(modifier = Modifier.fillMaxSize()) {
+
                             LaunchedEffect(post.postId) {
                                 if (cachedSnapshot == null) {
                                     val centerLat = (record.course.minLat + record.course.maxLat) / 2
                                     val centerLng = (record.course.minLng + record.course.maxLng) / 2
 
-                                    // 줌 계산
                                     val latDiff = record.course.maxLat - record.course.minLat
                                     val lngDiff = record.course.maxLng - record.course.minLng
                                     val maxDiff = maxOf(latDiff, lngDiff)
@@ -601,179 +575,169 @@ fun PostItem(
                                         else -> 18.0
                                     }
 
-                                    // URL 및 좌표 계산
-                                    val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), constraints.maxWidth, constraints.maxHeight)
-                                    val pMin = latLngToPixel(record.course.minLat, record.course.minLng, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx)
-                                    val pMax = latLngToPixel(record.course.maxLat, record.course.maxLng, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx)
+                                    // 윤석님이 성공하신 'apiW = 화면폭' 로직 그대로 유지
+                                    val apiW = screenWidthPx.toInt().coerceAtMost(1024)
+                                    val apiH = apiW
+
+                                    val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), apiW, apiH)
+
+                                    // 좌표 계산도 screenWidthPx(이전의 mapWidthPx) 기준으로 1:1 유지
+                                    val pMin = latLngToPixel(record.course.minLat, record.course.minLng, centerLat, centerLng, dynamicZoom, screenWidthPx, screenWidthPx)
+                                    val pMax = latLngToPixel(record.course.maxLat, record.course.maxLng, centerLat, centerLng, dynamicZoom, screenWidthPx, screenWidthPx)
                                     val newBounds = Rect(minOf(pMin.x, pMax.x), minOf(pMin.y, pMax.y), maxOf(pMin.x, pMax.x), maxOf(pMin.y, pMax.y))
 
                                     val newPositions = post.locationImages.filter { it.location != null }.associate { img ->
-                                        img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx)
+                                        img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, screenWidthPx, screenWidthPx)
                                     }
 
-                                    // 슬롯 배정 및 최종 오프셋 계산
                                     val slots = assignSlots(post.locationImages.filter { it.location != null }, centerLat, centerLng)
                                     val newCloserOffsets = slots.entries.associate { (postImage, slot) ->
                                         val orig = newPositions[postImage.url]!!
-                                        postImage.url to calculateCloserOffset(orig.x, orig.y, slot, mapWidthPx, mapHeightPx, newBounds.left, newBounds.right, newBounds.top, newBounds.bottom, markerSizePx)
+                                        postImage.url to calculateCloserOffset(orig.x, orig.y, slot, screenWidthPx, screenWidthPx, newBounds.left, newBounds.right, newBounds.top, newBounds.bottom, markerSizePx)
                                     }
 
-                                    // 상태 업데이트 및 저장
-                                    markerPositions = newPositions
-                                    closerOffsets = newCloserOffsets
-                                    courseBounds = newBounds
-                                    viewModel.saveMapSnapshot(post.postId, MapSnapshot(url, newPositions, newCloserOffsets, newBounds))
+                                    onSaveSnapshot(MapSnapshot(url, newPositions, newCloserOffsets, newBounds))
                                 }
                             }
 
-                            Box {
-                                // 🔹 1. 지도 이미지 (캐시된 URL 우선)
+                            // --- 지도 및 오버레이 그리기 영역 (동일) ---
+                            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
                                 AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(cachedSnapshot?.staticMapUrl ?: /* URL 생성 로직 */ "")
+                                    model = ImageRequest.Builder(context)
+                                        .data(cachedSnapshot?.staticMapUrl ?: "")
                                         .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
                                         .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                                        .crossfade(true)
                                         .build(),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.FillBounds
+                                    contentScale = ContentScale.FillBounds,
+                                    onSuccess = { isMapLoaded = true }
                                 )
 
-                                // 🔹 2. 경로 선 및 시작/종료 마커 그리기
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    // (1) 경로 그리기
-                                    val centerLat = (record.course.minLat + record.course.maxLat) / 2
-                                    val centerLng = (record.course.minLng + record.course.maxLng) / 2
+                                if (isMapLoaded && cachedSnapshot != null) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        // 🔹 4. 그리기 로직에서도 mapWidthPx(화면 실제 크기)를 사용합니다.
+                                        val centerLat =
+                                            (record.course.minLat + record.course.maxLat) / 2
+                                        val centerLng =
+                                            (record.course.minLng + record.course.maxLng) / 2
+                                        val latDiff = record.course.maxLat - record.course.minLat
+                                        val lngDiff = record.course.maxLng - record.course.minLng
+                                        val maxDiff = maxOf(latDiff, lngDiff)
+                                        val dynamicZoom = when {
+                                            maxDiff > 0.04 -> 14.0
+                                            maxDiff > 0.015 -> 15.0
+                                            maxDiff > 0.005 -> 16.0
+                                            maxDiff > 0.002 -> 17.0
+                                            else -> 18.0
+                                        }
+                                        val points = record.course.locationPoints.map {
+                                            latLngToPixel(
+                                                it.locationPoint.latitude,
+                                                it.locationPoint.longitude,
+                                                centerLat,
+                                                centerLng,
+                                                dynamicZoom,
+                                                screenWidthPx,
+                                                screenWidthPx
+                                            )
+                                        }
 
-                                    // 캐시가 있든 없든 줌은 다시 계산해야 선이 그려집니다.
-                                    val latDiff = record.course.maxLat - record.course.minLat
-                                    val lngDiff = record.course.maxLng - record.course.minLng
-                                    val maxDiff = maxOf(latDiff, lngDiff)
-                                    val dynamicZoom = when {
-                                        maxDiff > 0.04 -> 14.0
-                                        maxDiff > 0.015 -> 15.0
-                                        maxDiff > 0.005 -> 16.0
-                                        maxDiff > 0.002 -> 17.0
-                                        else -> 18.0
-                                    }
-
-                                    val points = record.course.locationPoints.map {
-                                        latLngToPixel(it.locationPoint.latitude, it.locationPoint.longitude, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx)
-                                    }
-
-                                    val path = Path().apply {
-                                        points.forEachIndexed { index, point ->
-                                            if (index == 0) moveTo(point.x, point.y)
-                                            else {
-                                                // 정지 지점이 아닐 때만 선을 잇습니다.
-                                                if (!record.course.locationPoints[index - 1].stop) {
-                                                    lineTo(point.x, point.y)
-                                                } else {
-                                                    moveTo(point.x, point.y)
-                                                }
+                                        val path = Path().apply {
+                                            points.forEachIndexed { i, p ->
+                                                if (i == 0) moveTo(p.x, p.y)
+                                                else if (!record.course.locationPoints[i - 1].stop) lineTo(
+                                                    p.x,
+                                                    p.y
+                                                )
+                                                else moveTo(p.x, p.y)
                                             }
+                                        }
+                                        drawPath(
+                                            path,
+                                            Color.Black,
+                                            style = Stroke(
+                                                14f,
+                                                cap = StrokeCap.Round,
+                                                join = StrokeJoin.Round
+                                            )
+                                        )
+                                        drawPath(
+                                            path,
+                                            PointColor,
+                                            style = Stroke(
+                                                8f,
+                                                cap = StrokeCap.Round,
+                                                join = StrokeJoin.Round
+                                            )
+                                        )
+
+                                        if (points.isNotEmpty()) {
+                                            drawMarker(points.first(), Color(0xFF4CAF50), "START")
+                                            drawMarker(points.last(), Color(0xFFF44336), "END")
+                                        }
+
+                                        cachedSnapshot.closerOffsets.forEach { (url, closerPos) ->
+                                            val origPos = cachedSnapshot.markerPositions[url]
+                                                ?: return@forEach
+                                            drawLine(Color.Black.copy(0.8f), origPos, closerPos, 2f)
+                                            drawCircle(Color.Black, 5f, origPos)
                                         }
                                     }
 
-                                    // 🔹 1. 테두리 그리기 (진한 파란색)
-                                    drawPath(
-                                        path = path,
-                                        color = Color.Black,
-                                        style = Stroke(
-                                            width = 14f,
-                                            cap = StrokeCap.Round,
-                                            join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
-                                        )
-                                    )
-
-                                    // 🔹 2. 내부 선 그리기 (밝은 하늘색)
-                                    drawPath(
-                                        path = path,
-                                        color = PointColor,
-                                        style = Stroke(
-                                            width = 8f,
-                                            cap = StrokeCap.Round,
-                                            join = StrokeJoin.Round
-                                        )
-                                    )
-
-                                    // (2) 시작/종료 마커 그리기
-                                    if (points.isNotEmpty()) {
-                                        drawMarker(center = points.first(), color = Color(0xFF4CAF50), text = "START")
-                                        drawMarker(center = points.last(), color = Color(0xFFF44336), text = "END")
+                                    cachedSnapshot.closerOffsets.forEach { (url, closerPos) ->
+                                        val bitmap = thumbnailCache[url] ?: return@forEach
+                                        Box(modifier = Modifier
+                                            .offset {
+                                                IntOffset(
+                                                    (closerPos.x - markerSizePx / 2).toInt(),
+                                                    (closerPos.y - markerSizePx / 2).toInt()
+                                                )
+                                            }
+                                            .clickable { onImageClick(url) }) {
+                                            PhotoMarkerFromBitmap(bitmap)
+                                        }
                                     }
-
-                                    // (3) 사진 연결선 및 실제 점(Circle) 그리기
-                                    closerOffsets.forEach { (url, closerPos) ->
-                                        val origPos = markerPositions[url] ?: return@forEach
-                                        drawLine(color = Color.Black.copy(alpha = 0.8f), start = origPos, end = closerPos, strokeWidth = 2f)
-                                        drawCircle(color = Color.Black, radius = 5f, center = origPos)
-                                    }
-                                }
-
-                                // 🔹 3. 사진 마커 (이미 계산된 closerOffsets 사용)
-                                closerOffsets.forEach { (url, closerPos) ->
-                                    val bitmap = thumbnailCache[url] ?: return@forEach
+                                } else {
                                     Box(
-                                        modifier = Modifier
-                                            .offset { IntOffset((closerPos.x - markerSizePx / 2).toInt(), (closerPos.y - markerSizePx / 2).toInt()) }
-                                            .clickable { enlargedImageUri = url }
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        PhotoMarkerFromBitmap(bitmap = bitmap)
+                                        CircularProgressIndicator(
+                                            color = PointColor,
+                                            strokeWidth = 2.dp
+                                        )
                                     }
                                 }
                             }
                         }
-                    } ?: run {
-                        // 러닝 기록이 없는 경우에 대한 예외 처리 (검은 바탕 등)
-                        Box(modifier = Modifier.fillMaxSize().background(Color.Black))
                     }
                 } else {
-                    // [페이지 1 ~ N] commonImages 보여주기
-                    val imageIndex = page - 1
-                    val commonImage = post.commonImages[imageIndex]
-                    val preloadedBitmap = fullBitmapCache[commonImage.url]
-                    if (preloadedBitmap != null) {
-                        Image(
-                            bitmap = preloadedBitmap.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                    // --- 일반 이미지 페이지 ---
+                    val imageUrl = post.commonImages[page - 1].url
+                    val bitmap = fullBitmapCache[imageUrl]
+                    if (bitmap != null) {
+                        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
-                        // 아직 백그라운드 로딩이 안 끝났다면 일반 AsyncImage로 로딩 처리
-                        AsyncImage(
-                            model = commonImage.url, // 일반 이미지는 원본 URL 바로 사용
-                            contentDescription = "Post Image ${imageIndex + 1}",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable { enlargedImageUri = commonImage.url }, // 클릭 시 확대
-                            contentScale = ContentScale.Crop // 영역에 맞게 자름
-                        )
+                        AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { onImageClick(imageUrl) }, contentScale = ContentScale.Crop)
                     }
                 }
             }
 
-            // --- 상단 페이지 네비게이션 (예: 1/3) ---
+            // 페이지 인디케이터 (1/3)
             if (totalPages > 1) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = "${pagerState.currentPage + 1}/$totalPages",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                Surface(color = Color.Black.copy(0.6f), shape = CircleShape, modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)) {
+                    Text("${pagerState.currentPage + 1}/$totalPages", color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                 }
             }
         }
 
-        // --- 하단 인디케이터 (점) 영역 ---
+        // --- [3] 하단 인디케이터 & 좋아요/댓글/주소 ---
         if (totalPages > 1) {
             Row(
                 Modifier
@@ -795,24 +759,21 @@ fun PostItem(
                 }
             }
         } else {
-            // 이미지가 한 장일 때는 인디케이터 대신 여백
+            // 이미지가 한 장일 때 지도와 하단 아이콘 사이 간격을 최소화하기 위한 여백
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-
-        // 하단 좋아요/댓글 영역
+        // 🔹 좋아요/댓글/주소 영역 (윤석님의 원본 레이아웃 복구)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // vertical을 0.dp로 하거나 아주 작게(2.dp) 조정하여 위아래 간격을 줄임
-                .padding(start = 10.dp, end = 16.dp, top = 0.dp, bottom = 4.dp),
+                .padding(start = 10.dp, end = 16.dp, top = 0.dp, bottom = 4.dp), // top을 0으로 해서 위로 밀착
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. 좋아요 섹션
+            // 1. 좋아요 섹션 (배지 스타일)
             Box(
                 modifier = Modifier
-                    // 높이를 40.dp에서 32.dp 정도로 줄여서 위아래 여백을 제거
                     .size(width = 42.dp, height = 32.dp)
                     .clickable { onLikeClick() },
                 contentAlignment = Alignment.CenterStart
@@ -821,36 +782,31 @@ fun PostItem(
                     imageVector = if (post.likes > 0) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     contentDescription = null,
                     tint = if (post.likes > 0) Color.Red else WhiteTextColor,
-                    modifier = Modifier.size(24.dp) // 아이콘 크기를 살짝 줄여 더 밀착시킴
+                    modifier = Modifier.size(24.dp)
                 )
                 if (post.likes > 0) {
                     Text(
                         text = "${post.likes}",
                         color = WhiteTextColor,
-                        fontSize = 10.sp, // 숫자 크기도 살짝 조절
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = -4.dp, y = 2.dp)
+                            .offset(x = (-4).dp, y = 2.dp) // 우상단 45도 위치
                     )
                 }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 2. 댓글 섹션
+            // 2. 댓글 섹션 (배지 스타일)
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = 32.dp)
-                    .clickable { onClick() },
+                    .clickable { onPostClick() },
                 contentAlignment = Alignment.CenterStart
             ) {
-                Text(
-                    text = "💬",
-                    fontSize = 18.sp, // 이모지 크기도 살짝 조절
-                    modifier = Modifier.padding(bottom = 0.dp)
-                )
-
+                Text(text = "💬", fontSize = 18.sp)
                 if (post.commentCount > 0) {
                     Text(
                         text = "${post.commentCount}",
@@ -859,27 +815,26 @@ fun PostItem(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = -4.dp, y = 2.dp)
+                            .offset(x = (-4).dp, y = 2.dp) // 우상단 45도 위치
                     )
                 }
             }
 
-            // 🔹 3. 주소 표시 영역 (추가)
-            Spacer(modifier = Modifier.weight(1f)) // 왼쪽 아이콘들을 밀어냄
+            Spacer(modifier = Modifier.weight(1f)) // 주소를 오른쪽으로 밀어냄
 
+            // 3. 주소 표시
             if (post.dong.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.LocationOn, // 위치 아이콘 추가 시 가독성 상승
+                        imageVector = Icons.Default.LocationOn,
                         contentDescription = null,
                         tint = WhiteTextColor.copy(alpha = 0.5f),
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        // "북구 대현동" 형식으로 표시
                         text = "${post.city} ${post.district} ${post.dong}",
-                        color = WhiteTextColor.copy(alpha = 0.5f), // 작은 글씨이므로 약간 연하게
+                        color = WhiteTextColor.copy(alpha = 0.5f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
                     )
@@ -887,26 +842,20 @@ fun PostItem(
             }
         }
 
-        // 내용 영역
+        // --- [4] 본문 및 날짜 ---
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row {
                 Text(post.authorName, color = WhiteTextColor, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(post.content, color = WhiteTextColor)
             }
-
-            // [추가] 날짜 영역
-            Spacer(modifier = Modifier.height(4.dp)) // 내용과 날짜 사이 간격
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = formatTimestamp(post.timestamp),
-                color = WhiteTextColor.copy(alpha = 0.5f), // 날짜는 약간 흐릿하게
+                color = WhiteTextColor.copy(alpha = 0.5f),
                 fontSize = 12.sp
             )
         }
-    }
-
-    if (enlargedImageUri != null) {
-        EnlargedImageDialog(imageUrl = enlargedImageUri!!, onDismiss = { enlargedImageUri = null })
     }
 }
 
@@ -1081,7 +1030,9 @@ fun EnlargedImageDialog(imageUrl: String, onDismiss: () -> Unit, viewModel: Comm
         confirmButton = {},
         containerColor = Color.Black.copy(alpha = 0.9f),
         text = {
-            Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() }) {
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .clickable { onDismiss() }) {
                 if (displayBitmap != null) {
                     // [케이스 1] 이미 프리로드된 비트맵이 있다면 즉시 표시
                     Image(
