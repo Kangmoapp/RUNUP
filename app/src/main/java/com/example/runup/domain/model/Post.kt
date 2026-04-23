@@ -14,7 +14,10 @@ data class Post(
     val likes: Int = 0,
     val commentCount: Int = 0,
     val comments: List<Comment> = emptyList(),
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    val city: String = "",
+    val district: String = "",
+    val dong: String = "",
 )
 
 data class Comment(

@@ -3,7 +3,10 @@ package com.example.runup.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.runup.BuildConfig
+import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.Scores
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
@@ -11,7 +14,10 @@ import com.example.runup.domain.usecase.RecordRunningUseCase
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
+import com.example.runup.service.NaverMapApiService
 import com.example.runup.service.PostureAnalyzer
+import com.example.runup.service.TMapApiService
+import com.example.runup.service.TMapRouteRequest
 import com.example.runup.service.TtsManager
 import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
@@ -39,13 +45,21 @@ data class HomeUiState(
     val showDistanceDialog: Boolean = false,
     val showPaceDialog: Boolean = false,
     val isRunning:Boolean = false,
+    val selectedTab: HomeTab = HomeTab.RUNNING,
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
     val leftBleState: String = "L: 대기 중",
     val rightBleState: String = "R: 대기 중",
+)
 
-    val selectedTab: HomeTab = HomeTab.RUNNING,
+data class GuideUiState(
+    val guidePath: List<LatLng> = emptyList(), // 🔹 추가: 안내 경로 좌표 리스트
+    val destinationMarker: LatLng? = null,    // 🔹 추가: 목적지 마커 위치
+    val isGuiding: Boolean = false,            // 🔹 추가: 현재 경로 안내 중인지 여부
+    val guideDistance: Int = 0, // 🔹 추가: 경로 거리 (미터)
+    val guideDuration: Long = 0L, // 🔹 추가: 예상 소요 시간 (밀리초)
+    val isTrackingMode: Boolean = false //🔹  추가: 현재 트래킹 모드인지 아닌지
 )
 
 data class RunningUiState(
@@ -69,10 +83,18 @@ class HomeViewModel @Inject constructor(
     private val postureAnalyzer: PostureAnalyzer,
     private val ttsManager: TtsManager,
     private val bleSensorManager: BleSensorManager,
-    private val bleConnectionManager: BleConnectionManager
+    private val bleConnectionManager: BleConnectionManager,
+    private val naverMapApiService: NaverMapApiService,
+    private val tMapApiService: TMapApiService,
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
+
+    private val _isTracking = MutableStateFlow(false)
+    private val _totalTime = MutableStateFlow(0)
+
+    private val _GuideUiState = MutableStateFlow(GuideUiState())
+    val GuideUiState: StateFlow<GuideUiState> = _GuideUiState
 
     private val _loadingTimer = MutableStateFlow(0)
     val loadingTimer: StateFlow<Int> = _loadingTimer
@@ -80,10 +102,10 @@ class HomeViewModel @Inject constructor(
     private val inferenceBuffer = mutableListOf<FloatArray>()
     private var lastInferenceResult = ""
 
-    private val _isTracking = MutableStateFlow(false)
-    private val _totalTime = MutableStateFlow(0)
-
     private var recordingJob: Job? = null // 러닝 기록용 코루틴 잡
+
+    // 리포지토리의 주소 상태
+    val addressUiState: StateFlow<AddressModel?> = locationRepository.addressState
 
     // lifecycle 로 값이 업데이트 될 때마다 자동 업데이트 + 하나의 생명 주기만 적용
     val runningUiState: StateFlow<RunningUiState> = combine(
@@ -121,6 +143,11 @@ class HomeViewModel @Inject constructor(
             launch {
                 locationRepository.currentLocation.collect { geoPoint ->
                     _homeUiState.update { it.copy(currentLocation = geoPoint) }
+
+                    // 위치가 업데이트될 때마다 100m 이동했는지 체크하여 주소 갱신
+                    geoPoint?.let {
+                        locationRepository.refreshAddressIfNeeded(it.latitude, it.longitude)
+                    }
                 }
             }
 
@@ -343,8 +370,8 @@ class HomeViewModel @Inject constructor(
          */
     }
 
-    fun recordRunningCourse() {
-        _isTracking.value = false
+    fun recordRunningCourse(scores: Scores) {
+        //_isTracking.value = false
         recordingJob?.cancel()
         viewModelScope.launch {
             val nodes = locationRepository.recordedNodes.value
@@ -352,7 +379,7 @@ class HomeViewModel @Inject constructor(
             val timeInMillis = _totalTime.value * 1000
 
             if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis)
+                val result = recordRunningUseCase(nodes, distance, timeInMillis, scores)
                 if (result is AuthResult.Success) {
                     // 저장 성공 후 경로 데이터만 초기화
                     locationRepository.clearData()
@@ -363,7 +390,87 @@ class HomeViewModel @Inject constructor(
         _homeUiState.update { it.copy(isRunning = false) }
     }
 
+    fun cancelRunningCourse() {
+        // 1. 위치 기록 Job 중단
+        recordingJob?.cancel()
+
+        // 2. 저장 없이 데이터만 초기화
+        locationRepository.clearData()
+        _totalTime.value = 0
+
+        // 3. UI 상태를 러닝 종료로 변경
+        _homeUiState.update { it.copy(isRunning = false) }
+    }
+
     fun selectTab(tab: HomeTab) {
         _homeUiState.update { it.copy(selectedTab = tab) }
+    }
+
+    // HomeViewModel.kt 내부
+    fun startNavigation(destination: LatLng) {
+        val startLoc = _homeUiState.value.currentLocation ?: return
+
+        viewModelScope.launch {
+            try {
+                val request = TMapRouteRequest(
+                    startX = startLoc.longitude,
+                    startY = startLoc.latitude,
+                    endX = destination.longitude,
+                    endY = destination.latitude
+                )
+                Log.d("Tmap", "호출 시작...")
+                val response = tMapApiService.getPedestrianRoute(
+                    appKey = BuildConfig.TMAP_API_KEY,
+                    requestBody = request
+                )
+                Log.d("Tmap", "응답 성공: ${response.features.size}")
+                val pathList = mutableListOf<LatLng>()
+                var totalDistance = 0
+                var totalTime = 0L
+
+                response.features.forEach { feature ->
+                    // 1. 거리/시간 정보는 첫 번째 feature의 properties에 들어있음
+                    if (feature.properties.totalDistance > 0) {
+                        totalDistance = feature.properties.totalDistance
+                        totalTime = feature.properties.totalTime.toLong() * 1000 // ms 변환
+                    }
+
+                    // 2. 경로 좌표 추출 (LineString 타입만)
+                    if (feature.geometry.type == "LineString") {
+                        val coords = feature.geometry.coordinates as List<List<Double>>
+                        coords.forEach {
+                            pathList.add(LatLng(it[1], it[0])) // [lng, lat] -> LatLng(lat, lng)
+                        }
+                    }
+                }
+
+                _GuideUiState.update {
+                    it.copy(
+                        guidePath = pathList,
+                        guideDistance = totalDistance,
+                        guideDuration = totalTime,
+                        isGuiding = true,
+                        destinationMarker = destination
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("Tmap", "도보 경로 에러: ${e.message}")
+            }
+        }
+    }
+
+    fun toggleTrackingMode() {
+        _GuideUiState.update { it.copy(isTrackingMode = !it.copy().isTrackingMode) }
+    }
+
+    fun clearNavigation() {
+        _GuideUiState.update {
+            it.copy(
+                guidePath = emptyList(),
+                destinationMarker = null,
+                isGuiding = false,
+                isTrackingMode = false
+            )
+        }
     }
 }

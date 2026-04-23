@@ -57,17 +57,28 @@ import kotlin.math.sin
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.PaintingStyle.Companion.Stroke
+import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.util.lerp
+import androidx.compose.ui.zIndex
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.example.runup.BuildConfig
+import com.example.runup.data.cityList
+import com.example.runup.domain.model.AddressModel
+import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
+import com.example.runup.viewmodel.FilterType
 import com.example.runup.viewmodel.MapSnapshot
 
 import com.google.firebase.firestore.GeoPoint
@@ -88,6 +99,11 @@ import com.naver.maps.map.compose.PolylineOverlay
 import com.naver.maps.map.compose.rememberCameraPositionState
 import com.naver.maps.map.overlay.OverlayImage
 import okhttp3.OkHttpClient
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +114,11 @@ fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel()
 ) {
     val communityState by viewModel.communityUiState.collectAsState()
+    val addressUiState by viewModel.addressUiState.collectAsState()
+
+    // 🔹 [수정] 다이얼로그 대신 메뉴 관련 상태로 변경
+    var showFilterMenu by remember { mutableStateOf(false) }
+    var filterSubMenu by remember { mutableStateOf("MAIN") } // "MAIN", "MY", "CUSTOM"
 
     val scrollState = rememberLazyListState(
         initialFirstVisibleItemIndex = viewModel.savedScrollIndex,
@@ -143,12 +164,214 @@ fun CommunityScreen(
                 text = "커뮤니티",
                 isMenu = false,
                 insteadMenuComponent = {
-                    Icon(
-                        Icons.Default.Add,
-                        "글쓰기",
-                        tint = WhiteTextColor,
-                        modifier = Modifier.size(28.dp).clickable{onUploadClick()}
-                    )
+                    // 🔹 [수정] 아이콘 밑으로 늘어지는 메뉴 구조
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // 🔹 필터 섹션: 가로/세로 크기를 아이콘 버튼에 딱 맞게 고정 (Anchor 역할)
+                            Box(
+                                modifier = Modifier.size(40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // 1. 아이콘 버튼 (이 녀석이 Box의 주인이 되어 자리를 지킵니다)
+                                IconButton(
+                                    onClick = {
+                                        showFilterMenu = !showFilterMenu
+                                        filterSubMenu = "MAIN"
+                                    },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FilterList,
+                                        contentDescription = "필터",
+                                        tint = if (communityState.filterState.type == FilterType.ALL)
+                                            WhiteTextColor else PointColor
+                                    )
+                                }
+
+                                // 2. 지역 텍스트 (아이콘 자리에 영향을 주지 않도록 설정)
+                                val filter = communityState.filterState
+                                if (filter.type == FilterType.CUSTOM_LOCATION) {
+                                    val locationText = listOfNotNull(
+                                        filter.city.takeIf { it.isNotEmpty() },
+                                        filter.district.takeIf { it.isNotEmpty() },
+                                        filter.dong.takeIf { it.isNotEmpty() }
+                                    ).joinToString(" ")
+
+                                    Text(
+                                        text = locationText,
+                                        color = PointColor,
+                                        fontSize = 7.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        softWrap = false,
+                                        maxLines = 1,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .offset(y = 4.dp)
+                                            // 🔹 [핵심] 텍스트가 아무리 길어져도 Box의 크기에 영향을 주지 않도록 wrapContentWidth 사용
+                                            .wrapContentWidth(align = Alignment.CenterHorizontally, unbounded = true)
+                                            .background(PointColor.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+
+                            // 🔹 이제 이 Spacer는 항상 '40.dp 아이콘' 바로 옆에서 시작됩니다.
+                            Spacer(Modifier.width(8.dp))
+
+                            // 3. 글쓰기 아이콘
+                            Icon(
+                                Icons.Default.Add, "글쓰기",
+                                tint = WhiteTextColor,
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clickable { onUploadClick() }
+                            )
+                        }
+
+                        // ── 필터 메뉴 본체 ──
+                        DropdownMenu(
+                            expanded = showFilterMenu,
+                            onDismissRequest = { showFilterMenu = false },
+                            modifier = Modifier
+                                .background(Color(0xFF1A1A1A))
+                                .widthIn(min = if (filterSubMenu == "CUSTOM") 300.dp else 180.dp)
+                        ) {
+                            when (filterSubMenu) {
+                                "MAIN" -> {
+                                    // 🔹 전체 포스트
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(28.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(
+                                                            if (communityState.filterState.type == FilterType.ALL)
+                                                                PointColor.copy(alpha = 0.15f)
+                                                            else
+                                                                Color.White.copy(alpha = 0.05f)
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("🌍", fontSize = 14.sp)
+                                                }
+                                                Column {
+                                                    Text(
+                                                        "전체 포스트",
+                                                        color = if (communityState.filterState.type == FilterType.ALL)
+                                                            PointColor else WhiteTextColor,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = if (communityState.filterState.type == FilterType.ALL)
+                                                            FontWeight.SemiBold else FontWeight.Normal
+                                                    )
+                                                    Text(
+                                                        "모든 지역 피드",
+                                                        color = Color.Gray,
+                                                        fontSize = 10.sp
+                                                    )
+                                                }
+                                                if (communityState.filterState.type == FilterType.ALL) {
+                                                    Spacer(Modifier.weight(1f))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(6.dp)
+                                                            .clip(CircleShape)
+                                                            .background(PointColor)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.setFilter(FilterType.ALL)
+                                            showFilterMenu = false
+                                        },
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+
+                                    // 🔹 지역 직접 선택
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(28.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(
+                                                            if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                                                PointColor.copy(alpha = 0.15f)
+                                                            else
+                                                                Color.White.copy(alpha = 0.05f)
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("📍", fontSize = 14.sp)
+                                                }
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        "지역 직접 선택",
+                                                        color = if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                                            PointColor else WhiteTextColor,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                                            FontWeight.SemiBold else FontWeight.Normal
+                                                    )
+                                                    // 현재 선택된 지역 표시
+                                                    val currentFilter = communityState.filterState
+                                                    if (currentFilter.type == FilterType.CUSTOM_LOCATION) {
+                                                        Text(
+                                                            text = listOfNotNull(
+                                                                currentFilter.city.takeIf { it.isNotEmpty() },
+                                                                currentFilter.district.takeIf { it.isNotEmpty() },
+                                                                currentFilter.dong.takeIf { it.isNotEmpty() }
+                                                            ).joinToString(" "),
+                                                            color = PointColor.copy(alpha = 0.7f),
+                                                            fontSize = 10.sp,
+                                                            maxLines = 1
+                                                        )
+                                                    } else {
+                                                        Text(
+                                                            "시/도 · 구/군 · 동 선택",
+                                                            color = Color.Gray,
+                                                            fontSize = 10.sp
+                                                        )
+                                                    }
+                                                }
+                                                Text(
+                                                    ">",
+                                                    color = Color.Gray,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        },
+                                        onClick = { filterSubMenu = "CUSTOM" },
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+
+                                    Spacer(Modifier.height(4.dp))
+                                }
+
+                                "CUSTOM" -> {
+                                    CustomLocationPicker(
+                                        currentAddress = addressUiState,
+                                        onApply = { c, d, dg ->
+                                            viewModel.setFilter(FilterType.CUSTOM_LOCATION, c, d, dg)
+                                            showFilterMenu = false
+                                        },
+                                        onBack = { filterSubMenu = "MAIN" }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             ) },
     ) { padding ->
@@ -438,19 +661,41 @@ fun PostItem(
                                         latLngToPixel(it.locationPoint.latitude, it.locationPoint.longitude, centerLat, centerLng, dynamicZoom, mapWidthPx, mapHeightPx)
                                     }
 
-                                    for (i in 0 until points.size - 1) {
-                                        val currentNode = record.course.locationPoints[i]
-
-                                        // 정지 상태(isStop)가 true라면 다음 점과 잇지 않고 건너뜀
-                                        if (currentNode.stop) continue
-
-                                        drawLine(
-                                            color = Color.Black,
-                                            start = points[i],
-                                            end = points[i + 1],
-                                            strokeWidth = 4f
-                                        )
+                                    val path = Path().apply {
+                                        points.forEachIndexed { index, point ->
+                                            if (index == 0) moveTo(point.x, point.y)
+                                            else {
+                                                // 정지 지점이 아닐 때만 선을 잇습니다.
+                                                if (!record.course.locationPoints[index - 1].stop) {
+                                                    lineTo(point.x, point.y)
+                                                } else {
+                                                    moveTo(point.x, point.y)
+                                                }
+                                            }
+                                        }
                                     }
+
+                                    // 🔹 1. 테두리 그리기 (진한 파란색)
+                                    drawPath(
+                                        path = path,
+                                        color = Color.Black,
+                                        style = Stroke(
+                                            width = 14f,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
+                                        )
+                                    )
+
+                                    // 🔹 2. 내부 선 그리기 (밝은 하늘색)
+                                    drawPath(
+                                        path = path,
+                                        color = PointColor,
+                                        style = Stroke(
+                                            width = 8f,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
 
                                     // (2) 시작/종료 마커 그리기
                                     if (points.isNotEmpty()) {
@@ -615,6 +860,28 @@ fun PostItem(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .offset(x = -4.dp, y = 2.dp)
+                    )
+                }
+            }
+
+            // 🔹 3. 주소 표시 영역 (추가)
+            Spacer(modifier = Modifier.weight(1f)) // 왼쪽 아이콘들을 밀어냄
+
+            if (post.dong.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn, // 위치 아이콘 추가 시 가독성 상승
+                        contentDescription = null,
+                        tint = WhiteTextColor.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        // "북구 대현동" 형식으로 표시
+                        text = "${post.city} ${post.district} ${post.dong}",
+                        color = WhiteTextColor.copy(alpha = 0.5f), // 작은 글씨이므로 약간 연하게
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
                     )
                 }
             }
@@ -986,4 +1253,361 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMarker(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CustomLocationPicker(
+    currentAddress: AddressModel?,
+    onApply: (String, String, String) -> Unit,
+    onBack: () -> Unit,
+    viewModel: CommunityViewModel = hiltViewModel()
+) {
+    val districtList by viewModel.districtLocations.collectAsState()
+    val dongList by viewModel.dongLocations.collectAsState()
+    val isLoadingDistrict by viewModel.isLoadingDistrict.collectAsState()
+    val isLoadingDong by viewModel.isLoadingDong.collectAsState()
 
+    var city by remember { mutableStateOf("") }
+    var district by remember { mutableStateOf("") }
+    var dong by remember { mutableStateOf("") }
+    var currentParentCode by remember { mutableStateOf("") }
+
+    // 🔹 현재 보여줄 탭 단계 (0=시도, 1=구군, 2=동)
+    var activeStep by remember { mutableIntStateOf(0) }
+
+    Column(
+        modifier = Modifier
+            .width(300.dp)
+            .padding(top = 8.dp, bottom = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 🔹 뒤로가기 버튼
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .clickable { onBack() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("<", color = Color.Gray, fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            Text(
+                "지역 선택",
+                color = WhiteTextColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            // 🔹 내 위치 버튼
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(PointColor.copy(alpha = 0.1f))
+                    .clickable {
+                        city = currentAddress?.city ?: ""
+                        district = currentAddress?.district ?: ""
+                        dong = currentAddress?.dong ?: ""
+                    }
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text("📍", fontSize = 9.sp)
+                Text(
+                    "내 위치",
+                    color = PointColor,
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // ── 탭 헤더 3개 ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+        ) {
+            // 시/도 탭
+            LocationTab(
+                label = city.ifEmpty { "시/도" },
+                isActive = activeStep == 0,
+                isSelected = city.isNotEmpty(),
+                modifier = Modifier.weight(1f)
+            ) { activeStep = 0 }
+
+            // 구/군 탭
+            LocationTab(
+                label = district.ifEmpty { "구/군" },
+                isActive = activeStep == 1,
+                isSelected = district.isNotEmpty(),
+                enabled = city.isNotEmpty(),
+                modifier = Modifier.weight(1f)
+            ) { if (city.isNotEmpty()) activeStep = 1 }
+
+            // 동/읍/면 탭
+            LocationTab(
+                label = dong.ifEmpty { "동/읍/면" },
+                isActive = activeStep == 2,
+                isSelected = dong.isNotEmpty(),
+                enabled = district.isNotEmpty(),
+                modifier = Modifier.weight(1f)
+            ) { if (district.isNotEmpty()) activeStep = 2 }
+        }
+
+        // 탭 아래 구분선
+        Divider(
+            color = Color.White.copy(alpha = 0.08f),
+            thickness = 1.dp
+        )
+
+        // ── 리스트 본문 ──
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp)  // 고정 높이
+        ) {
+            when (activeStep) {
+
+                // 0단계: 시/도 목록
+                0 -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(cityList) { (name, code) ->
+                            LocationRowItem(
+                                label = name,
+                                isSelected = city == name
+                            ) {
+                                city = name
+                                currentParentCode = code
+                                district = ""
+                                dong = ""
+                                viewModel.loadDistricts(code, name)
+                                activeStep = 1  // 자동으로 다음 탭
+                            }
+                        }
+                    }
+                }
+
+                // 1단계: 구/군 목록
+                1 -> {
+                    if (isLoadingDistrict) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                color = PointColor,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(districtList) { vo ->
+                                LocationRowItem(
+                                    label = vo.lowestAdmName,
+                                    isSelected = district == vo.lowestAdmName
+                                ) {
+                                    district = vo.lowestAdmName
+                                    currentParentCode = vo.admCode
+                                    dong = ""
+                                    viewModel.loadDongs(vo.admCode, city, vo.lowestAdmName)
+                                    activeStep = 2  // 자동으로 다음 탭
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2단계: 동/읍/면 목록
+                2 -> {
+                    if (isLoadingDong) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                color = PointColor,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            // 🔹 구/군 전체 옵션
+                            item {
+                                LocationRowItem(
+                                    label = "전체",
+                                    isSelected = dong == "전체"
+                                ) {
+                                    dong = "전체"
+                                }
+                            }
+                            items(dongList) { vo ->
+                                LocationRowItem(
+                                    label = vo.lowestAdmName,
+                                    isSelected = dong == vo.lowestAdmName
+                                ) {
+                                    dong = vo.lowestAdmName
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+
+        // ── 선택된 지역 태그 (기존 유지) ──
+        if (city.isNotEmpty() || district.isNotEmpty() || dong.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (city.isNotEmpty()) LocationTag(city) {
+                    city = ""; district = ""; dong = ""; activeStep = 0
+                }
+                if (district.isNotEmpty()) LocationTag(district) {
+                    district = ""; dong = ""; activeStep = 1
+                }
+                if (dong.isNotEmpty()) LocationTag(dong) {
+                    dong = ""
+                }
+            }
+        }
+
+        // ── 하단 버튼 ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("뒤로", color = Color.Gray, fontSize = 13.sp)
+            }
+            Button(
+                onClick = { onApply(city, district, dong) },
+                modifier = Modifier.weight(1.5f),
+                colors = ButtonDefaults.buttonColors(containerColor = PointColor),
+                shape = RoundedCornerShape(8.dp),
+                enabled = city.isNotEmpty()
+            ) {
+                Text("적용", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+// ── 탭 컴포넌트 ──
+@Composable
+fun LocationTab(
+    label: String,
+    isActive: Boolean,
+    isSelected: Boolean,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val textColor = when {
+        isActive -> PointColor
+        isSelected -> WhiteTextColor
+        !enabled -> Color(0xFF555555)
+        else -> Color.Gray
+    }
+
+    Column(
+        modifier = modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 12.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(6.dp))
+        // 활성 탭 밑줄
+        Box(
+            modifier = Modifier
+                .height(2.dp)
+                .fillMaxWidth(0.7f)
+                .clip(RoundedCornerShape(1.dp))
+                .background(if (isActive) PointColor else Color.Transparent)
+        )
+    }
+}
+
+// ── 리스트 아이템 컴포넌트 ──
+@Composable
+fun LocationRowItem(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(
+                if (isSelected) PointColor.copy(alpha = 0.1f) else Color.Transparent
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = if (isSelected) PointColor else WhiteTextColor,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+        )
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(PointColor)
+            )
+        }
+    }
+}
+
+@Composable
+fun LocationTag(text: String, onDelete: () -> Unit) {
+    Surface(
+        color = Color.White.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text, color = WhiteTextColor, fontSize = 11.sp)
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.Add, // 'x' 아이콘이 적절하나 없으면 Add를 45도 돌려서 사용 가능
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier
+                    .size(14.dp)
+                    .graphicsLayer(rotationZ = 45f)
+                    .clickable { onDelete() }
+            )
+        }
+    }
+}

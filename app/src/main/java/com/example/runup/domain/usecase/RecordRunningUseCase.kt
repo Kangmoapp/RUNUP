@@ -15,11 +15,22 @@ class RecordRunningUseCase @Inject constructor(
         recordedNodes: List<Node>,
         totalDistance: Int,
         totalTime: Int,
+        scores: Scores,
     ): AuthResult<Boolean> {
 
         // 1. 노드 리스트가 비어있을 경우에 대한 예외 처리
         if (recordedNodes.isEmpty()) {
             return AuthResult.Fail("기록된 경로가 없습니다.")
+        }
+
+        val updatedNodes = recordedNodes.map { node ->
+            node.copy(
+                score = Scores(
+                    brightScore = scores.brightScore,
+                    crowdedScore = scores.crowdedScore,
+                    hardScore = scores.hardScore,
+                )
+            )
         }
 
         // 2. 경계 좌표(Bounding Box) 계산
@@ -29,18 +40,18 @@ class RecordRunningUseCase @Inject constructor(
         val maxLng = recordedNodes.maxOf { it.locationPoint.longitude }
 
         // 2. Scores 평균값 계산
-        val nodeCount = recordedNodes.size.toDouble()
+        val nodeCount = updatedNodes.size.toDouble()
         val averageScores = Scores(
-            brightScore = recordedNodes.sumOf { it.score.brightScore } / nodeCount,
-            crowdedScore = recordedNodes.sumOf { it.score.crowdedScore } / nodeCount,
-            hardScore = recordedNodes.sumOf { it.score.hardScore } / nodeCount
+            brightScore = updatedNodes.sumOf { it.score.brightScore } / nodeCount,
+            crowdedScore = updatedNodes.sumOf { it.score.crowdedScore } / nodeCount,
+            hardScore = updatedNodes.sumOf { it.score.hardScore } / nodeCount
         )
 
         // 3. Course 객체 구성
         val course = Course(
             id = "course_${System.currentTimeMillis()}", // 고유 ID 생성 (필요에 따라 수정)
             distance = totalDistance,
-            locationPoints = recordedNodes,
+            locationPoints = updatedNodes,
             minLat = minLat,
             maxLat = maxLat,
             minLng = minLng,

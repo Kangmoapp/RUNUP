@@ -15,20 +15,25 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
+import com.example.runup.domain.model.AddressModel
+import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Comment // 추가됨
 import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
+import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
 import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -40,7 +45,9 @@ data class CommunityUiState(
     val comments: List<Comment> = emptyList(),
     val isLoading: Boolean = false,
     val isInitialLoading: Boolean = true,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val filterState: FilterState = FilterState(),
+    val isFilterDialogOpen: Boolean = false
 )
 
 data class PostUploadUiState(
@@ -59,11 +66,21 @@ data class MapSnapshot(
 private var lastVisibleSnapshot: DocumentSnapshot? = null
 private var isLastPage = false
 
+data class FilterState(
+    val type: FilterType = FilterType.ALL,
+    val city: String = "",
+    val district: String = "",
+    val dong: String = ""
+)
+
+enum class FilterType { ALL, MY_LOCATION, CUSTOM_LOCATION }
+
 @HiltViewModel
 class CommunityViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataSource: CommunityDataSourceImpl,
-    private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase
+    private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase,
+    private val locationRepository: LocationRepository
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -96,6 +113,27 @@ class CommunityViewModel @Inject constructor(
     // [C] 원본/페이지 이동용 고해상도 캐시 (URL 기준)
     private val _fullBitmapCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
     val fullBitmapCache = _fullBitmapCache.asStateFlow()
+
+    val addressUiState: StateFlow<AddressModel?> = locationRepository.addressState
+
+    // 🔹 단계별로 분리해서 저장
+    private val _cityLocations = MutableStateFlow<List<AdmVO>>(emptyList())
+    private val _districtLocations = MutableStateFlow<List<AdmVO>>(emptyList())
+    private val _dongLocations = MutableStateFlow<List<AdmVO>>(emptyList())
+
+    val cityLocations: StateFlow<List<AdmVO>> = _cityLocations
+    val districtLocations: StateFlow<List<AdmVO>> = _districtLocations
+    val dongLocations: StateFlow<List<AdmVO>> = _dongLocations
+
+    // 로딩 상태도 단계별로
+    private val _isLoadingDistrict = MutableStateFlow(false)
+    private val _isLoadingDong = MutableStateFlow(false)
+    val isLoadingDistrict: StateFlow<Boolean> = _isLoadingDistrict
+    val isLoadingDong: StateFlow<Boolean> = _isLoadingDong
+
+    init {
+        requestInitialAddress()
+    }
 
     // 데이터 저장 함수들
     fun saveMapSnapshot(postId: String, snapshot: MapSnapshot) {
@@ -132,8 +170,10 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             _communityUiState.update { it.copy(isLoading = true) }
             try {
+                val currentFilter = _communityUiState.value.filterState
+
                 // 마지막 보던 곳에서 최대 3개 가져오기
-                val result = dataSource.getPosts(lastVisibleSnapshot, 3L)
+                val result = dataSource.getPosts(lastVisibleSnapshot, 3L, currentFilter)
 
                 if (result is AuthResult.Success) {
                     val (newPosts, lastSnapshot) = result.data
@@ -339,7 +379,24 @@ class CommunityViewModel @Inject constructor(
             _postUploadUiState.update { it.copy(isLoading = true) }
 
             val selectedRecord = _postUploadUiState.value.selectedRunRecord
-            val result = dataSource.uploadPost(content, selectedLocationImageUris, selectedCommonImageUris,selectedRecord)
+
+            // 1. 🔹 주소를 추출할 타겟 좌표 결정 (코스 중점 우선)
+            val targetLocation = if (selectedRecord != null) {
+                // 코스의 위도/경도 중점 계산
+                val centerLat = (selectedRecord.course.minLat + selectedRecord.course.maxLat) / 2.0
+                val centerLng = (selectedRecord.course.minLng + selectedRecord.course.maxLng) / 2.0
+                GeoPoint(centerLat, centerLng)
+            } else {
+                // 만약 러닝 기록 없이 글만 쓰는 경우라면 현재 위치 사용
+                locationRepository.currentLocation.value
+            }
+
+            // 2. 🔹 결정된 좌표로 주소(AddressModel) 변환
+            val address = targetLocation?.let {
+                locationRepository.getAddressFromCoords(it.latitude, it.longitude)
+            }
+
+            val result = dataSource.uploadPost(content, selectedLocationImageUris, selectedCommonImageUris,selectedRecord, address)
 
             if (result is AuthResult.Success) {
                 clearSelectedImages() // 위에서 수정한 함수 호출
@@ -410,5 +467,86 @@ class CommunityViewModel @Inject constructor(
     fun selectRunRecord(record: RunRecord?) {
         _postUploadUiState.update { it.copy(selectedRunRecord = record, isSheetOpen = false) }
     }
+
+    fun setFilter(type: FilterType, city: String = "", district: String = "", dong: String = "") {
+        viewModelScope.launch {
+            val finalFilter = when (type) {
+                FilterType.MY_LOCATION -> {
+                    val address = addressUiState.value
+                    FilterState(type, address?.city ?: "", address?.district ?: "", address?.dong ?: "")
+                }
+                else -> FilterState(type, city, district, dong)
+            }
+
+            _communityUiState.update { it.copy(filterState = finalFilter) }
+            fetchPosts(isInitial = true, forceRefresh = true) // 🔹 필터 적용 후 새로고침
+        }
+    }
+
+    fun setFilterByMyLocation(depth: String) { // "city", "district", "dong"
+        val loc = locationRepository.currentLocation.value ?: return
+        viewModelScope.launch {
+            val addr = locationRepository.getAddressFromCoords(loc.latitude, loc.longitude) ?: return@launch
+
+            val filter = when(depth) {
+                "city" -> FilterState(FilterType.MY_LOCATION, addr.city, "", "")
+                "district" -> FilterState(FilterType.MY_LOCATION, addr.city, addr.district, "")
+                else -> FilterState(FilterType.MY_LOCATION, addr.city, addr.district, addr.dong)
+            }
+
+            _communityUiState.update { it.copy(filterState = filter) }
+            fetchPosts(isInitial = true, forceRefresh = true)
+        }
+    }
+
+    // ViewModel
+    fun loadDistricts(cityCode: String, cityName: String) {  // 🔹 이름 추가
+        viewModelScope.launch {
+            _isLoadingDistrict.value = true
+            _districtLocations.value = emptyList()
+            _dongLocations.value = emptyList()
+            try {
+                val result = locationRepository.fetchLocations(
+                    parentCode = cityCode,
+                    locationName = cityName  // 🔹 "서울특별시" 넘김
+                )
+                _districtLocations.value = result
+            } catch (e: Exception) {
+                Log.e("LocationAPI", "구/군 로드 실패: ${e.localizedMessage}")
+            } finally {
+                _isLoadingDistrict.value = false
+            }
+        }
+    }
+
+    fun loadDongs(districtCode: String, cityName: String, districtName: String) {  // 🔹 이름 추가
+        viewModelScope.launch {
+            _isLoadingDong.value = true
+            _dongLocations.value = emptyList()
+            try {
+                val combinedName = "$cityName $districtName"
+                val result = locationRepository.fetchLocations(
+                    parentCode = districtCode,
+                    locationName = combinedName  // 🔹 "수성구" 이렇게 넘김
+                )
+                _dongLocations.value = result
+            } catch (e: Exception) {
+                Log.e("LocationAPI", "동/읍/면 로드 실패: ${e.localizedMessage}")
+            } finally {
+                _isLoadingDong.value = false
+            }
+        }
+    }
+
+    // 처음 커뮤니티 화면 들어왔을때 위치 한번 갱신
+    private fun requestInitialAddress() {
+        viewModelScope.launch {
+            locationRepository.currentLocation.value?.let {
+                locationRepository.refreshAddressIfNeeded(it.latitude, it.longitude)
+            }
+        }
+    }
+
+
 }
 
