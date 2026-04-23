@@ -840,6 +840,28 @@ fun PostItem(
                     )
                 }
             }
+
+            // 🔹 3. 주소 표시 영역 (추가)
+            Spacer(modifier = Modifier.weight(1f)) // 왼쪽 아이콘들을 밀어냄
+
+            if (post.dong.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn, // 위치 아이콘 추가 시 가독성 상승
+                        contentDescription = null,
+                        tint = WhiteTextColor.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        // "북구 대현동" 형식으로 표시
+                        text = "${post.city} ${post.district} ${post.dong}",
+                        color = WhiteTextColor.copy(alpha = 0.5f), // 작은 글씨이므로 약간 연하게
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            }
         }
 
         // --- [4] 본문 및 날짜 ---
