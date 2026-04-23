@@ -7,10 +7,17 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.util.Log
+import com.example.runup.BuildConfig
+import com.example.runup.domain.model.AddressModel
+import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.Node
 import com.example.runup.domain.model.Scores
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.service.GovLocationApiService
 import com.example.runup.service.LocationService
+import com.example.runup.service.NaverMapApiService
+import com.example.runup.ui.util.calculateDistance
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.firebase.firestore.GeoPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +28,9 @@ import kotlin.math.pow
 
 @Singleton
 class LocationRepositoryImpl @Inject constructor(
-    private val application: Application
+    private val application: Application,
+    private val naverMapApiService: NaverMapApiService,
+    private val govLocationApiService: GovLocationApiService
 ) : LocationRepository, SensorEventListener {
 
     private val _recordedNodes = MutableStateFlow<List<Node>>(emptyList())
@@ -43,6 +52,18 @@ class LocationRepositoryImpl @Inject constructor(
     private val _currentBearing = MutableStateFlow(0.0f)
     override val currentBearing: StateFlow<Float> = _currentBearing
 
+    // 🔹 마지막으로 API를 호출했던 좌표 저장 (메모리 내)
+    private var lastFetchedLocation: GeoPoint? = null
+    private val MIN_DISTANCE_THRESHOLD = 200.0
+
+    // 🔹 수문장 역할을 할 시간 관리 변수
+    private var lastFetchedTime: Long = 0L
+    private val MIN_TIME_THRESHOLD = 3 * 60 * 1000L // 3분 (밀리초)
+
+    // 🔹 전역 주소 상태
+    private val _addressState = MutableStateFlow<AddressModel?>(null)
+    override val addressState: StateFlow<AddressModel?> = _addressState
+
     override fun updateCurrentLocation(geoPoint: GeoPoint) {
         _currentLocation.value = geoPoint
     }
@@ -61,8 +82,8 @@ class LocationRepositoryImpl @Inject constructor(
             // 마지막 노드가 '정지(isStop)' 상태가 아닐 때만 거리를 계산하여 합산함
             if (!lastNode.stop) {
                 val distance = calculateDistance(
-                    lastNode.locationPoint.latitude, lastNode.locationPoint.longitude,
-                    newNode.locationPoint.latitude, newNode.locationPoint.longitude
+                    GeoPoint(lastNode.locationPoint.latitude, lastNode.locationPoint.longitude),
+                    GeoPoint(newNode.locationPoint.latitude, newNode.locationPoint.longitude)
                 )
                 _totalDistance.value += distance
             }
@@ -96,17 +117,6 @@ class LocationRepositoryImpl @Inject constructor(
         sensorManager.unregisterListener(this)
     }
 
-    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6371000.0
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2).pow(2.0) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2).pow(2.0)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return r * c
-    }
-
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) gravity = event.values
         if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) geomagnetic = event.values
@@ -136,4 +146,88 @@ class LocationRepositoryImpl @Inject constructor(
             _recordedNodes.value = currentList
         }
     }
+
+    override suspend fun getAddressFromCoords(lat: Double, lng: Double): AddressModel? {
+        return try {
+            val response = naverMapApiService.reverseGeocode("$lng,$lat") //경도, 위도
+            Log.d("location", "geocode api 호출")
+            if (response.status.code == 0 && response.results.isNotEmpty()) {
+                val region = response.results[0].region
+                val city = region.area1.name
+                val district = region.area2.name
+                val dong = region.area3.name
+
+                AddressModel(
+                    fullAddress = "$city $district $dong",
+                    displayAddress = "$district $dong",
+                    city = city,
+                    district = district,
+                    dong = dong
+                )
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    override suspend fun fetchLocations(
+        parentCode: String?,
+        locationName: String?
+    ): List<AdmVO> {
+        Log.d("LocationAPI", "fetchLocations 진입 - parentCode: [$parentCode], locationName: [$locationName]")
+        return try {
+            val targetParent = if (parentCode == "0" || parentCode.isNullOrEmpty())
+                "0000000000"
+            else parentCode
+
+            val response = govLocationApiService.getLocations(
+                key = BuildConfig.GOV_DATA_KEY,
+                parentCode = targetParent,
+                locationName = locationName, //"서울특별시" 처럼 이름을 직접 넘김
+                numOfRows = 500,
+                pageNo = 1
+            )
+
+            val rows = response.stanReginCd
+                ?.firstOrNull { it.row != null }
+                ?.row
+                ?: emptyList()
+
+            // 🔹 직계 자식만 필터
+            val filtered = rows.filter { it.locathighCd == targetParent }
+
+            Log.d("LocationAPI", "요청코드: $targetParent, 검색어: ${locationName}, 전체: ${rows.size}개, 직계자식: ${filtered.size}개")
+
+            filtered.sortedBy { it.lowestAdmName }
+
+        } catch (e: Exception) {
+            Log.e("LocationAPI", "Error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // 🔹 핵심 리팩터링: 거리 체크 + API 호출 + 상태 업데이트를 한 번에 처리
+    override suspend fun refreshAddressIfNeeded(lat: Double, lng: Double) {
+        // 🔹 [수문장 로직] 3분이 지나지 않았으면 아래 로직은 쳐다보지도 않고 종료
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastFetchedTime < MIN_TIME_THRESHOLD) {
+            return
+        }
+        lastFetchedTime = currentTime
+
+        val currentPoint = GeoPoint(lat, lng)
+        val lastPoint = lastFetchedLocation
+
+        // 처음이거나 200m 이상 이동했을 때만 실행
+        if (lastPoint == null || calculateDistance(lastPoint, currentPoint) >= MIN_DISTANCE_THRESHOLD) {
+            val result = getAddressFromCoords(lat, lng)
+            if (result != null) {
+                _addressState.value = result
+                lastFetchedLocation = currentPoint // 기준점 갱신
+                Log.d("LocationAPI", "주소 갱신 성공: ${result.fullAddress}")
+            }
+        }
+    }
+
 }
+

@@ -1,5 +1,7 @@
 package com.example.runup.domain.repository
 
+import com.example.runup.domain.model.AddressModel
+import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.Node
 import com.google.firebase.firestore.GeoPoint
 import kotlinx.coroutines.flow.StateFlow
@@ -17,4 +19,11 @@ interface LocationRepository {
     fun startTracking()
     fun stopTracking()
     fun markLastNodeAsStopped()
+
+    suspend fun getAddressFromCoords(lat: Double, lng: Double): AddressModel?
+
+    suspend fun fetchLocations(parentCode: String?, locationName: String? = null): List<AdmVO>
+
+    val addressState: StateFlow<AddressModel?> // 🔹 추가: 주소 상태 관찰
+    suspend fun refreshAddressIfNeeded(lat: Double, lng: Double) // 🔹 추가: 필요 시 갱신 로직
 }
