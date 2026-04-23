@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +66,11 @@ import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.ui.util.mapper.TimeMapper
 import com.example.runup.viewmodel.MyPageViewModel
 import com.example.runup.viewmodel.RunFilter
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.example.runup.ui.theme.PointColor
 
 @Composable
 fun MyPageScreen(
@@ -412,30 +418,45 @@ fun ExpandableRunItem(
                             Offset(x, y)
                         }
 
-                        // 2-1. 경로 선 그리기
-                        for (i in 0 until points.size - 1) {
-                            // 현재 노드(Node)의 정보를 가져옴
-                            val currentNode = run.course.locationPoints[i]
-
-                            // 만약 현재 노드가 '정지(isStop)' 상태라면, 다음 노드와 선을 잇지 않고 건너뜀
-                            if (currentNode.stop) {
-                                // 멈춘 지점에 작은 회색 점 표시 (선택 사항)
-                                drawCircle(
-                                    color = Color.Gray,
-                                    radius = 8f,
-                                    center = points[i]
-                                )
-                                Log.d("path", "건너뜀")
-                                continue
+                        // 🔹 2-1. 경로 데이터 생성 (Path 객체 사용)
+                        val path = Path().apply {
+                            points.forEachIndexed { index, point ->
+                                if (index == 0) {
+                                    moveTo(point.x, point.y)
+                                } else {
+                                    // 🔹 이전 노드가 '정지(stop)' 상태가 아닐 때만 선을 잇습니다.
+                                    val prevNode = run.course.locationPoints[index - 1]
+                                    if (!prevNode.stop) {
+                                        lineTo(point.x, point.y)
+                                    } else {
+                                        // 정지 상태였다면 선을 긋지 않고 새로운 시작점으로 이동
+                                        moveTo(point.x, point.y)
+                                    }
+                                }
                             }
-
-                            drawLine(
-                                color = Color(0xFF4A90E2), // 기존 파란색 유지
-                                start = points[i],
-                                end = points[i + 1],
-                                strokeWidth = 5f
-                            )
                         }
+
+                        // 테두리
+                        drawPath(
+                            path = path,
+                            color = Color.Black,
+                            style = Stroke(
+                                width = 14f,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
+                            )
+                        )
+
+                        // 내부 선
+                        drawPath(
+                            path = path,
+                            color = PointColor,
+                            style = Stroke(
+                                width = 8f,
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
 
                         // 2-2. 시작 및 종료 마커 추가
                         if (points.isNotEmpty()) {
@@ -456,6 +477,20 @@ fun ExpandableRunItem(
                                 "END"
                             )
                         }
+                    }
+
+                    // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopStart) // 좌측 상단 정렬
+                            .padding(10.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) // 반투명 검정 배경
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
+                        ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
+                        ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
                     }
                 }
 
@@ -502,6 +537,25 @@ fun DetailMetricItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, color = Color.Gray, fontSize = 11.sp)
         Text(value, color = WhiteTextColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+// 🔹 별점 표시용 소형 컴포넌트
+@Composable
+private fun ScoreIndicator(label: String, score: Double) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "$label ",
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 10.sp
+        )
+        // 별 아이콘 대신 텍스트와 주황색 수치로 깔끔하게 표시
+        Text(
+            text = "★ ${String.format("%.1f", score)}",
+            color = Color(0xFFFF9800), // PointColor와 유사한 오렌지색
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
