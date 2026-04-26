@@ -13,8 +13,8 @@ import javax.inject.Singleton
 @Singleton
 class UserStateManager @Inject constructor() {
     // 프로필 비트맵을 담아둘 창고
-    private val _profileBitmap = MutableStateFlow<Bitmap?>(null)
-    val profileBitmap = _profileBitmap.asStateFlow()
+    private val _profileBitmaps = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val profileBitmaps = _profileBitmaps.asStateFlow()
 
     // 유저 데이터 객체 창고
     private val _userData = MutableStateFlow<UserData?>(null)
@@ -22,11 +22,19 @@ class UserStateManager @Inject constructor() {
 
     // 업데이트 함수들
     fun updateUserData(data: UserData?) { _userData.value = data }
-    fun updateProfileBitmap(bitmap: Bitmap?) { _profileBitmap.value = bitmap }
+    // 🔹 특정 URL의 비트맵 추가/업데이트
+    fun updateProfileBitmap(url: String, bitmap: Bitmap?) {
+        if (bitmap == null) return
+        _profileBitmaps.update { it + (url to bitmap) }
+    }
 
-    // 로그아웃 시 클리어
+    // 🔹 여러 비트맵 한꺼번에 업데이트 (친구 목록 로드 시 유용)
+    fun updateProfileBitmaps(newBitmaps: Map<String, Bitmap>) {
+        _profileBitmaps.update { it + newBitmaps }
+    }
+
     fun clear() {
         _userData.value = null
-        _profileBitmap.value = null
+        _profileBitmaps.value = emptyMap() // 🔹 클리어 시 Map 비우기
     }
 }

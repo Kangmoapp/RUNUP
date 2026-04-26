@@ -14,11 +14,15 @@ import com.example.runup.viewmodel.AppViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runup.ui.navigation.Screen
 import dagger.hilt.android.AndroidEntryPoint
+import io.objectbox.Box
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         enableEdgeToEdge()
         setContent {
             RunUpApp()
@@ -64,34 +68,32 @@ fun RunUpApp(
              */
 
             Screen.COMMUNITY -> CommunityScreen(
-                onBackClick = { viewModel.navigateTo(Screen.MENU) },
+                onBackClick = { viewModel.popBackStack() },
                 onPostClick = { postId ->
                     // 이제 "1"이 아니라 실제 클릭한 postId를 들고 갑니다.
                     viewModel.navigateToDetail(postId)
                 },
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
+                },
+                onPopupPostClick = { uid ->
+                    viewModel.navigateToUserPosts(uid)
                 }
             )
 
             Screen.POST_UPLOAD -> PostUploadScreen(
                 onBackClick = {
-                    viewModel.navigateTo(Screen.COMMUNITY)
+                    viewModel.popBackStack()
                 },
                 onUploadSuccess = {
-                    viewModel.navigateTo(Screen.COMMUNITY)
+                    viewModel.popBackStack()
                 }
             )
 
-            Screen.COMMUNITY_COMMENT -> CommunityCommentScreen(
-                // viewModel에 저장된 따끈따끈한 ID를 전달합니다.
-                postId = viewModel.selectedPostId,
-                onBackClick = { viewModel.navigateTo(Screen.COMMUNITY) }
-            )
             Screen.LOADING -> LoadingScreen ()
 
             Screen.RECOMMEND -> CourseRecommendationScreen (
-                onBackClick = {viewModel.navigateTo(Screen.HOME)},
+                onBackClick = {viewModel.popBackStack()},
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
             )
             Screen.TEST -> TestScreen()
@@ -99,7 +101,24 @@ fun RunUpApp(
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
 
             Screen.MYPAGE -> MyPageScreen(
-                onBackClick = {viewModel.navigateTo(Screen.MENU)},
+                onBackClick = {viewModel.popBackStack()},
+                onPostClick = { uid ->
+                    viewModel.navigateToUserPosts(uid)
+                }
+            )
+
+            Screen.USER_POSTS -> UserPostScreen(
+                // AppViewModel에 저장된 UID를 전달
+                targetUid = viewModel.selectedTargetUid,
+                onBackClick = {
+                    // 🔹 이전 화면이 마이페이지였을 수도, 커뮤니티였을 수도 있으므로
+                    // 상황에 맞게 popBackStack 처럼 동작하게 하거나 특정 화면을 지정합니다.
+                    viewModel.popBackStack()
+                },
+                onPostClick = { postId ->
+                    // 상세 게시물로 연결 (기존 로직 재활용)
+                    viewModel.navigateToDetail(postId)
+                }
             )
 
             else -> {}

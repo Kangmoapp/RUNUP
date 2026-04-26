@@ -1,7 +1,6 @@
 package com.example.runup.ui.screens
 
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -10,9 +9,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,17 +24,35 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,6 +61,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,20 +88,44 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.SubcomposeAsyncImage
 import com.example.runup.domain.model.RunFilter
+import com.example.runup.ui.components.FriendListDialog
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.util.calculatePace
+import com.example.runup.ui.util.latLngToPixel
+import com.example.runup.ui.util.mapper.DistanceMapper
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyPageScreen(
     onBackClick: () -> Unit,
+    onPostClick: (String) -> Unit,
     viewModel: MyPageViewModel = hiltViewModel()
 ) {
     val userData by viewModel.userState.collectAsState()
 
-    val profileBitmap by viewModel.profileBitmap.collectAsState()
+    val profileBitmaps by viewModel.profileBitmaps.collectAsState()
+    // 내 프로필 URL 추출
+    val myProfileUrl = userData?.userProfileUrl ?: ""
+    // Map에서 내 URL에 해당하는 비트맵만 찾기
+    val myBitmap = profileBitmaps[myProfileUrl]
 
     val pagedRuns by viewModel.pagedRuns.collectAsState()
+
+    var showFriendDialog by remember { mutableStateOf(false) } // 친구 다이얼로그 상태 추가
+
+    val scrollState = rememberLazyListState() // 스크롤 상태
+    val runListStartIndex = 4
+
+    // 🔹 스낵바를 관리하는 상태와 실행을 위한 스코프 추가
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // 갤러리 실행기 설정
     val profileGalleryLauncher = rememberLauncherForActivityResult(
@@ -99,100 +143,228 @@ fun MyPageScreen(
         viewModel.initData()
     }
 
-    // 이름 수정 다이얼로그
     if (showEditDialog) {
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
-            title = { Text("이름 수정", color = Color.White) },
-            text = {
-                Column {
-                    Text("새로운 이름을 입력해주세요.", color = Color.Gray, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    androidx.compose.material3.TextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        singleLine = true,
-                        placeholder = { Text("이름 입력") }
+            properties = DialogProperties(usePlatformDefaultWidth = false), // 커스텀 너비 사용 가능하게 🔹
+            modifier = Modifier
+                .fillMaxWidth(0.85f) // 화면의 85% 너비 사용
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xFF1E1E1E)) // 조금 더 깊은 다크톤
+                .padding(24.dp),
+            content = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // ── [1] 타이틀 ──
+                    Text(
+                        text = "프로필 이름 수정",
+                        color = WhiteTextColor,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "RUNUP에서 사용할 이름을 입력해 주세요.",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // ── [2] 세련된 커스텀 입력창 ── 🔹
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { if (it.length <= 10) newName = it }, // 글자수 제한 팁 🔹
+                        singleLine = true,
+                        placeholder = { Text("새 이름 입력", color = Color.DarkGray, fontSize = 14.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = WhiteTextColor,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PointColor, // 포커스 시 포인트 컬러 🔹
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedContainerColor = Color(0xFF252525),
+                            unfocusedContainerColor = Color(0xFF252525),
+                            cursorColor = PointColor
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            if (newName.isNotBlank()) {
+                                viewModel.updateName(newName)
+                                showEditDialog = false
+                                newName = ""
+                            }
+                        })
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // ── [3] 버튼 영역 ── 🔹
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // 취소 버튼
+                        TextButton(
+                            onClick = { showEditDialog = false },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.Gray)
+                        ) {
+                            Text("취소", fontWeight = FontWeight.Medium)
+                        }
+
+                        // 확인 버튼 (포인트 컬러 강조)
+                        Button(
+                            onClick = {
+                                if (newName.isNotBlank()) {
+                                    viewModel.updateName(newName)
+                                    showEditDialog = false
+                                    // 🔹 성공 스낵바 띄우기
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            message = "성공적으로 수정되었습니다.",
+                                            duration = SnackbarDuration.Short // 짧게 보여주고 사라짐
+                                        )
+                                    }
+                                    newName = ""
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PointColor),
+                            enabled = newName.isNotBlank()
+                        ) {
+                            Text("확인", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.updateName(newName)
-                    showEditDialog = false
-                    newName = "" // 초기화
-                }) { Text("확인", color = Color(0xFF4A90E2)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) { Text("취소", color = Color.Gray) }
-            },
-            containerColor = Color(0xFF2C2C2C)
+            }
         )
     }
 
     Scaffold(
         containerColor = BackGroudColor,
-        topBar = { TopBar(text = "마이페이지", isMenu = false, onBackClick = {onBackClick()}) }
+        topBar = { TopBar(text = "마이페이지", isMenu = false, onBackClick = {onBackClick()}) },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Color(0xFF333333), // 다크한 배경
+                    contentColor = Color.White,         // 글자 색상
+                    shape = RoundedCornerShape(10.dp)   // 둥근 모서리
+                )
+            }
+        }
     ) { padding ->
         LazyColumn(
+            state = scrollState,
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // 1. 프로필 영역
+            // 프로필
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF2C2C2C)) // 배경색을 좀 더 어둡게 변경
-                            .clickable { profileGalleryLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp) // 위아래 여백을 줄여 전체적으로 끌어올림 🔹
+                ) {
+                    // [상단] 프로필 사진 + 유저 정보
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (profileBitmap != null) {
-                            // [핵심] 메모리에 로드된 비트맵이 있으면 0초 만에 띄움
-                            Log.d("bitmap", "dd")
-                            Image(
-                                bitmap = profileBitmap!!.asImageBitmap(),
-                                contentDescription = "Profile Image",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else if (!userData?.userProfileUrl.isNullOrEmpty()) {
-                            // 비트맵이 없을 때만 차선책으로 AsyncImage 작동
-                            Log.d("bitmap", "async")
-                            AsyncImage(
-                                model = userData?.userProfileUrl, // String(URL)을 직접 넣음
-                                contentDescription = "Profile Image",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Text("👤", fontSize = 40.sp)
+                        // 좌측 프로필 이미지
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp) // 약간 줄여서 더 컴팩트하게 🔹
+                                .clip(CircleShape)
+                                .background(Color(0xFF2C2C2C))
+                                .clickable { profileGalleryLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (myBitmap != null) {
+                                Image(
+                                    bitmap = myBitmap.asImageBitmap(),
+                                    contentDescription = "Profile Image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else if (myProfileUrl.isNotEmpty()) {
+                                SubcomposeAsyncImage(
+                                    model = myProfileUrl,
+                                    contentDescription = "Profile Image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                    loading = {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PointColor, strokeWidth = 2.dp)
+                                        }
+                                    }
+                                )
+                            } else {
+                                Text("👤", fontSize = 36.sp)
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(16.dp))
 
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        // 우측 이름 및 이메일
+                        Column(
                             modifier = Modifier.clickable {
                                 newName = userData?.userName ?: ""
                                 showEditDialog = true
                             }
                         ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = userData?.userName ?: "Runner",
+                                    color = WhiteTextColor,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(Icons.Default.Edit, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
+                            }
                             Text(
-                                text = userData?.userName ?: "Runner",
-                                color = WhiteTextColor,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold
+                                text = userData?.userEmail ?: "",
+                                color = Color.Gray,
+                                fontSize = 13.sp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("✏️", fontSize = 14.sp)
                         }
-                        Text(text = userData?.userEmail ?: "", color = Color.Gray, fontSize = 14.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp)) // 사진 영역과 버튼 사이 간격 🔹
+
+                    // [하단] 액션 버튼 (두 버튼을 가로로 균등 배치) 🔹
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        ProfileCompactButton(
+                            text = "기록 보기",
+                            icon = Icons.Default.Description,
+                            modifier = Modifier.weight(1f), // 버튼이 가로를 꽉 채우도록 🔹
+                            onClick = {
+                                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                                if (myUid.isNotEmpty()) onPostClick(myUid)
+                            }
+                        )
+                        ProfileCompactButton(
+                            text = "친구 목록",
+                            icon = Icons.Default.People,
+                            modifier = Modifier.weight(1f), // 버튼이 가로를 꽉 채우도록 🔹
+                            onClick = { showFriendDialog = true }
+                        )
                     }
                 }
             }
@@ -227,13 +399,11 @@ fun MyPageScreen(
                             modifier = Modifier.padding(16.dp).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceAround
                         ) {
-                            // 달린 횟수: runs 리스트의 크기 사용
-                            GoalItem("달린 횟수", "${userData?.runs?.size ?: 0}회")
-
-                            // 총 거리: 저장된 totalRunningDistance 사용 (m 단위를 km로 변환)
-                            val totalDistanceMeters = userData?.runs?.sumOf { it.course.distance } ?: 0
-                            val totalKm = totalDistanceMeters.toFloat() / 1000f
-                            GoalItem("총 거리", String.format("%.2f km", totalKm))
+                            // 총 달린 횟수
+                            GoalItem("달린 횟수", "${userData?.totalRunningCount ?: 0}회")
+                            // 총 달린 거리:
+                            val totalDistanceMeters = userData?.totalRunningDistance ?: 0L
+                            GoalItem("총 거리", DistanceMapper.formatDistance(totalDistanceMeters.toDouble()))
                         }
                     }
                 }
@@ -261,73 +431,119 @@ fun MyPageScreen(
                 }
             }
 
-            // 4. 데이터 로드 상태 및 나의 러닝 리스트 처리 🔹
-            when {
-                // A. 초기 로딩 중 (유저 데이터 자체가 아직 없을 때)
-                userData == null && viewModel.isLoadingMore -> {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Color.White)
-                        }
+            if (userData == null && viewModel.isLoadingMore) {
+                // 초기 로딩
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = PointColor)
                     }
                 }
-
-                // B. 데이터는 불러왔는데 리스트가 비어있을 때
-                pagedRuns.isEmpty() && !viewModel.isLoadingMore -> {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
-                            Text("해당 기간의 러닝 기록이 없습니다.", color = Color.Gray, fontSize = 14.sp)
-                        }
+            } else if (pagedRuns.isEmpty() && !viewModel.isLoadingMore) {
+                // 데이터 없음
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+                        Text("해당 기간의 러닝 기록이 없습니다.", color = Color.Gray, fontSize = 14.sp)
                     }
                 }
+            } else {
+                // 리스트 표시
+                itemsIndexed(pagedRuns, key = { _, run -> run.recordDate }) { index, run ->
+                    ExpandableRunItem(
+                        index = index + runListStartIndex,          // 🔹 인덱스 추가
+                        scrollState = scrollState, // 🔹 스크롤 상태 추가
+                        run = run,
+                        onDeleteConfirm = { viewModel.deleteRun(it) }
+                    )
+                }
 
-                // C. 리스트가 있을 때 (페이지네이션 적용)
-                else -> {
-                    items(pagedRuns, key = { it.recordDate }) { run ->
-                        ExpandableRunItem(
-                            run = run,
-                            onDeleteConfirm = { courseId ->
-                                viewModel.deleteRun(courseId)
-                            }
-                        )
-                    }
-
-                    // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
-                    if (viewModel.hasMore) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (viewModel.isLoadingMore) {
-                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text(
-                                        text = "더 보기 ▾",
-                                        color = PointColor,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clickable { viewModel.loadMoreRuns() }
-                                            .padding(8.dp)
-                                    )
-                                }
+                // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
+                if (viewModel.hasMore) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (viewModel.isLoadingMore) {
+                                CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
+                            } else {
+                                Text(
+                                    text = "더 보기 ▾",
+                                    color = PointColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .clickable { viewModel.loadMoreRuns() }
+                                        .padding(8.dp)
+                                )
                             }
                         }
                     }
                 }
             }
         }
+        if (showFriendDialog) {
+            FriendListDialog(
+                onDismiss = { showFriendDialog = false } // X 버튼이나 배경 클릭 시 닫기
+            )
+        }
+    }
+}
+
+// ── 💡 버튼 컴포저블 (Modifier 인자 추가) ──
+@Composable
+fun ProfileCompactButton(
+    text: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2C)),
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = PaddingValues(vertical = 8.dp),
+        modifier = modifier.height(40.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = PointColor, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text, color = WhiteTextColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 fun ExpandableRunItem(
+    index: Int,                // 🔹 추가
+    scrollState: LazyListState, // 🔹 추가
     run: RunRecord,
     onDeleteConfirm: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            // 1. 애니메이션이 어느 정도 진행될 때까지 대기
+            delay(150)
+
+            // 2. 현재 내 아이템의 레이아웃 정보 가져오기
+            val itemInfo = scrollState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+
+            if (itemInfo != null) {
+                // 3. 현재 내 아이템의 하단 위치 (offset + size)
+                val itemBottom = itemInfo.offset + itemInfo.size
+
+                // 4. 하단 네비게이션 바 등을 고려한 실제 뷰포트 높이
+                val viewportBottom = scrollState.layoutInfo.viewportEndOffset
+
+                // 🔹 내 바닥이 화면 끝보다 아래에 있다면?
+                if (itemBottom > viewportBottom) {
+                    val scrollDelta = itemBottom - viewportBottom
+                    // 딱 잘린 만큼만 + 여유분(50px) 스크롤
+                    scrollState.animateScrollBy(scrollDelta.toFloat() + 50f)
+                }
+            }
+        }
+    }
 
     // 1. 삭제 확인 다이얼로그
     if (showDeleteDialog) {

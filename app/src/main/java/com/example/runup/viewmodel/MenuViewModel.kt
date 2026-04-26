@@ -1,6 +1,7 @@
 package com.example.runup.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.domain.usecase.UpdateUserLoginStatusUseCase
 import com.example.runup.ui.util.GoogleAuthManager
+import com.example.runup.ui.util.ImagePreloader
 import com.example.runup.ui.util.UserStateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.update
@@ -22,7 +24,7 @@ class MenuViewModel @Inject constructor(
     private val updateUserLoginStatusUseCase: UpdateUserLoginStatusUseCase,
     private val userRepository: UserRepository,
     private val userStateManager: UserStateManager,
-
+    private val imagePreloader: ImagePreloader, // 🔹 주입 추가
     ): ViewModel(){
     fun initPreload(context: Context) {
         viewModelScope.launch {
@@ -38,39 +40,55 @@ class MenuViewModel @Inject constructor(
                 val data = result.data
                 userStateManager.updateUserData(data)
 
-                // 2. 데이터에 프로필 URL이 있다면 즉시 비트맵으로 변환해서 저장
-                if (data.userProfileUrl.isNotEmpty() && userStateManager.profileBitmap.value == null) {
-                    preloadProfileBitmap(context, data.userProfileUrl)
+                // 🔹 내 프로필 프리로드 (전역 창고에 저장)
+                if (data.userProfileUrl.isNotEmpty()) {
+                    val bitmap = imagePreloader.loadBitmap(data.userProfileUrl, 200)
+                    bitmap?.let {
+                        userStateManager.updateProfileBitmap(data.userProfileUrl, it)
+                    }
                 }
             }
-        }
-    }
-
-    private suspend fun preloadProfileBitmap(context: Context, url: String) {
-        val loader = context.imageLoader
-        val request = ImageRequest.Builder(context)
-            .data(url)
-            .allowHardware(false) // Bitmap 변환을 위해 필수
-            .build()
-
-        val result = loader.execute(request)
-        if (result is coil.request.SuccessResult) {
-            val bitmap = (result.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-            userStateManager.updateProfileBitmap(bitmap)
         }
     }
 
     fun signOutWithGoogle(context: Context, onSuccess: () -> Unit) {
         viewModelScope.launch {
             try {
-                googleAuthManager.signOut(context) // 이미 만들어진 signOut이 있다면 호출
+                // 1. Google/Firebase 로그아웃
+                googleAuthManager.signOut(context)
+
+                // 2. [가장 중요] 메모리 창고(싱글톤) 초기화 🚨
+                userStateManager.clear()
+
+                // 3. 로컬 DB(Room)에 저장된 목표 데이터 삭제 🚨
+                userRepository.deleteUserGoalFromRoom()
+
+                // 4. 로그인 상태값 업데이트 (DataStore 등)
                 updateUserLoginStatusUseCase(false)
-                onSuccess()
-                Log.d("test", "로그아웃 성공 - 이제 다시 로그인해 보세요.")
+
+                restartApp(context)
+                Log.d("test", "로그아웃 성공 - 모든 메모리와 로컬 데이터가 청소되었습니다.")
             } catch (e: Exception) {
                 Log.e("test", "로그아웃 실패: ${e.message}")
             }
         }
+    }
+
+    private fun restartApp(context: Context) {
+        // 1. 앱의 런처 인텐트를 가져옵니다 (보통 MainActivity)
+        val packageManager = context.packageManager
+        val intent = packageManager.getLaunchIntentForPackage(context.packageName)
+        val componentName = intent?.component
+
+        // 2. 모든 액티비티 스택을 날리고 새로 시작하는 인텐트 생성
+        val mainIntent = Intent.makeRestartActivityTask(componentName)
+
+        // 3. 앱 재시작 실행
+        context.startActivity(mainIntent)
+
+        // 4. 현재 실행 중인 프로세스를 완전히 종료 (이게 핵심! 🚨)
+        // 0은 정상 종료를 의미합니다.
+        Runtime.getRuntime().exit(0)
     }
 
 }
