@@ -33,8 +33,6 @@ class MainActivity : ComponentActivity() {
 fun RunUpApp(
     viewModel: AppViewModel = viewModel()
 ) {
-
-
     val currentScreen by viewModel.currentScreen.collectAsState()
     val isSplashLoading by viewModel.isSplashLoading.collectAsState()
     Box(modifier = Modifier.fillMaxSize()){
@@ -47,10 +45,10 @@ fun RunUpApp(
             )
             Screen.GOALSETTING -> GoalSettingScreen(
                 onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-                onBackClick = {viewModel.navigateTo(Screen.HOME)},
+                onBackClick = {viewModel.popBackStack()},
             )
             Screen.MENU -> MenuScreen (
-                onBackClick = {viewModel.navigateTo(Screen.HOME)},
+                onBackClick = {viewModel.popBackStack()},
                 onCorseClick = {viewModel.navigateTo(Screen.RECOMMEND)},
                 onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
                 onOptionClick= { },

@@ -16,12 +16,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.runup.ui.theme.BackGroudColor
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material3.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,12 +44,17 @@ import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommentBottomSheet(
-    comments: List<com.example.runup.domain.model.Comment>, // 🔹 리스트를 직접 받음
-    onAddComment: (String) -> Unit,                       // 🔹 댓글 달기 로직을 주입받음
+    postId: String,
+    comments: List<com.example.runup.domain.model.Comment>, // 댓글 리스트를 직접 받음
+    onAddComment: (String) -> Unit,             // 댓글 달기 로직
+    onDeleteComment: (String, String) -> Unit,  // 댓글 삭제 로직
     bitmapCache: Map<String, Bitmap>,
     onDismiss: () -> Unit
 ) {
@@ -96,7 +105,10 @@ fun CommentBottomSheet(
                 }
             } else {
                 items(comments) { comment ->
-                    CommentItem(comment, bitmapCache) // 별도 분리된 댓글 아이템 컴포저블
+                    CommentItem(comment, bitmapCache,onDelete = {
+                        // 꾹 눌러서 삭제 확인 시 호출 🔹
+                        onDeleteComment(postId, comment.commentId)
+                    }) // 별도 분리된 댓글 아이템 컴포저블
                 }
             }
         }
@@ -156,14 +168,123 @@ fun CommentBottomSheet(
 @Composable
 fun CommentItem(
     comment: com.example.runup.domain.model.Comment, // 윤석님의 댓글 모델
-    bitmapCache: Map<String, Bitmap>
+    bitmapCache: Map<String, Bitmap>,
+    onDelete: () -> Unit
 ) {
     // 🔹 캐시에서 프로필 비트맵 확인
     val authorProfileBitmap = bitmapCache[comment.authorProfileUrlMini]
 
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+    // 2. 내가 쓴 댓글인지 확인 🔹
+    val isMyComment = remember(comment.authorId, myUid) {
+        myUid != null && comment.authorId == myUid
+    }
+
+    if (showDeleteDialog) {
+        Dialog(
+            onDismissRequest = { showDeleteDialog = false },
+            // 너비 제한을 해제해서 카드의 너비를 자유롭게 조절 🔹
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            // ── 본체 카드 ──
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.82f) // 화면 너비의 82% 정도 사용 (담백하게)
+                    .clip(RoundedCornerShape(20.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)) // 깊은 다크
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally // 중앙 정렬 🔹
+                ) {
+                    // ── [1] 아이콘 & 타이틀 ── 📍
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(PointColor.copy(alpha = 0.1f), CircleShape), // 포인트 컬러 은은하게 배경
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever, // 삭제 전용 아이콘 사용 추천 🔹
+                            contentDescription = null,
+                            tint = PointColor, // 포인트 컬러로 강조
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Text(
+                        text = "댓글 삭제",
+                        color = WhiteTextColor,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold, // 아주 굵게
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // ── [2] 본문 (가독성 고려한 색상) ──
+                    Text(
+                        text = "정말로 이 댓글을 삭제하시겠습니까?\n이 동작은 되돌릴 수 없습니다.",
+                        color = Color.Gray,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 19.sp, // 줄간격 넓혀서 모던하게 🔹
+                        textAlign = TextAlign.Center // 중앙 정렬
+                    )
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    // ── [3] 버튼 영역 (side-by-side) ── 📍
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp) // 버튼 사이 간격
+                    ) {
+                        // 취소 버튼 (담백하게 그레이)
+                        TextButton(
+                            onClick = { showDeleteDialog = false },
+                            modifier = Modifier.weight(1f).height(46.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.Gray)
+                        ) {
+                            Text("취소", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        }
+
+                        // 삭제 버튼 (앱 컨셉인 PointColor 강조!) 🔹
+                        Button(
+                            onClick = {
+                                onDelete()
+                                showDeleteDialog = false
+                            },
+                            modifier = Modifier.weight(1f).height(46.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PointColor, // 포인트 컬러 배경
+                                contentColor = Color.Black // 포인트 컬러 위에는 검정 글씨 🔹
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp) // 살짝 입체감
+                        ) {
+                            Text("삭제하기", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick = { /* 일반 클릭 */ },
+                onLongClick = {
+                    if (isMyComment) {
+                        showDeleteDialog = true
+                    }
+                }
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top
     ) {

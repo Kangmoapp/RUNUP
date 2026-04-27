@@ -70,6 +70,7 @@ import com.example.runup.viewmodel.FriendViewModel
 @Composable
 fun FriendListDialog(
     onDismiss: () -> Unit,
+    onPostClick: (String) -> Unit,
     viewModel: FriendViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -155,7 +156,10 @@ fun FriendListDialog(
         ProfileMiniPopup(
             userId = selectedProfileId!!,
             onDismiss = { selectedProfileId = null },
-            onViewPosts = { uid -> /* 나중에 구현 */ }
+            onViewPosts = { uid ->
+                onPostClick(uid)
+                onDismiss() // 활동 보러 가면서 친구 목록 창도 닫아주는 게 자연스럽습니다.}
+            }
         )
     }
 

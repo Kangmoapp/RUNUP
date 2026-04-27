@@ -60,6 +60,7 @@ import com.example.runup.ui.components.PostItem
 import com.example.runup.ui.components.ProfileMiniPopup
 import com.example.runup.ui.components.ScopeButton
 import com.example.runup.ui.components.getSelectedLocationText
+import com.example.runup.ui.util.CommunityRefreshManager
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -102,12 +103,8 @@ fun CommunityScreen(
     val isLoadingDistrict by viewModel.isLoadingDistrict.collectAsState()
     val isLoadingDong by viewModel.isLoadingDong.collectAsState()
 
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val isKeyboardVisible = WindowInsets.isImeVisible // 키보드가 떠 있는지 확인 🔹
-
-    // 처음 진입 시 데이터 호출
     LaunchedEffect(Unit) {
-        viewModel.fetchPosts(isInitial = true) // 포스트 불러옴
+        viewModel.fetchPosts(isInitial = true)
     }
 
     // 스크롤 저장용 추가
@@ -342,6 +339,14 @@ fun CommunityScreen(
                             thumbnailCache = locationMarkerCaches,    // ✅ 마커용 썸네일들
                             fullBitmapCache = fullImageCaches,  // ✅ 페이저용 원본들
                             onLikeClick = { viewModel.onLikeClick(post.postId) },
+                            onFollowClick = {
+                                // 🔹 여기서 ViewModel 함수를 호출하며 trailing lambda를 작성합니다.
+                                viewModel.onFollowClick(post.postId) { readyPost ->
+                                    // ── 🏃‍♂️ 여기가 바로 onCourseReady(it)가 실행되는 지점입니다! ──
+                                    // 예: 메인 화면으로 이동하면서 코스 데이터를 전달하는 로직
+                                    println("성공! 이제 ${readyPost.postId} 코스를 메인 지도에 그립니다.")
+                                }
+                            },
                             onPostClick = {
                                 selectedPostIdForComment = post.postId
                                 showCommentSheet = true
@@ -388,7 +393,6 @@ fun CommunityScreen(
     if (showCommentSheet && selectedPostIdForComment != null) {
         LaunchedEffect(selectedPostIdForComment) {
             viewModel.observeComments(selectedPostIdForComment!!)
-            viewModel.fetchPostDetail(selectedPostIdForComment!!)
         }
 
         ModalBottomSheet(
@@ -404,9 +408,13 @@ fun CommunityScreen(
             )
         ) {
             CommentBottomSheet(
+                postId = selectedPostIdForComment ?: "",
                 comments = communityState.comments, // 🔹 CommunityViewModel의 데이터
                 onAddComment = { content ->
                     viewModel.addComment(selectedPostIdForComment!!, content)
+                },
+                onDeleteComment = { postId, commentId ->
+                    viewModel.deleteComment(postId, commentId)
                 },
                 bitmapCache = profilesCaches,
                 onDismiss = { showCommentSheet = false }

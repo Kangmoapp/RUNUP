@@ -313,7 +313,7 @@ fun PostUploadScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = uiState.selectedRunRecord != null && selectedLocationImageUris.isNotEmpty() && !uiState.isLoading,
+                enabled = uiState.selectedRunRecord != null &&  !uiState.isLoading,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = PointColor, // 🔹 브랜드 컬러로 강조
                     disabledContainerColor = Color.Gray.copy(alpha = 0.3f),

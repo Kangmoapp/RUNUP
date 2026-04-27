@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.BuildConfig
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Scores
@@ -46,6 +47,7 @@ data class HomeUiState(
     val showPaceDialog: Boolean = false,
     val isRunning:Boolean = false,
     val selectedTab: HomeTab = HomeTab.RUNNING,
+    val isInitialLoading: Boolean = true,
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
@@ -86,6 +88,7 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
+    private val userPreferenceDataSource: UserPreferenceDataSource
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
@@ -132,6 +135,7 @@ class HomeViewModel @Inject constructor(
         observeLocation()
         loadUserGoal()
 
+        startCurrentLocationTracking()
 
         bleSensorManager.startDataProcessing()
         observeSensorData()
@@ -143,6 +147,11 @@ class HomeViewModel @Inject constructor(
             launch {
                 locationRepository.currentLocation.collect { geoPoint ->
                     _homeUiState.update { it.copy(currentLocation = geoPoint) }
+
+                    // 🔹 초기 로딩 중이고, 첫 좌표(geoPoint)가 null이 아니면 로딩 해제!
+                    if (_homeUiState.value.isInitialLoading && geoPoint != null) {
+                        _homeUiState.update { it.copy(isInitialLoading = false) }
+                    }
 
                     // 위치가 업데이트될 때마다 100m 이동했는지 체크하여 주소 갱신
                     geoPoint?.let {

@@ -17,6 +17,8 @@ data class Post(
     val commentCount: Int = 0,
     val comments: List<Comment> = emptyList(),
     val commentedBy: List<String> = emptyList(),
+    val followCount: Int = 0,
+    val followedBy: List<String> = emptyList(),
     val timestamp: Long = 0L,
     val city: String = "",
     val district: String = "",
@@ -25,6 +27,7 @@ data class Post(
 
 data class Comment(
     val commentId: String = "",
+    val authorId: String = "",
     val authorName: String = "",
     val authorProfileUrlMini: String = "",
     val content: String = "",
@@ -47,7 +50,7 @@ enum class MarkerSlot {
 data class UserActivityStats(
     val userName: String = "",
     val uploadPostIds: List<String> = emptyList(),
-    val likedPostIds: List<String> = emptyList(),
-    val commentedPostIds: List<String> = emptyList(),
-    val scrapPostIds: List<String> = emptyList()
+    val likePostIds: List<String> = emptyList(),
+    val commentPostIds: List<String> = emptyList(),
+    val followPostIds: List<String> = emptyList()
 )

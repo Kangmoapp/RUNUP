@@ -21,6 +21,7 @@ import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.ViewScope
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
+import com.example.runup.ui.util.CommunityRefreshManager
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -41,7 +41,7 @@ data class UserTotalStats(
     val totalPosts: Int = 0,
     val totalLikes: Int = 0,
     val totalComments: Int = 0,
-    val totalScraps: Int = 0
+    val totalFollows: Int = 0,
 )
 
 @HiltViewModel
@@ -49,8 +49,10 @@ class UserPostViewModel @Inject constructor(
     private val dataSource: CommunityDataSourceImpl,
     private val userRepository: UserRepository,
     private val locationRepository: LocationRepository,
+    private val refreshManager: CommunityRefreshManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
+    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
 
     private val _communityUiState = MutableStateFlow(CommunityUiState())
     val communityUiState = _communityUiState.asStateFlow()
@@ -62,8 +64,9 @@ class UserPostViewModel @Inject constructor(
         UserTotalStats(
             userName = stats.userName,
             totalPosts = stats.uploadPostIds.size,
-            totalLikes = stats.likedPostIds.size,
-            totalComments = stats.commentedPostIds.size
+            totalLikes = stats.likePostIds.size,
+            totalComments = stats.commentPostIds.size,
+            totalFollows = stats.followPostIds.size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserTotalStats())
 
@@ -101,14 +104,20 @@ class UserPostViewModel @Inject constructor(
 
     private var currentTargetUid: String = ""
 
+    private var currentLoadedUid: String? = null // 현재 로드된 데이터의 주인 🔹
+
     // 🔹 이 화면의 핵심: 누구의 글을 보여줄 것인가?
     fun fetchUserPosts(targetUid: String, isInitial: Boolean = false, forceRefresh: Boolean = false) {
         // 최초 진입 시 현재 타겟 아이디 저장
         if (targetUid.isNotEmpty()) { currentTargetUid = targetUid }
 
+        if (currentLoadedUid != currentTargetUid) {
+            resetState()
+            currentLoadedUid = currentTargetUid
+        }
+
         if (_communityUiState.value.isLoading || (isLastPage && !isInitial)) return
 
-        val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
         val determinedScope = if (currentTargetUid == myUid) ViewScope.MINE else ViewScope.FRIENDS
 
         if (isInitial) {
@@ -275,6 +284,75 @@ class UserPostViewModel @Inject constructor(
         }
     }
 
+    fun deletePost(post: Post) {
+        viewModelScope.launch {
+            val result = dataSource.deletePost(post)
+            if (result is AuthResult.Success) {
+                // 1. 메인 리스트 UI 즉시 제거
+                _communityUiState.update { state ->
+                    state.copy(posts = state.posts.filter { it.postId != post.postId })
+                }
+
+                // 2. 상단 통계 실시간 업데이트 (내가 내 페이지를 관리 중일 때) 🔹
+                if (myUid == currentTargetUid) {
+                    _rawStats.update { current ->
+                        // ── 모든 활동 리스트에서 해당 postId를 제거하여 '클린 삭제' 수행 ── 📍
+                        current.copy(
+                            uploadPostIds = current.uploadPostIds - post.postId,    // 내 게시물 리스트에서 제거
+                            likePostIds = current.likePostIds - post.postId,      // 내 좋아요 리스트에서 제거
+                            commentPostIds = current.commentPostIds - post.postId, // 내 댓글 리스트에서 제거
+                            followPostIds = current.followPostIds - post.postId // 🔹 추가: 팔로우 목록에서도 제거
+                        )
+                    }
+                }
+
+                Log.d("UserPostViewModel", "게시물 삭제 및 통계 정화 완료: ${post.postId}")
+                refreshManager.notifyDataChanged()
+            } else if (result is AuthResult.Fail) {
+                Log.e("UserPostViewModel", "삭제 실패: ${result.message}")
+            }
+        }
+    }
+
+    fun onLikeClick(postId: String) {
+        viewModelScope.launch {
+            val result = dataSource.toggleLike(postId)
+            if (result is AuthResult.Success) {
+                val isLiked = result.data ?: false
+                _communityUiState.update { state ->
+                    val updatedPosts = if (currentTab.value == "HEARTS" && !isLiked && myUid == currentTargetUid) {
+                        state.posts.filter { it.postId != postId }
+                    } else {
+                        state.posts.map { post ->
+                            if (post.postId == postId) {
+                                val newLikes = if (isLiked) post.likes + 1 else (post.likes - 1).coerceAtLeast(0)
+                                post.copy(likes = newLikes, isLiked = isLiked)
+                            } else post
+                        }
+                    }
+                    val updatedSelectedPost = if (state.selectedPost?.postId == postId) {
+                        val newLikes = if (isLiked) state.selectedPost.likes + 1 else (state.selectedPost.likes - 1).coerceAtLeast(0)
+                        state.selectedPost.copy(likes = newLikes, isLiked = isLiked)
+                    } else state.selectedPost
+                    state.copy(posts = updatedPosts, selectedPost = updatedSelectedPost)
+                }
+
+                if (myUid == currentTargetUid) { // 👈 이 조건이 핵심입니다 📍
+                    _rawStats.update { current ->
+                        if (isLiked) {
+                            if (!current.likePostIds.contains(postId)) {
+                                current.copy(likePostIds = current.likePostIds + postId)
+                            } else current
+                        } else {
+                            current.copy(likePostIds = current.likePostIds - postId)
+                        }
+                    }
+                }
+                refreshManager.notifyDataChanged()
+            }
+        }
+    }
+
     // --- 추가된 부분: 댓글 추가 ---
     fun addComment(postId: String, content: String) {
         viewModelScope.launch {
@@ -292,67 +370,112 @@ class UserPostViewModel @Inject constructor(
                     state.copy(posts = updatedPosts)
                 }
 
-                // ── [핵심 추가] 2. 상단 통계 숫자 실시간 업데이트 ──
-                _rawStats.update { current ->
-                    // 중복 방지를 위해 set으로 변환 후 다시 list로 (혹은 contains 체크)
-                    if (!current.commentedPostIds.contains(postId)) {
-                        current.copy(commentedPostIds = current.commentedPostIds + postId)
-                    } else current
+                if (myUid == currentTargetUid) { // 👈 이 조건문을 추가합니다 📍
+                    _rawStats.update { current ->
+                        // 이미 댓글을 달았던 포스트라면 리스트에 추가하지 않음 (중복 방지)
+                        if (!current.commentPostIds.contains(postId)) {
+                            current.copy(commentPostIds = current.commentPostIds + postId)
+                        } else {
+                            current
+                        }
+                    }
                 }
+
+                refreshManager.notifyDataChanged()
             }
         }
     }
 
-    // 게시글 삭제 함수
-    fun deletePost(post: Post) {
+    fun deleteComment(postId: String, commentId: String) {
         viewModelScope.launch {
-            val result = dataSource.deletePost(post)
+            val result = dataSource.deleteComment(postId, commentId)
+
             if (result is AuthResult.Success) {
-                // 삭제 성공 시 현재 리스트에서 해당 포스트 제거하여 UI 갱신
+                val isLastCommentDeleted = result.data // true면 마지막 댓글이었다는 뜻 🔹
+
+                // 1. 상세 정보 및 UI 즉시 반영
+                fetchPostDetail(postId)
                 _communityUiState.update { state ->
-                    state.copy(posts = state.posts.filter { it.postId != post.postId })
+                    val updatedPosts = if (currentTab.value == "COMMENTS" && isLastCommentDeleted) {
+                        state.posts.filter { it.postId != postId }
+                    } else {
+                        state.posts.map { post ->
+                            if (post.postId == postId) {
+                                post.copy(commentCount = (post.commentCount - 1).coerceAtLeast(0))
+                            } else post
+                        }
+                    }
+                    val updatedComments = state.comments.filterNot { it.commentId == commentId }
+                    state.copy(posts = updatedPosts, comments = updatedComments)
                 }
-            } else if (result is AuthResult.Fail) {
-                // 에러 처리 (Toast 메시지 등)
-                Log.e("CommunityViewModel", "삭제 실패: ${result.message}")
+
+                // 2. 통계 실시간 동기화 (내 페이지일 때만) 📍
+                if (myUid == currentTargetUid && isLastCommentDeleted) {
+                    _rawStats.update { current ->
+                        // 마지막 댓글이었으므로 통계 목록에서 해당 postId 제거
+                        current.copy(commentPostIds = current.commentPostIds - postId)
+                    }
+                }
+
+                refreshManager.notifyDataChanged()
             }
         }
     }
 
-    fun onLikeClick(postId: String) {
+    fun onFollowClick(postId: String, onCourseReady: (Post) -> Unit) {
         viewModelScope.launch {
-            val result = dataSource.toggleLike(postId)
+            val result = dataSource.followRunning(postId)
             if (result is AuthResult.Success) {
-                val isLiked = result.data ?: false
+                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
                 _communityUiState.update { state ->
+                    // 1. 게시물 리스트 업데이트
                     val updatedPosts = state.posts.map { post ->
                         if (post.postId == postId) {
-                            val newLikes = if (isLiked) post.likes + 1 else (post.likes - 1).coerceAtLeast(0)
-                            post.copy(likes = newLikes,
-                                isLiked = isLiked)
+                            val alreadyFollowed = post.followedBy.contains(myUid)
+                            val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
+                            val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
+                            post.copy(followCount = newCount, followedBy = newFollowedBy)
                         } else post
                     }
-                    val updatedSelectedPost = if (state.selectedPost?.postId == postId) {
-                        val newLikes = if (isLiked) state.selectedPost.likes + 1 else (state.selectedPost.likes - 1).coerceAtLeast(0)
-                        state.selectedPost.copy(likes = newLikes, isLiked = isLiked)
-                    } else state.selectedPost
-                    state.copy(posts = updatedPosts, selectedPost = updatedSelectedPost)
+
+                    // 2. 상세 팝업(selectedPostForPopup) 실시간 동기화 🔹
+                    val currentPopup = _selectedPostForPopup.value
+                    if (currentPopup?.postId == postId) {
+                        val alreadyFollowed = currentPopup.followedBy.contains(myUid)
+                        val newCount = if (alreadyFollowed) currentPopup.followCount else currentPopup.followCount + 1
+                        val newFollowedBy = if (alreadyFollowed) currentPopup.followedBy else currentPopup.followedBy + myUid
+                        _selectedPostForPopup.value = currentPopup.copy(followCount = newCount, followedBy = newFollowedBy)
+                    }
+
+                    state.copy(posts = updatedPosts)
                 }
 
-                _rawStats.update { current ->
-                    if (isLiked) {
-                        // 좋아요를 눌렀을 때: 내 좋아요 리스트에 이 postId 추가
-                        if (!current.likedPostIds.contains(postId)) {
-                            current.copy(likedPostIds = current.likedPostIds + postId)
-                        } else current
-                    } else {
-                        // 좋아요를 취소했을 때: 내 좋아요 리스트에서 이 postId 제거
-                        current.copy(likedPostIds = current.likedPostIds - postId)
+                // ── 🔹 추가: 내 페이지일 경우 통계(followedPostIds) 업데이트 ── 📍
+                if (myUid == currentTargetUid) {
+                    _rawStats.update { current ->
+                        if (!current.followPostIds.contains(postId)) {
+                            current.copy(followPostIds = current.followPostIds + postId)
+                        } else {
+                            current
+                        }
                     }
+                }
+
+                // 3. 전역 리프레시 알림 (메인 피드 등 다른 화면 동기화)
+                refreshManager.notifyDataChanged()
+
+                // 4. 콜백 실행 (코스 데이터를 들고 메인으로 이동)
+                _communityUiState.value.posts.find { it.postId == postId }?.let {
+                    onCourseReady(it)
                 }
             }
         }
     }
+
+
+
+
 
     fun setFilter(type: FilterType, city: String = "", district: String = "", dong: String = "") {
         viewModelScope.launch {
@@ -452,5 +575,18 @@ class UserPostViewModel @Inject constructor(
                 _rawStats.value = result.data
             }
         }
+    }
+
+    fun resetState() {
+        // 1. 게시물 및 로딩 상태 초기화 🔹
+        _communityUiState.update {
+            CommunityUiState(
+                posts = emptyList(),
+                isInitialLoading = true
+            )
+        }
+        // 2. 상단 통계 초기화 🔹
+        _rawStats.value = UserActivityStats()
+
     }
 }

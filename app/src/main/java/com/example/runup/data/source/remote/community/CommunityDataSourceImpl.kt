@@ -26,6 +26,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
@@ -127,7 +128,7 @@ class CommunityDataSourceImpl @Inject constructor(
 
     suspend fun getTargetUserPosts(
         targetUid: String,
-        tabType: String, // "POSTS", "HEARTS", "COMMENTS"
+        tabType: String, // "POSTS", "HEARTS", "COMMENTS", "FOLLOWS"
         filter: FilterState,
         lastVisibleSnapshot: DocumentSnapshot? = null,
         limit: Long = 4L
@@ -141,6 +142,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 "POSTS" -> query.whereEqualTo("authorId", targetUid)
                 "HEARTS" -> query.whereArrayContains("likedBy", targetUid)
                 "COMMENTS" -> query.whereArrayContains("commentedBy", targetUid)
+                "FOLLOWS" -> query.whereArrayContains("followedBy", targetUid)
                 else -> query.whereEqualTo("authorId", targetUid)
             }
 
@@ -186,6 +188,9 @@ class CommunityDataSourceImpl @Inject constructor(
                     likes = (doc.get("likes") as? Number)?.toInt() ?: 0,
                     isLiked = (doc.get("likedBy") as? List<String>)?.contains(myUid) ?: false,
                     commentCount = (doc.get("commentCount") as? Number)?.toInt() ?: 0,
+                    // ── 🔹 추가된 팔로우 데이터 매핑 ── 📍
+                    followCount = (doc.get("followCount") as? Number)?.toInt() ?: 0,
+                    followedBy = doc.get("followedBy") as? List<String> ?: emptyList(),
                     city = doc.getString("city") ?: "",
                     district = doc.getString("district") ?: "",
                     dong = doc.getString("dong") ?: ""
@@ -309,6 +314,55 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
+    suspend fun deleteComment(postId: String, commentId: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+        val commentRef = postRef.collection("Comments").document(commentId)
+
+        return try {
+            firestore.runTransaction { transaction ->
+                // 댓글 데이터 확인
+                val commentSnapshot = transaction.get(commentRef)
+                if (!commentSnapshot.exists()) throw Exception("존재하지 않는 댓글입니다.")
+                if (commentSnapshot.getString("authorId") != myUid) throw Exception("삭제 권한이 없습니다.")
+
+                // 댓글 삭제 및 카운트 감소
+                transaction.delete(commentRef)
+                transaction.update(postRef, "commentCount", FieldValue.increment(-1))
+
+                null // 트랜잭션 내에서 비동기 쿼리를 직접 수행할 수 없으므로 일단 닫음
+            }.await()
+
+            // 3. [동기화 핵심] 이 포스트에 내가 쓴 다른 댓글이 있는지 확인
+            val remainingComments = postRef.collection("Comments")
+                .whereEqualTo("authorId", myUid)
+                .limit(1)
+                .get()
+                .await()
+
+            // 더 이상 내 댓글이 없다면 흔적 지우기 🔹
+            if (remainingComments.isEmpty) {
+                firestore.runBatch { batch ->
+                    // 포스트의 '댓글 단 사람' 리스트에서 제거
+                    batch.update(postRef, "commentedBy", FieldValue.arrayRemove(myUid))
+
+                    // 내 통계 리스트에서 해당 포스트 ID 제거
+                    val myStatsRef = firestore.collection("UserData").document(myUid)
+                        .collection("PostStats").document("info")
+                    batch.set(myStatsRef, mapOf("commentedPostIds" to FieldValue.arrayRemove(postId)), SetOptions.merge())
+                }.await()
+
+                // 💡 ViewModel에게 "통계에서 이 포스트를 지워야 함"을 알리기 위해 true 반환
+                AuthResult.Success(true)
+            } else {
+                // 아직 내 댓글이 다른 게 남아있음
+                AuthResult.Success(false)
+            }
+        } catch (e: Exception) {
+            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+        }
+    }
+
     // 5. 실시간 댓글 리스너 (이 부분이 'getCommentsFlow' 입니다!)
     fun getCommentsFlow(postId: String): Flow<List<Comment>> = callbackFlow {
         val subscription = firestore.collection("Posts").document(postId)
@@ -322,6 +376,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 val comments = snapshot?.documents?.mapNotNull { doc ->
                     Comment(
                         commentId = doc.id,
+                        authorId = doc.getString("authorId") ?: "",
                         authorName = doc.getString("authorName") ?: "익명",
                         authorProfileUrlMini = doc.getString("authorProfileUrlMini") ?: "",
                         content = doc.getString("content") ?: "",
@@ -465,6 +520,89 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
+    suspend fun deletePost(post: Post): AuthResult<Boolean> = coroutineScope {
+        try {
+            val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
+            if (post.authorId != uid) return@coroutineScope AuthResult.Fail("삭제 권한이 없습니다.")
+
+            val postRef = firestore.collection("Posts").document(post.postId)
+            val commentsRef = postRef.collection("Comments")
+
+            // ── 🔹 [1] 이미지 삭제 로직 복구 (Storage) ── 📍
+            val allImageUrls = mutableListOf<String>()
+
+            // 위치 이미지 (원본 + 썸네일)
+            post.locationImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+                if (it.thumbnailUrl.isNotEmpty()) allImageUrls.add(it.thumbnailUrl)
+            }
+            // 일반 이미지
+            post.commonImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+            }
+
+            // 비동기로 모든 이미지 삭제 실행
+            val deleteTasks = allImageUrls.distinct().map { url ->
+                async(Dispatchers.IO) {
+                    try {
+                        storage.getReferenceFromUrl(url).delete().await()
+                    } catch (e: Exception) {
+                        // 이미 삭제되었거나 없는 경우를 대비해 로그만 찍고 진행
+                        Log.e("DeleteError", "이미지 삭제 실패 ($url): ${e.message}")
+                    }
+                }
+            }
+            deleteTasks.awaitAll()
+
+            // 댓글 데이터 미리 가져오기
+            val commentsSnapshot = commentsRef.get().await()
+
+            // ── 🔹 [2] Firestore 트랜잭션 청소 ──
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+
+                val actualLikedBy = postSnapshot.get("likedBy") as? List<String> ?: emptyList()
+                val actualCommentedBy = postSnapshot.get("commentedBy") as? List<String> ?: emptyList()
+                val actualFollowedBy = postSnapshot.get("followedBy") as? List<String> ?: emptyList() // 👈 추가📍
+
+                // (1) 서브컬렉션(댓글) 삭제
+                commentsSnapshot.forEach { commentDoc ->
+                    transaction.delete(commentDoc.reference)
+                }
+
+                // (2) 포스트 본체 삭제
+                transaction.delete(postRef)
+
+                // (3) 작성자의 업로드 리스트에서 제거
+                val myStatsRef = firestore.collection("UserData").document(uid).collection("PostStats").document("info")
+                transaction.update(myStatsRef, "uploadPostIds", FieldValue.arrayRemove(post.postId))
+
+                // (4) 좋아요 기록 전역 삭제
+                actualLikedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "likePostIds", FieldValue.arrayRemove(post.postId))
+                }
+
+                // (5) 댓글 기록 전역 삭제
+                actualCommentedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "commentPostIds", FieldValue.arrayRemove(post.postId))
+                }
+
+                // (6) [신규] 따라뛰기(Follow) 기록 전역 삭제 ── 👟📍
+                actualFollowedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "followPostIds", FieldValue.arrayRemove(post.postId))
+                }
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            Log.e("DeleteError", "삭제 전체 공정 실패: ${e.localizedMessage}")
+            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+        }
+    }
+
     // 1. 원본 압축 함수 (기존 quality 80 용)
     private fun compressImage(uri: Uri, quality: Int): ByteArray? {
         val inputStream = context.contentResolver.openInputStream(uri)
@@ -522,59 +660,38 @@ class CommunityDataSourceImpl @Inject constructor(
         return rotatedImg
     }
 
-    // 게시글 삭제 (Firestore 문서 + Storage 이미지 전체)
-    suspend fun deletePost(post: Post): AuthResult<Boolean> = coroutineScope {
-        try {
-            val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
-            if (post.authorId != uid) return@coroutineScope AuthResult.Fail("삭제 권한이 없습니다.")
+    suspend fun followRunning(postId: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+        val myStatsRef = firestore.collection("UserData").document(myUid)
+            .collection("PostStats").document("info")
 
-            val postRef = firestore.collection("Posts").document(post.postId)
-            val commentsRef = postRef.collection("Comments")
-
-            // 1. 이미지 삭제 로직 (기존과 동일하게 진행)
-            val deleteTasks = mutableListOf<Deferred<Unit>>()
-            // ... (이미지 삭제 코드 생략) ...
-            deleteTasks.awaitAll()
-
-            val commentsSnapshot = commentsRef.get().await()
-
-            // 🔹 2. Firestore 트랜잭션으로 청소 (내부에서 최신 데이터 호출)
+        return try {
             firestore.runTransaction { transaction ->
-                // [A] 최신 포스트 정보 가져오기 (문서 참조이므로 가능)
                 val postSnapshot = transaction.get(postRef)
+                if (!postSnapshot.exists()) throw Exception("포스트가 존재하지 않습니다.")
 
-                val actualLikedBy = postSnapshot.get("likedBy") as? List<String> ?: emptyList()
-                val actualCommentedBy = postSnapshot.get("commentedBy") as? List<String> ?: emptyList()
+                val followedBy = postSnapshot.get("followedBy") as? List<String> ?: emptyList()
 
-                // 🔹 [해결 포인트 2] 미리 가져온 댓글 스냅샷을 돌며 삭제 예약
-                commentsSnapshot.forEach { commentDoc ->
-                    transaction.delete(commentDoc.reference)
+                // ── [방어 로직] 이미 팔로우했는지 확인 ── 🔹
+                if (!followedBy.contains(myUid)) {
+                    // 처음 클릭한 경우에만 숫자 증가 및 ID 추가
+                    transaction.update(postRef, "followCount", FieldValue.increment(1))
+                    transaction.update(postRef, "followedBy", FieldValue.arrayUnion(myUid))
                 }
 
-                // (1) 포스트 본체 삭제
-                transaction.delete(postRef)
+                // ── [내 통계 업데이트] 중복되어도 arrayUnion이 알아서 처리 ──
+                transaction.set(myStatsRef, mapOf(
+                    "followedPostIds" to FieldValue.arrayUnion(postId)
+                ), SetOptions.merge())
 
-                // (2) 내 업로드 리스트에서 ID 삭제
-                val myStatsRef = firestore.collection("UserData").document(uid).collection("PostStats").document("info")
-                transaction.update(myStatsRef, "uploadPostIds", FieldValue.arrayRemove(post.postId))
-
-                // (3) 좋아요 누른 사람들 기록 삭제
-                actualLikedBy.forEach { userId ->
-                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
-                    transaction.update(ref, "likedPostIds", FieldValue.arrayRemove(post.postId))
-                }
-
-                // (4) 댓글 작성한 사람들 기록 삭제
-                actualCommentedBy.forEach { userId ->
-                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
-                    transaction.update(ref, "commentedPostIds", FieldValue.arrayRemove(post.postId))
-                }
+                true
             }.await()
-
             AuthResult.Success(true)
         } catch (e: Exception) {
-            Log.e("DeleteError", "삭제 실패: ${e.localizedMessage}")
-            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+            AuthResult.Fail(e.localizedMessage ?: "팔로우 실패")
         }
     }
+
+
 }

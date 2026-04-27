@@ -6,11 +6,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -24,7 +27,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
@@ -85,6 +92,7 @@ fun PostItem(
     thumbnailCache: Map<String, Bitmap>,   // 👈 추가
     fullBitmapCache: Map<String, Bitmap>,  // 👈 추가
     onLikeClick: () -> Unit,
+    onFollowClick: () -> Unit,
     onPostClick: () -> Unit,              // 👈 onClick을 더 명확하게
     onDeletePost: () -> Unit,             // 👈 삭제 콜백
     onImageClick: (String) -> Unit,
@@ -93,8 +101,8 @@ fun PostItem(
 ) {
     // 삭제 메뉴 상태 및 본인 확인
     var showMenu by remember { mutableStateOf(false) }
-    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-    val isMyPost = post.authorId == currentUserId
+    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+    val isMyPost = post.authorId == myUid
 
     // 페이저 상태 관리 (총 페이지 수 = 지도(1) + 일반 이미지 개수)
     val totalPages = 1 + post.commonImages.size
@@ -132,21 +140,72 @@ fun PostItem(
             Spacer(modifier = Modifier.width(10.dp))
             Text(post.authorName, color = WhiteTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(modifier = Modifier.weight(1f))
+            // [디자인이 개선된 게시글 메뉴 영역]
             if (isMyPost) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 1. "MY" 배지 (기존보다 조금 더 정제된 골드톤)
                     Surface(
-                        color = Color(0xFFFFD700).copy(alpha = 0.15f),
-                        shape = CircleShape,
-                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                        color = Color(0xFFFFD700).copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(6.dp), // 조금 더 각진 느낌으로 세련되게
+                        border = BorderStroke(0.5.dp, Color(0xFFFFD700).copy(alpha = 0.4f))
                     ) {
-                        Text("MY", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                        Text(
+                            "MY",
+                            color = Color(0xFFFFD700),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
+
                     Box {
-                        IconButton(onClick = { showMenu = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.MoreVert, "더보기", tint = WhiteTextColor.copy(alpha = 0.7f))
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "더보기",
+                                tint = WhiteTextColor.copy(alpha = 0.5f) // 너무 튀지 않게 조절
+                            )
                         }
-                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(Color(0xFF2C2C2C))) {
-                            DropdownMenuItem(text = { Text("게시글 삭제", color = Color.Red) }, onClick = { onDeletePost(); showMenu = false })
+
+                        // ── 2. 세련된 드롭다운 메뉴 ── 📍
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier
+                                .width(IntrinsicSize.Min) // 1. 내부 콘텐츠 길이에 딱 맞게 너비 조절 🔹
+                                .background(Color(0xFF1E1E1E))
+                                .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                        ) {
+                            DropdownMenuItem(
+                                modifier = Modifier.height(36.dp), // 2. 높이를 줄여서 위아래 여백 압축 🔹
+                                text = {
+                                    Text(
+                                        "게시글 삭제",
+                                        color = Color(0xFFE57373),
+                                        fontSize = 13.sp, // 폰트도 살짝 다듬기
+                                        fontWeight = FontWeight.SemiBold,
+                                        softWrap = false // 줄바꿈 방지
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = null,
+                                        tint = Color(0xFFE57373),
+                                        modifier = Modifier.size(16.dp) // 아이콘도 슬림하게
+                                    )
+                                },
+                                // 3. 내부 기본 패딩을 최소화 (이게 핵심!) 📍
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                onClick = {
+                                    onDeletePost()
+                                    showMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -345,10 +404,6 @@ fun PostItem(
                 }
             }
 
-
-
-
-
             // 페이지 인디케이터 (1/3)
             if (totalPages > 1) {
                 Surface(color = Color.Black.copy(0.6f), shape = CircleShape, modifier = Modifier
@@ -385,15 +440,14 @@ fun PostItem(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // 🔹 좋아요/댓글/주소 영역 (윤석님의 원본 레이아웃 복구)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 10.dp, end = 16.dp, top = 0.dp, bottom = 4.dp), // top을 0으로 해서 위로 밀착
+                .padding(start = 10.dp, end = 16.dp, top = 0.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 1. 좋아요 섹션 (배지 스타일)
+            // 1. 좋아요 섹션
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = 32.dp)
@@ -414,14 +468,14 @@ fun PostItem(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = (-4).dp, y = 2.dp) // 우상단 45도 위치
+                            .offset(x = (-4).dp, y = 2.dp)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 2. 댓글 섹션 (배지 스타일)
+            // 2. 댓글 섹션
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = 32.dp)
@@ -437,28 +491,62 @@ fun PostItem(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = (-4).dp, y = 2.dp) // 우상단 45도 위치
+                            .offset(x = (-4).dp, y = 2.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f)) // 주소를 오른쪽으로 밀어냄
+            Spacer(modifier = Modifier.width(8.dp))
 
-            // 3. 주소 표시
+            // 3. 따라뛰기(Follow) 섹션 ── 👟 [좋아요/댓글과 100% 동일화] 📍
+            Box(
+                modifier = Modifier
+                    .size(width = 42.dp, height = 32.dp)
+                    .clickable { onFollowClick() },
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DirectionsRun,
+                    contentDescription = "따라뛰기",
+                    // 활성화 시 PointColor, 기본 시 WhiteTextColor (통일감)
+                    tint = if (post.followedBy.contains(myUid)) PointColor else WhiteTextColor,
+                    modifier = Modifier.size(24.dp) // 크기 24dp로 통일 🔹
+                )
+                if (post.followCount > 0) {
+                    Text(
+                        text = "${post.followCount}",
+                        color = WhiteTextColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = (-4).dp, y = 2.dp) // 숫자 위치 통일 🔹
+                    )
+                }
+            }
+
+            // ── 4. 공간 밀어내기 ──
+            Spacer(modifier = Modifier.weight(1f)) // 왼쪽 버튼들과 오른쪽 주소 사이를 벌려줌 📍
+
+            // 5. 주소 표시
             if (post.dong.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 2.dp) // 아이콘들과 시각적 높이 맞춤
+                ) {
                     Icon(
                         imageVector = Icons.Default.LocationOn,
                         contentDescription = null,
-                        tint = WhiteTextColor.copy(alpha = 0.5f),
-                        modifier = Modifier.size(14.dp)
+                        tint = WhiteTextColor.copy(alpha = 0.4f), // 조금 더 은은하게 조절
+                        modifier = Modifier.size(13.dp)
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Text(
                         text = "${post.city} ${post.district} ${post.dong}",
-                        color = WhiteTextColor.copy(alpha = 0.5f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal
+                        color = WhiteTextColor.copy(alpha = 0.4f),
+                        fontSize = 10.sp, // 주소는 정보를 방해하지 않게 살짝 작게 🔹
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
                     )
                 }
             }

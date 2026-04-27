@@ -483,7 +483,10 @@ fun MyPageScreen(
         }
         if (showFriendDialog) {
             FriendListDialog(
-                onDismiss = { showFriendDialog = false } // X 버튼이나 배경 클릭 시 닫기
+                onDismiss = { showFriendDialog = false }, // X 버튼이나 배경 클릭 시 닫기
+                onPostClick = { uid ->
+                    onPostClick(uid) // MyPageScreen이 이미 가지고 있는 함수 전달
+                }
             )
         }
     }

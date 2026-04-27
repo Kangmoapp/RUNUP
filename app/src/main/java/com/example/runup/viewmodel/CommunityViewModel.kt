@@ -30,6 +30,7 @@ import com.example.runup.domain.model.ViewScope
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
+import com.example.runup.ui.util.CommunityRefreshManager
 import com.example.runup.ui.util.ImagePreloader
 import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
@@ -87,6 +88,7 @@ class CommunityViewModel @Inject constructor(
     private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase,
     private val locationRepository: LocationRepository,
     private val userRepository: UserRepository,
+    private val refreshManager: CommunityRefreshManager,
     private val imagePreloader: ImagePreloader,
 ) : ViewModel() {
 
@@ -142,6 +144,7 @@ class CommunityViewModel @Inject constructor(
 
     init {
         requestInitialAddress()
+        observeRefreshEvents()
     }
 
     // 데이터 저장 함수들
@@ -231,6 +234,20 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
+    private fun observeRefreshEvents() {
+        viewModelScope.launch {
+            // SharedFlow를 통해 전역적으로 발생하는 리프레시 신호를 수집합니다 👂
+            refreshManager.refreshEvent.collectLatest {
+                Log.d("CommunityViewModel", "외부 데이터 변경(좋아요/댓글/삭제 등) 감지 -> 피드 새로고침")
+
+                // 🔹 기존에 만들어두신 fetchPosts를 호출하여 서버 데이터를 최신화합니다.
+                // isInitial = true -> 페이징 초기화
+                // forceRefresh = true -> 로딩 바 활성화 및 캐시 무시
+                fetchPosts(isInitial = true, forceRefresh = true)
+            }
+        }
+    }
+
     // ViewModel 내부
 
     private fun preloadBitmaps(posts: List<Post>, onComplete: () -> Unit = {}) {
@@ -296,19 +313,6 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
-    fun fetchPostDetail(postId: String) {
-        viewModelScope.launch {
-            _communityUiState.update { it.copy(
-                isLoading = true,
-                selectedPost = null,
-            ) }
-            val result = dataSource.getPostById(postId)
-            if (result is AuthResult.Success) {
-                _communityUiState.update { it.copy(selectedPost = result.data) }
-            }
-            _communityUiState.update { it.copy(isLoading = false) }
-        }
-    }
 
     // --- 추가된 부분: 실시간 댓글 감시 ---
     fun observeComments(postId: String) {
@@ -324,9 +328,6 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             val result = dataSource.addComment(postId, content)
             if (result is AuthResult.Success) {
-                // 댓글 작성 후 상세 정보를 갱신하여 댓글 수 카운트 업데이트
-                fetchPostDetail(postId)
-
                 // 2. 목록 화면의 posts 리스트에 있는 해당 포스트 숫자도 +1
                 _communityUiState.update { state ->
                     val updatedPosts = state.posts.map { post ->
@@ -334,6 +335,33 @@ class CommunityViewModel @Inject constructor(
                         else post
                     }
                     state.copy(posts = updatedPosts)
+                }
+            }
+        }
+    }
+
+    fun deleteComment(postId: String, commentId: String) {
+        viewModelScope.launch {
+            // 1. 데이터소스(서버)에 삭제 요청
+            val result = dataSource.deleteComment(postId, commentId)
+
+            if (result is AuthResult.Success) {
+                // 3. 목록 화면(posts) 및 댓글 리스트 UI 즉시 반영 🔹
+                _communityUiState.update { state ->
+                    // 메인 리스트의 댓글 수 -1
+                    val updatedPosts = state.posts.map { post ->
+                        if (post.postId == postId) {
+                            post.copy(commentCount = (post.commentCount - 1).coerceAtLeast(0))
+                        } else post
+                    }
+
+                    // 현재 열려있는 댓글 리스트에서 삭제된 댓글 제거
+                    val updatedComments = state.comments.filterNot { it.commentId == commentId }
+
+                    state.copy(
+                        posts = updatedPosts,
+                        comments = updatedComments
+                    )
                 }
             }
         }
@@ -368,7 +396,6 @@ class CommunityViewModel @Inject constructor(
 
         // 2. 피드 상세 및 댓글 상태 통합 초기화
         _communityUiState.update { it.copy(
-            selectedPost = null,
             comments = emptyList()
         ) }
     }
@@ -440,11 +467,7 @@ class CommunityViewModel @Inject constructor(
                                 isLiked = isLiked)
                         } else post
                     }
-                    val updatedSelectedPost = if (state.selectedPost?.postId == postId) {
-                        val newLikes = if (isLiked) state.selectedPost.likes + 1 else (state.selectedPost.likes - 1).coerceAtLeast(0)
-                        state.selectedPost.copy(likes = newLikes, isLiked = isLiked)
-                    } else state.selectedPost
-                    state.copy(posts = updatedPosts, selectedPost = updatedSelectedPost)
+                    state.copy(posts = updatedPosts)
                 }
             }
         }
@@ -584,6 +607,33 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             locationRepository.currentLocation.value?.let {
                 locationRepository.refreshAddressIfNeeded(it.latitude, it.longitude)
+            }
+        }
+    }
+
+    fun onFollowClick(postId: String, onCourseReady: (Post) -> Unit) {
+        viewModelScope.launch {
+            val result = dataSource.followRunning(postId)
+            if (result is AuthResult.Success) {
+                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+                // 1. 리스트 상태만 즉시 업데이트 🔹
+                _communityUiState.update { state ->
+                    val updatedPosts = state.posts.map { post ->
+                        if (post.postId == postId) {
+                            val alreadyFollowed = post.followedBy.contains(myUid)
+                            val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
+                            val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
+                            post.copy(followCount = newCount, followedBy = newFollowedBy)
+                        } else post
+                    }
+                    state.copy(posts = updatedPosts)
+                }
+
+                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
+                _communityUiState.value.posts.find { it.postId == postId }?.let {
+                    onCourseReady(it)
+                }
             }
         }
     }
