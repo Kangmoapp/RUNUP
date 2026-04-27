@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -106,7 +107,6 @@ import kotlin.io.path.moveTo
 fun UserPostScreen(
     targetUid: String,
     onBackClick: () -> Unit,
-    onPostClick: (String) -> Unit,
     viewModel: UserPostViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.communityUiState.collectAsState()
@@ -134,10 +134,11 @@ fun UserPostScreen(
     var filterSubMenu by remember { mutableStateOf("MAIN") }
     var enlargedImageUri by remember { mutableStateOf<String?>(null) } // 🔹 이미지 확대 상태 추가
 
-    // 비트맵 캐시들...
-    val mapSnapshots by viewModel.mapSnapshotCache.collectAsState()
-    val thumbnails by viewModel.thumbnailCache.collectAsState()
-    val fullBitmaps by viewModel.fullBitmapCache.collectAsState()
+
+    val mapSnapshotsCache by viewModel.mapSnapshotCache.collectAsState()
+    val locationMarkerCache by viewModel.locationMarkerCache.collectAsState() // 마커 location 썸네일 이미지
+    val profileCache by viewModel.profileCache.collectAsState()               // 프로필용 (포스트 작성자 프로필 + 댓글 작성자 프로필)
+    val fullImageCache by viewModel.fullImageCache.collectAsState()           // 고해상도용 (location 이미지 원본 + common 이미지 원본)
 
     // 바텀 시트 상태 관리
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -147,6 +148,11 @@ fun UserPostScreen(
     val dongList by viewModel.dongLocations.collectAsState()
     val isLoadingDistrict by viewModel.isLoadingDistrict.collectAsState()
     val isLoadingDong by viewModel.isLoadingDong.collectAsState()
+
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val popupWidthPx = screenWidthPx * 0.95f
 
 
     LaunchedEffect(targetUid) {
@@ -311,7 +317,7 @@ fun UserPostScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(uiState.posts, key = { it.postId }) { post ->
-                            val cachedSnapshot = mapSnapshots[post.postId]
+                            val cachedSnapshot = mapSnapshotsCache[post.postId]
                             val context = LocalContext.current
                             val density = LocalDensity.current
 
@@ -338,7 +344,14 @@ fun UserPostScreen(
                                     val apiW = popupWidthPx.toInt().coerceAtMost(1024)
                                     val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), apiW, apiW)
 
-                                    // 1. 실제 위치 계산 (popupWidthPx 기준)
+                                    // 코스 전체 경로 및 중단점 미리 계산 📍
+                                    val computedPathPoints = record.course.locationPoints.map {
+                                        latLngToPixel(
+                                            it.locationPoint.latitude, it.locationPoint.longitude,
+                                            centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx
+                                        ) to it.stop
+                                    }
+                                    // 실제 위치 계산
                                     val newPositions = post.locationImages.filter { it.location != null }.associate { img ->
                                         img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx)
                                     }
@@ -358,8 +371,18 @@ fun UserPostScreen(
                                         )
                                     }
 
-                                    // 최종 저장 (newCloserOffsets를 전달해야 팝업에서 마커가 뜹니다!)
-                                    viewModel.saveMapSnapshot(post.postId, MapSnapshot(url, newPositions, newCloserOffsets, newBounds))
+                                    viewModel.saveMapSnapshot(
+                                        post.postId,
+                                        MapSnapshot(
+                                            staticMapUrl = url,
+                                            pathPoints = computedPathPoints,
+                                            startPoint = computedPathPoints.firstOrNull()?.first,
+                                            endPoint = computedPathPoints.lastOrNull()?.first,
+                                            markerPositions = newPositions,
+                                            closerOffsets = newCloserOffsets,
+                                            courseBounds = newBounds
+                                        )
+                                    )
                                 }
                             }
 
@@ -415,25 +438,40 @@ fun UserPostScreen(
         enter = androidx.compose.animation.fadeIn(),
         exit = androidx.compose.animation.fadeOut()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f))
-                .clickable { viewModel.selectPost(null) },
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(0.95f).wrapContentHeight().clickable(enabled = false) {},
-                color = BackGroudColor,
-                shape = RoundedCornerShape(16.dp)
+        if (livePopupPost != null) {
+            val postId = livePopupPost.postId
+
+            // 팝업에 필요한 비트맵만 쏙쏙 골라내기 ✂️
+            val relevantLocationBitmaps = remember(postId, locationMarkerCache) {
+                livePopupPost.locationImages.mapNotNull { img ->
+                    locationMarkerCache[img.url]?.let { img.url to it }
+                }.toMap()
+            }
+            val relevantCommonBitmaps = remember(postId, fullImageCache) {
+                livePopupPost.commonImages.mapNotNull { img ->
+                    fullImageCache[img.url]?.let { img.url to it }
+                }.toMap()
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.8f))
+                    .clickable { viewModel.selectPost(null) },
+                contentAlignment = Alignment.Center
             ) {
-                if (livePopupPost != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(0.95f).wrapContentHeight().clickable(enabled = false) {},
+                    color = BackGroudColor,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
                     PostItem(
                         post = livePopupPost,
-                        cachedSnapshot = mapSnapshots[livePopupPost.postId],
-                        authorBitmap = thumbnails[livePopupPost.authorProfileUrl],
-                        thumbnailCache = thumbnails,
-                        fullBitmapCache = fullBitmaps,
+                        maxWidthPx = popupWidthPx,
+                        mapSnapShots = mapSnapshotsCache[livePopupPost.postId],
+                        authorProfileBitmap = profileCache[livePopupPost.authorProfileUrl],
+                        locationBitmaps = relevantLocationBitmaps, // 👈 필터링된 맵 전달
+                        commonImageBitmaps = relevantCommonBitmaps, // 👈 필터링된 맵 전달
                         onLikeClick = { viewModel.onLikeClick(livePopupPost.postId) },
                         onFollowClick = {
                             viewModel.onFollowClick(livePopupPost.postId) { readyPost ->
@@ -441,19 +479,21 @@ fun UserPostScreen(
                                 Log.d("Follow", "상세창에서 팔로우 성공")
                             }
                         },
-                        onPostClick = {
-                            // 🔹 댓글창 열기 (동시에 postId를 별도로 관리할 필요 없이 livePopupPost 사용)
+                        onCommentClick = {
+                            // 댓글창 열기 (동시에 postId를 별도로 관리할 필요 없이 livePopupPost 사용)
                             showCommentSheet = true
                         },
                         onDeletePost = { viewModel.deletePost(livePopupPost); viewModel.selectPost(null) },
                         onImageClick = { enlargedImageUri = it },
-                        onSaveSnapshot = { viewModel.saveMapSnapshot(livePopupPost.postId, it) },
+                        onSaveMapSnapshot = { viewModel.saveMapSnapshot(livePopupPost.postId, it) },
                         onProfileClick = { viewModel.selectPost(null) }
                     )
                 }
             }
         }
     }
+
+
 
     // [LAYER 3] 댓글 바텀 시트
     if (showCommentSheet && livePopupPost != null) {
@@ -477,7 +517,7 @@ fun UserPostScreen(
                 onDeleteComment = { pId, cId ->
                     viewModel.deleteComment(pId, cId)
                 },
-                bitmapCache = thumbnails,
+                bitmapCache = profileCache,
                 onDismiss = { showCommentSheet = false }
             )
         }
@@ -487,7 +527,7 @@ fun UserPostScreen(
     val displayBitmap = remember(enlargedImageUri) {
         enlargedImageUri?.let { uri ->
             // 원본 캐시 확인 -> 썸네일 캐시 확인 순서
-            fullBitmaps[uri + "_full"] ?: fullBitmaps[uri] ?: thumbnails[uri]
+            fullImageCache[uri + "_full"] ?: fullImageCache[uri] ?: locationMarkerCache[uri]
         }
     }
     // 3. 다이얼로그 호출 (이제 필요한 값만 넘김)
@@ -530,9 +570,11 @@ fun PostThumbnail(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+
     // 🔹 이미지 로드 상태 (키를 postId로 주어 재사용 방지)
     var isImageLoaded by remember(post.postId) { mutableStateOf(false) }
-    // ── [추가] 내가 좋아요를 눌렀는지 확인 ── 🔹
+
+    // 내가 좋아요를 눌렀는지 확인
     val isLiked = remember(post.likedBy, myUid) {
         myUid != null && post.likedBy.contains(myUid)
     }
@@ -568,32 +610,27 @@ fun PostThumbnail(
                 // 이미지가 로드된 후에만 선을 그립니다.
                 if (isImageLoaded && post.runRecord != null) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
+                        // 🔹 계산된 popupWidthPx(상세창 기준)와 현재 썸네일 크기의 비율 계산
                         val scale = size.width / fullScreenWidthPx
-                        val record = post.runRecord
-                        val centerLat = (record.course.minLat + record.course.maxLat) / 2
-                        val centerLng = (record.course.minLng + record.course.maxLng) / 2
-
-                        val maxDiff = maxOf(record.course.maxLat - record.course.minLat, record.course.maxLng - record.course.minLng)
-                        val dynamicZoom = when {
-                            maxDiff > 0.04 -> 14.0
-                            maxDiff > 0.015 -> 15.0
-                            maxDiff > 0.005 -> 16.0
-                            maxDiff > 0.002 -> 17.0
-                            else -> 18.0
-                        }
-
-                        val points = record.course.locationPoints.map {
-                            val rawPos = latLngToPixel(it.locationPoint.latitude, it.locationPoint.longitude, centerLat, centerLng, dynamicZoom, fullScreenWidthPx, fullScreenWidthPx)
-                            Offset(rawPos.x * scale, rawPos.y * scale)
-                        }
 
                         val path = Path().apply {
-                            points.forEachIndexed { i, p ->
-                                if (i == 0) moveTo(p.x, p.y)
-                                else if (!record.course.locationPoints[i-1].stop) lineTo(p.x, p.y)
-                                else moveTo(p.x, p.y)
+                            snapshot.pathPoints.forEachIndexed { i, (currentPos, isStop) ->
+                                // 스케일 적용 📍
+                                val scaledPos = Offset(currentPos.x * scale, currentPos.y * scale)
+
+                                if (i == 0) {
+                                    moveTo(scaledPos.x, scaledPos.y)
+                                } else {
+                                    val (prevPos, prevStop) = snapshot.pathPoints[i - 1]
+                                    if (prevStop) {
+                                        moveTo(scaledPos.x, scaledPos.y) // 끊겼으면 점프
+                                    } else {
+                                        lineTo(scaledPos.x, scaledPos.y) // 안 끊겼으면 선 긋기
+                                    }
+                                }
                             }
                         }
+                        // 그리기 (계산 로직이 없어 매우 가벼움!)
                         drawPath(path, Color.Black, style = Stroke(6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                         drawPath(path, PointColor, style = Stroke(3f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                     }
@@ -638,7 +675,7 @@ fun PostThumbnail(
                 ) {
                     // 2. 좋아요 & 댓글
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null,tint = if (post.isLiked) Color.Red else WhiteTextColor, modifier = Modifier.size(10.dp))
+                        Icon(imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null,tint = if (isLiked) Color.Red else WhiteTextColor, modifier = Modifier.size(10.dp))
                         Text(" ${post.likes}", color = Color.White, fontSize = 9.sp)
                         Spacer(Modifier.width(6.dp))
                         Text("💬", fontSize = 9.sp)

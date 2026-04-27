@@ -1,9 +1,6 @@
 package com.example.runup.ui.screens
 
-import android.graphics.Bitmap
-import android.util.Log
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,33 +20,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import coil.compose.AsyncImage
-import com.example.runup.domain.model.MarkerSlot
-import com.example.runup.domain.model.PostImage
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.CommunityViewModel
-import kotlin.math.ln
-import kotlin.math.pow
-import kotlin.math.sin
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import com.example.runup.ui.theme.PointColor
-import com.google.firebase.firestore.GeoPoint
 import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.ViewScope
 import com.example.runup.ui.components.CommentBottomSheet
@@ -60,25 +47,22 @@ import com.example.runup.ui.components.PostItem
 import com.example.runup.ui.components.ProfileMiniPopup
 import com.example.runup.ui.components.ScopeButton
 import com.example.runup.ui.components.getSelectedLocationText
-import com.example.runup.ui.util.CommunityRefreshManager
-
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CommunityScreen(
-    onBackClick: () -> Unit, // 뒤로가기 클릭
-    onPostClick: (String) -> Unit, // 포스트 클릭
-    onUploadClick: () -> Unit, // 업로드 버튼 클릭
-    onPopupPostClick: (String) -> Unit,
+    onBackClick: () -> Unit,
+    onUploadClick: () -> Unit,
+    onAuthorProfileClick: (String) -> Unit,
     viewModel: CommunityViewModel = hiltViewModel()
 ) {
-    val communityState by viewModel.communityUiState.collectAsState()
-    val addressUiState by viewModel.addressUiState.collectAsState()
+    val communityState by viewModel.communityUiState.collectAsState() // 커뮤니티 Ui 상태
+    val addressUiState by viewModel.addressUiState.collectAsState() // 현재 주소 상태
 
-    // 🔹 [수정] 다이얼로그 대신 메뉴 관련 상태로 변경
-    var showFilterMenu by remember { mutableStateOf(false) }
-    var filterSubMenu by remember { mutableStateOf("MAIN") } // "MAIN", "MY", "CUSTOM"
+    var showFilterMenu by remember { mutableStateOf(false) } // 필터아이콘 클릭 -> 필터 메뉴
+    var filterSubMenu by remember { mutableStateOf("MAIN") } // "MAIN", "CUSTOM"
 
+    // postItem 요소 미리 계산해서 캐시에 저장
     val mapSnapshots by viewModel.mapSnapshotCache.collectAsState()
     val profilesCaches by viewModel.profileCache.collectAsState()
     val locationMarkerCaches by viewModel.locationMarkerCache.collectAsState()
@@ -93,15 +77,21 @@ fun CommunityScreen(
 
     var selectedProfileId by remember { mutableStateOf<String?>(null) }
 
-    // 🔹 바텀 시트 상태 추가
+    // 바텀 시트 상태 추가
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showCommentSheet by remember { mutableStateOf(false) }
     var selectedPostIdForComment by remember { mutableStateOf<String?>(null) }
 
+    // 지역 필터링 상태 추가
     val districtList by viewModel.districtLocations.collectAsState()
     val dongList by viewModel.dongLocations.collectAsState()
     val isLoadingDistrict by viewModel.isLoadingDistrict.collectAsState()
     val isLoadingDong by viewModel.isLoadingDong.collectAsState()
+
+    // 화면 너비 계산
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
 
     LaunchedEffect(Unit) {
         viewModel.fetchPosts(isInitial = true)
@@ -131,7 +121,6 @@ fun CommunityScreen(
         }
     }
 
-    // ── [1] 지능형 뒤로가기 ──
     BackHandler {
         onBackClick()
     }
@@ -189,7 +178,7 @@ fun CommunityScreen(
                                         modifier = Modifier
                                             .align(Alignment.BottomCenter)
                                             .offset(y = 4.dp)
-                                            // 🔹 [핵심] 텍스트가 아무리 길어져도 Box의 크기에 영향을 주지 않도록 wrapContentWidth 사용
+                                            // 텍스트가 아무리 길어져도 Box의 크기에 영향을 주지 않도록 wrapContentWidth
                                             .wrapContentWidth(
                                                 align = Alignment.CenterHorizontally,
                                                 unbounded = true
@@ -203,10 +192,9 @@ fun CommunityScreen(
                                 }
                             }
 
-                            // 🔹 이제 이 Spacer는 항상 '40.dp 아이콘' 바로 옆에서 시작됩니다.
                             Spacer(Modifier.width(8.dp))
 
-                            // 3. 글쓰기 아이콘
+                            // 포스트 게시
                             Icon(
                                 Icons.Default.Add, "글쓰기",
                                 tint = WhiteTextColor,
@@ -226,7 +214,7 @@ fun CommunityScreen(
                         ) {
                             when (filterSubMenu) {
                                 "MAIN" -> {
-                                    // ── [SECTION 1] 보기 범위 (Who) ──
+                                    // 보기 범위
                                     Text(
                                         "누구의 포스트를 볼까요?",
                                         color = Color.Gray,
@@ -264,10 +252,10 @@ fun CommunityScreen(
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                     )
 
-                                    // 1. 모든 지역 피드
+                                    // 모든 지역
                                     DropdownMenuItem(
                                         text = {
-                                            LocationMenuContent("🌍", "모든 지역", "전 세계 피드 보기",
+                                            LocationMenuContent("🌍", "모든 지역", "전국 피드 보기",
                                                 communityState.filterState.type == FilterType.ALL)
                                         },
                                         onClick = {
@@ -276,7 +264,7 @@ fun CommunityScreen(
                                         }
                                     )
 
-                                    // 2. 지역 직접 선택
+                                    // 지역 직접 선택
                                     DropdownMenuItem(
                                         text = {
                                             LocationMenuContent("📍", "지역 직접 선택",
@@ -286,7 +274,7 @@ fun CommunityScreen(
                                         onClick = { filterSubMenu = "CUSTOM" }
                                     )
                                 }
-
+                                // 지역 직접 선택 -> 선택창 띄움
                                 "CUSTOM" -> {
                                     CustomLocationPicker(
                                         currentAddress = addressUiState,
@@ -331,13 +319,26 @@ fun CommunityScreen(
                     items(communityState.posts, key = { it.postId }) { post ->
                         val snapshot = mapSnapshots[post.postId]
                         val authorBitmap = profilesCaches[post.authorProfileUrl]
+                        // ── 🔹 [핵심 최적화] 내 포스트에 필요한 비트맵들만 필터링 ── 📍
+                        val relevantLocationBitmaps = remember(post.postId, locationMarkerCaches) {
+                            post.locationImages
+                                .mapNotNull { img -> locationMarkerCaches[img.url]?.let { img.url to it } }
+                                .toMap()
+                        }
+
+                        val relevantCommonBitmaps = remember(post.postId, fullImageCaches) {
+                            post.commonImages
+                                .mapNotNull { img -> fullImageCaches[img.url]?.let { img.url to it } }
+                                .toMap()
+                        }
 
                         PostItem(
                             post = post,
-                            cachedSnapshot = snapshot,     // ✅ 이 포스트용 지도 정보
-                            authorBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
-                            thumbnailCache = locationMarkerCaches,    // ✅ 마커용 썸네일들
-                            fullBitmapCache = fullImageCaches,  // ✅ 페이저용 원본들
+                            maxWidthPx = screenWidthPx,
+                            mapSnapShots = snapshot,     // ✅ 이 포스트용 지도 정보
+                            authorProfileBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
+                            locationBitmaps = relevantLocationBitmaps,    // ✅ 마커용 썸네일들
+                            commonImageBitmaps = relevantCommonBitmaps,  // ✅ 페이저용 원본들
                             onLikeClick = { viewModel.onLikeClick(post.postId) },
                             onFollowClick = {
                                 // 🔹 여기서 ViewModel 함수를 호출하며 trailing lambda를 작성합니다.
@@ -347,13 +348,13 @@ fun CommunityScreen(
                                     println("성공! 이제 ${readyPost.postId} 코스를 메인 지도에 그립니다.")
                                 }
                             },
-                            onPostClick = {
+                            onCommentClick = {
                                 selectedPostIdForComment = post.postId
                                 showCommentSheet = true
                             },
                             onDeletePost = { viewModel.deletePost(post) },
                             onImageClick = { url -> enlargedImageUri = url },
-                            onSaveSnapshot = { viewModel.saveMapSnapshot(post.postId, it) },
+                            onSaveMapSnapshot = { viewModel.saveMapSnapshot(post.postId, it) },
                             onProfileClick = { selectedProfileId = post.authorId },
                         )
                     }
@@ -444,7 +445,7 @@ fun CommunityScreen(
             userId = selectedProfileId!!,
             onDismiss = { selectedProfileId = null },
             onViewPosts = { uid ->
-                onPopupPostClick(uid)
+                onAuthorProfileClick(uid)
                 selectedProfileId = null // 이동 시 팝업 닫기
             }
         )
