@@ -205,6 +205,8 @@ private fun HomeContent(
     // 러닝 완료 후 결과창 뜬 상태
     var isResultLocked by remember { mutableStateOf(false) }
 
+    var isResultLocked by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier
             .fillMaxSize(),

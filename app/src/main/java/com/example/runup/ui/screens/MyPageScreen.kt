@@ -127,6 +127,8 @@ fun MyPageScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    val pagedRuns by viewModel.pagedRuns.collectAsState()
+
     // 갤러리 실행기 설정
     val profileGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent() // 변경됨
@@ -475,6 +477,30 @@ fun MyPageScreen(
                                         .clickable { viewModel.loadMoreRuns() }
                                         .padding(8.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
+                    if (viewModel.hasMore) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (viewModel.isLoadingMore) {
+                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
+                                } else {
+                                    Text(
+                                        text = "더 보기 ▾",
+                                        color = PointColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable { viewModel.loadMoreRuns() }
+                                            .padding(8.dp)
+                                    )
+                                }
                             }
                         }
                     }

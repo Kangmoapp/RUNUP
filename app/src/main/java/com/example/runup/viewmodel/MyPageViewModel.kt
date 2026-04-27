@@ -54,6 +54,20 @@ class MyPageViewModel @Inject constructor(
     var isLoadingMore by mutableStateOf(false)
         private set
 
+    // 필터링된 러닝 기록 리스트 (누적용)
+    private val _pagedRuns = MutableStateFlow<List<RunRecord>>(emptyList())
+    val pagedRuns: StateFlow<List<RunRecord>> = _pagedRuns
+
+    // 🔹 2. 마지막으로 가져온 데이터의 참조 (다음 페이지 로드용)
+    private var lastVisibleRunDate: Long? = null
+
+    // 🔹 3. 더 가져올 데이터가 있는지 여부
+    var hasMore by mutableStateOf(true)
+        private set
+
+    var isLoadingMore by mutableStateOf(false)
+        private set
+
     // 필터 상태 (기본값 ALL)
     var selectedFilter by mutableStateOf(RunFilter.ALL)
         private set
