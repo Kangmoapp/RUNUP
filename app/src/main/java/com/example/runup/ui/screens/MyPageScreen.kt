@@ -665,6 +665,7 @@ fun ExpandableRunItem(
                                 )
                                 Offset(x, y)
                             }
+                        }
 
                             // 🔹 2-1. 경로 데이터 생성 (Path 객체 사용)
                             val path = Path().apply {
@@ -746,6 +747,20 @@ fun ExpandableRunItem(
                             color = PointColor,
                             strokeWidth = 2.dp
                         )
+                    }
+
+                    // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopStart) // 좌측 상단 정렬
+                            .padding(10.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) // 반투명 검정 배경
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
+                        ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
+                        ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
                     }
                 }
 
