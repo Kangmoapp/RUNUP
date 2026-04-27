@@ -652,7 +652,7 @@ fun ExpandableRunItem(
                     if (isMapLoaded) {
                         // 2. 경로 그리기 (시작/종료 마커 포함)
                         Canvas(modifier = Modifier.fillMaxSize()) {
-
+                            // 🔹 핵심: 모든 드로잉 로직은 이 Canvas { ... } 블록 안에 있어야 합니다! 📍
                             val points = run.course.locationPoints.map {
                                 val (x, y) = latLngToPixel(
                                     it.locationPoint.latitude,
@@ -661,70 +661,29 @@ fun ExpandableRunItem(
                                     centerLng,
                                     dynamicZoom.toDouble(),
                                     size.width,
-                                    size.height,
+                                    size.height
                                 )
                                 Offset(x, y)
                             }
-                        }
 
-                            // 🔹 2-1. 경로 데이터 생성 (Path 객체 사용)
-                            val path = Path().apply {
-                                points.forEachIndexed { index, point ->
-                                    if (index == 0) {
-                                        moveTo(point.x, point.y)
-                                    } else {
-                                        // 🔹 이전 노드가 '정지(stop)' 상태가 아닐 때만 선을 잇습니다.
-                                        val prevNode = run.course.locationPoints[index - 1]
-                                        if (!prevNode.stop) {
-                                            lineTo(point.x, point.y)
-                                        } else {
-                                            // 정지 상태였다면 선을 긋지 않고 새로운 시작점으로 이동
-                                            moveTo(point.x, point.y)
+                            if (points.isNotEmpty()) {
+                                val path = Path().apply {
+                                    points.forEachIndexed { i, p ->
+                                        if (i == 0) moveTo(p.x, p.y)
+                                        else {
+                                            if (!run.course.locationPoints[i - 1].stop) lineTo(p.x, p.y)
+                                            else moveTo(p.x, p.y)
                                         }
                                     }
                                 }
-                            }
 
-                            // 테두리
-                            drawPath(
-                                path = path,
-                                color = Color.Black,
-                                style = Stroke(
-                                    width = 14f,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round // 꺾이는 부분을 부드럽게
-                                )
-                            )
+                                // 경로 선 그리기
+                                drawPath(path, Color.Black, style = Stroke(14f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                drawPath(path, PointColor, style = Stroke(8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 
-                            // 내부 선
-                            drawPath(
-                                path = path,
-                                color = PointColor,
-                                style = Stroke(
-                                    width = 8f,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
-                            )
-
-                            // 2-2. 시작 및 종료 마커 추가
-                            if (points.isNotEmpty()) {
-                                val startPoint = points.first()
-                                val endPoint = points.last()
-
-                                // 시작 마커 (초록색)
-                                drawMarker(
-                                    center = startPoint,
-                                    color = Color(0xFF4CAF50),
-                                    "START"
-                                )
-
-                                // 종료 마커 (빨간색)
-                                drawMarker(
-                                    center = endPoint,
-                                    color = Color(0xFFF44336),
-                                    "END"
-                                )
+                                // 시작/종료 마커
+                                drawMarker(points.first(), Color(0xFF4CAF50), "START")
+                                drawMarker(points.last(), Color(0xFFF44336), "END")
                             }
                         }
                         // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
@@ -747,20 +706,6 @@ fun ExpandableRunItem(
                             color = PointColor,
                             strokeWidth = 2.dp
                         )
-                    }
-
-                    // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.TopStart) // 좌측 상단 정렬
-                            .padding(10.dp)
-                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) // 반투명 검정 배경
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
-                        ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
-                        ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
                     }
                 }
 

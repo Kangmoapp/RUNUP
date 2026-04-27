@@ -587,7 +587,6 @@ private fun BottomSection(
                             }
                             onHeightChange(finalHeight)
                         }
-                        onHeightChange(finalHeight)
                     }
                 )
         ) {
