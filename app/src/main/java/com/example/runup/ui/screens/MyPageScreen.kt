@@ -116,7 +116,6 @@ fun MyPageScreen(
     // Map에서 내 URL에 해당하는 비트맵만 찾기
     val myBitmap = profileBitmaps[myProfileUrl]
 
-    val pagedRuns by viewModel.pagedRuns.collectAsState()
 
     var showFriendDialog by remember { mutableStateOf(false) } // 친구 다이얼로그 상태 추가
 
