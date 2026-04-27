@@ -1,6 +1,9 @@
 package com.example.runup.viewmodel
 
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
@@ -28,6 +31,13 @@ class AppViewModel @Inject constructor(
     // --- 추가된 부분: 상세페이지로 전달할 ID 저장 변수 ---
     var selectedPostId: String = ""
         private set
+
+    // 유저 게시물 화면으로 갈 때 필요한 UID 저장
+    var selectedTargetUid by mutableStateOf("")
+        private set
+
+    // 🔹 지나온 화면들을 저장할 히스토리 스택
+    private val screenStack = mutableListOf<Screen>()
 
     init {
         checkLoginStatus()
@@ -80,13 +90,46 @@ class AppViewModel @Inject constructor(
         }
     }
 
+    // ── 화면 이동 로직 (스택 저장 포함) ──
     fun navigateTo(screen: Screen) {
+        // 현재 화면이 이동할 화면과 다를 때만 스택에 저장 (중복 방지)
+        if (_currentScreen.value != screen) {
+            screenStack.add(_currentScreen.value)
+        }
         _currentScreen.value = screen
+    }
+
+    // ── [핵심] 이전 화면으로 돌아가기 ──
+    fun popBackStack() {
+        if (screenStack.isNotEmpty()) {
+            // 마지막에 저장된 화면을 꺼내서 현재 화면으로 설정
+            val previousScreen = screenStack.removeAt(screenStack.size - 1)
+            _currentScreen.value = previousScreen
+        } else {
+            // 스택이 비어있다면 (예외 상황) 홈으로 이동
+            _currentScreen.value = Screen.HOME
+        }
     }
 
     // --- 추가된 부분: ID를 저장하며 상세페이지로 이동하는 함수 ---
     fun navigateToDetail(postId: String) {
+        screenStack.add(_currentScreen.value) // 현재 화면 저장
         selectedPostId = postId
         _currentScreen.value = Screen.COMMUNITY_COMMENT
     }
+
+    // 유저 게시물 이동 시에도 스택 저장
+    fun navigateToUserPosts(uid: String) {
+        screenStack.add(_currentScreen.value) // 현재 화면 저장
+        selectedTargetUid = uid
+        _currentScreen.value = Screen.USER_POSTS
+    }
+
+    // 로그아웃 시 스택 초기화 필수!
+    fun logout() {
+        screenStack.clear()
+        _currentScreen.value = Screen.START
+    }
+
+
 }

@@ -10,6 +10,7 @@ import android.util.Log
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
+import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.UserData
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
@@ -247,18 +248,23 @@ class UserDataSourceImpl @Inject constructor(
                 val lastNum = snapshot.getLong("lastRunRecordNum") ?: 0L
                 val nextNum = lastNum + 1
 
-                // 2. 새 기록을 위한 커스텀 ID 생성 (예: runrecord1)
-                val newRecordId = "runrecord$nextNum"
-                val runRecordRef = userDocRef.collection("runs").document(newRecordId)
+                // 새 ID 생성 (예: runrecord_1)
+                val newRecordId = "runningRecord_$nextNum"
 
-                // 3. 개별 러닝 기록 저장
-                transaction.set(runRecordRef, record)
+                val updatedRecord = record.copy(
+                    course = record.course.copy(id = newRecordId)
+                )
+
+                val runRecordRef = userDocRef.collection("runs").document(newRecordId)
+                transaction.set(runRecordRef, updatedRecord)
 
                 // 4. metadata의 번호 업데이트
                 transaction.set(metaDocRef, mapOf("lastRunRecordNum" to nextNum))
 
                 // 5. UserData 문서의 totalRunningDistance 누적 업데이트
-                transaction.update(userDocRef, "totalRunningDistance", FieldValue.increment(record.course.distance.toLong()))
+                transaction.update(userDocRef,
+                    "totalRunningDistance", FieldValue.increment(record.course.distance.toLong()),
+                    "totalRunningCount", FieldValue.increment(1))
 
                 null // Transaction은 결과값을 반환해야 하므로 null 반환
             }.await()
@@ -294,8 +300,11 @@ class UserDataSourceImpl @Inject constructor(
                     // 해당 기록 삭제
                     batch.delete(document.reference)
 
-                    // UserData의 totalRunningDistance 필드에서 해당 거리만큼 빼기 (음수 increment)
-                    batch.update(userDocRef, "totalRunningDistance", FieldValue.increment(-distance))
+                    // 🔹 통계 데이터 차감 업데이트 (거리 -n, 횟수 -1)
+                    batch.update(userDocRef,
+                        "totalRunningDistance", FieldValue.increment(-distance),
+                        "totalRunningCount", FieldValue.increment(-1) // 횟수 -1
+                    )
                 }
             }.await()
 
@@ -404,13 +413,29 @@ class UserDataSourceImpl @Inject constructor(
     // 🔹 필터별 시작 시간 계산 헬퍼 함수
     private fun getFilterStartTime(filter: RunFilter): Long {
         val cal = Calendar.getInstance()
+
+        // 🔹 공통: 시, 분, 초, 밀리초를 0으로 완벽 초기화 (오늘 0시 0분 0초)
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+
         return when (filter) {
             RunFilter.TODAY -> {
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
                 cal.timeInMillis
             }
             RunFilter.WEEK -> {
-                cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+                // 🔹 [수정] 이번 주 월요일을 시작점으로 강제 설정
+                // 오늘이 일요일(1)이면 지난주 월요일로 가는 것을 방지하기 위한 로직
+                val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) // 일(1), 월(2) ... 토(7)
+
+                if (dayOfWeek == Calendar.SUNDAY) {
+                    // 오늘이 일요일이면 6일 전인 지난 월요일로 이동
+                    cal.add(Calendar.DAY_OF_YEAR, -6)
+                } else {
+                    // 오늘이 월~토라면 이번 주 월요일로 이동
+                    cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                }
                 cal.timeInMillis
             }
             RunFilter.MONTH -> {
@@ -418,6 +443,178 @@ class UserDataSourceImpl @Inject constructor(
                 cal.timeInMillis
             }
             RunFilter.ALL -> 0L
+        }
+    }
+
+    // 유저 커뮤니티 활동 정보 및 이름 불러오기
+    override suspend fun getUserActivityStats(uid: String): AuthResult<UserActivityStats> {
+        return try {
+            // 1. 참조 생성
+            val userDocRef = firestore.collection("UserData").document(uid)
+            val statsDocRef = userDocRef.collection("PostStats").document("info")
+
+            // 2. 두 문서를 동시에 호출 (병렬 처리로 속도 최적화)
+            // Note: Firestore 문서는 각각 별개의 호출이 필요합니다.
+            val userSnapshot = userDocRef.get().await()
+            val statsSnapshot = statsDocRef.get().await()
+
+            // 3. 유저 이름 추출
+            val userName = userSnapshot.getString("userName") ?: "Runner"
+
+            // 4. 통계 데이터와 이름 결합
+            if (statsSnapshot.exists()) {
+                AuthResult.Success(UserActivityStats(
+                    userName = userName, // 🔹 가져온 이름 꽂아주기
+                    uploadPostIds = statsSnapshot.get("uploadPostIds") as? List<String> ?: emptyList(),
+                    likePostIds = statsSnapshot.get("likedPostIds") as? List<String> ?: emptyList(),
+                    commentPostIds = statsSnapshot.get("commentedPostIds") as? List<String> ?: emptyList(),
+                    followPostIds = statsSnapshot.get("followedPostIds") as? List<String> ?: emptyList(),
+                ))
+            } else {
+                // 통계 문서가 아직 생성되지 않았더라도 이름은 전달해야 함
+                AuthResult.Success(UserActivityStats(userName = userName))
+            }
+        } catch (e: Exception) {
+            Log.e("UserRepo", "데이터 통합 로드 실패: ${e.localizedMessage}")
+            AuthResult.Fail(e.localizedMessage ?: "정보 로드 실패")
+        }
+    }
+
+    //---------------------------------------------------------------------------------------------//
+    //친구 기능
+
+    // 1. ID로 사용자 검색 (정확히 일치하는 ID)
+    override suspend fun searchUserByEmail(searchId: String): AuthResult<UserData> {
+        return try {
+            val query = firestore.collection("UserData")
+                .whereEqualTo("userEmail", searchId)
+                .get()
+                .await()
+
+            val user = query.documents.firstOrNull()?.toObject(UserData::class.java)
+
+            if (user != null) AuthResult.Success(user)
+            else AuthResult.Fail("해당 이메일의 사용자를 찾을 수 없습니다.")
+        } catch (e: Exception) {
+            AuthResult.Fail("사용자 검색 실패", e)
+        }
+    }
+
+    // 2. 친구 신청 보내기 (나의 sent, 상대의 received 업데이트)
+    override suspend fun sendFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return try {
+            val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+            if (myUid == targetUid) return AuthResult.Fail("자신에게는 신청할 수 없습니다.")
+
+            val myDocRef = firestore.collection("UserData").document(myUid)
+            val targetDocRef = firestore.collection("UserData").document(targetUid)
+
+            firestore.runTransaction { transaction ->
+                // 내 '보낸 신청' 리스트에 추가
+                transaction.update(myDocRef, "sentRequests", FieldValue.arrayUnion(targetUid))
+                // 상대방 '받은 신청' 리스트에 추가
+                transaction.update(targetDocRef, "receivedRequests", FieldValue.arrayUnion(myUid))
+                null
+            }.await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("친구 신청 실패", e)
+        }
+    }
+
+    // 3. 친구 신청 수락 (핵심 로직)
+    override suspend fun acceptFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return try {
+            val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+            val myDocRef = firestore.collection("UserData").document(myUid)
+            val targetDocRef = firestore.collection("UserData").document(targetUid)
+
+            firestore.runTransaction { transaction ->
+                // 1. 요청 목록에서 서로 제거
+                transaction.update(myDocRef, "receivedRequests", FieldValue.arrayRemove(targetUid))
+                transaction.update(targetDocRef, "sentRequests", FieldValue.arrayRemove(myUid))
+
+                // 2. 친구 목록에 서로 추가
+                transaction.update(myDocRef, "friends", FieldValue.arrayUnion(targetUid))
+                transaction.update(targetDocRef, "friends", FieldValue.arrayUnion(myUid))
+                null
+            }.await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("친구 수락 실패", e)
+        }
+    }
+
+    // 4. 친구 신청 거절 또는 보낸 신청 취소
+    override suspend fun declineFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return try {
+            val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+            val myDocRef = firestore.collection("UserData").document(myUid)
+            val targetDocRef = firestore.collection("UserData").document(targetUid)
+
+            firestore.runTransaction { transaction ->
+                // 1. 내 문서에서 상대방 UID 제거 (받은 신청/보낸 신청 양쪽 다 체크해서 제거)
+                transaction.update(myDocRef, "receivedRequests", FieldValue.arrayRemove(targetUid))
+                transaction.update(myDocRef, "sentRequests", FieldValue.arrayRemove(targetUid))
+
+                // 2. 상대방 문서에서 내 UID 제거 (보낸 신청/받은 신청 양쪽 다 체크해서 제거)
+                transaction.update(targetDocRef, "sentRequests", FieldValue.arrayRemove(myUid))
+                transaction.update(targetDocRef, "receivedRequests", FieldValue.arrayRemove(myUid))
+
+                null
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("요청 처리 실패: ${e.localizedMessage}")
+        }
+    }
+
+    // 5. UID 리스트로 요약 정보 가져오기 (친구 목록 띄울 때 사용)
+    override suspend fun getUsersSummary(uidList: List<String>): AuthResult<List<UserData>> {
+        if (uidList.isEmpty()) return AuthResult.Success(emptyList())
+        return try {
+            // Firestore whereIn은 한 번에 최대 30명까지 지원
+            val snapshot = firestore.collection("UserData")
+                .whereIn("userId", uidList)
+                .get()
+                .await()
+
+            val users = snapshot.toObjects(UserData::class.java)
+            AuthResult.Success(users)
+        } catch (e: Exception) {
+            AuthResult.Fail("목록 로드 실패", e)
+        }
+    }
+
+    // 친구 목록 가져오기
+    override suspend fun getFriendUids(): AuthResult<List<String>> {
+        return try {
+            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+            val snapshot = firestore.collection("UserData").document(uid).get().await()
+            val friends = snapshot.get("friends") as? List<String> ?: emptyList()
+            AuthResult.Success(friends)
+        } catch (e: Exception) {
+            AuthResult.Fail("친구 목록 로드 실패", e)
+        }
+    }
+
+    override suspend fun deleteFriend(targetUid: String): AuthResult<Boolean> {
+        return try {
+            val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+            val myDocRef = firestore.collection("UserData").document(myUid)
+            val targetDocRef = firestore.collection("UserData").document(targetUid)
+
+            firestore.runTransaction { transaction ->
+                // 양측의 friends 리스트에서 서로의 UID를 제거
+                transaction.update(myDocRef, "friends", FieldValue.arrayRemove(targetUid))
+                transaction.update(targetDocRef, "friends", FieldValue.arrayRemove(myUid))
+                null
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("친구 삭제 실패: ${e.localizedMessage}")
         }
     }
 

@@ -10,20 +10,23 @@ import android.util.Log
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Comment
+import com.example.runup.domain.model.FilterState
+import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.PostImage
 import com.example.runup.domain.model.RunRecord
-import com.example.runup.viewmodel.FilterState
-import com.example.runup.viewmodel.FilterType
+import com.example.runup.domain.model.ViewScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
@@ -41,42 +44,41 @@ class CommunityDataSourceImpl @Inject constructor(
     private val auth: FirebaseAuth,
     @ApplicationContext private val context: Context
 ) {
-    // 1. 게시글 목록 가져오기
     suspend fun getPosts(
         lastVisibleSnapshot: DocumentSnapshot? = null,
         limit: Long = 3,
-        filter: FilterState
+        filter: FilterState,
+        friendIds: List<String> = emptyList() // 🔹 친구 ID 리스트를 인자로 받음
     ): AuthResult<Pair<List<Post>, DocumentSnapshot?>> {
         return try {
-            // 1. 컬렉션 시작
             var query: Query = firestore.collection("Posts")
+            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
 
-            // 2. 🔹 필터(where)를 '먼저' 적용해야 합니다.
+            // 🔹 [1순위 필터] 보기 범위 설정 (친구/전체)
+            when (filter.scope) {
+                ViewScope.FRIENDS -> query = query.whereIn("authorId", friendIds)
+                ViewScope.MINE -> query = query.whereEqualTo("authorId", uid)
+                ViewScope.ALL -> { /* 필터 없음 */ }
+            }
+
+            // 🔹 [2순위 필터] 지역 필터링 (기존 로직 유지)
             if (filter.type != FilterType.ALL) {
-                // "동" 정보가 있으면 가장 구체적인 필터 하나만 거는 것이 성능상 좋습니다.
-                // (혹은 시, 구, 동을 다 걸어도 되지만 순서는 상관없습니다.)
                 if (filter.city.isNotEmpty()) query = query.whereEqualTo("city", filter.city)
                 if (filter.district.isNotEmpty()) query = query.whereEqualTo("district", filter.district)
                 if (filter.dong.isNotEmpty()) query = query.whereEqualTo("dong", filter.dong)
             }
-            Log.d("FilterCheck", "Type: ${filter.type}")
-            Log.d("FilterCheck", "City: '${filter.city}'")     // 작은 따옴표 붙여서 공백 확인
-            Log.d("FilterCheck", "District: '${filter.district}'")
-            Log.d("FilterCheck", "Dong: '${filter.dong}'")
 
-            // 3. 🔹 필터 적용이 끝난 후 '나중에' 정렬을 붙입니다.
-            query = query.orderBy("timestamp", Query.Direction.DESCENDING)
-
-            // 4. 페이징 및 리밋 설정
-            query = query.limit(limit)
+            // 🔹 [3순위] 정렬 및 페이징
+            query = query.orderBy("timestamp", Query.Direction.DESCENDING).limit(limit)
 
             if (lastVisibleSnapshot != null) {
                 query = query.startAfter(lastVisibleSnapshot)
             }
 
             val snapshot = query.get().await()
-            val lastSnapshot = snapshot.documents.lastOrNull() // 이번에 읽은 마지막 문서 저장
+            val lastSnapshot = snapshot.documents.lastOrNull()
 
+            // (이하 데이터 매핑 로직은 기존과 동일하므로 생략)
             val postList = snapshot.documents.mapNotNull { doc ->
                 val post = doc.toObject(Post::class.java)
                 Log.d("filtercheck", "${post?.city}")
@@ -105,6 +107,7 @@ class CommunityDataSourceImpl @Inject constructor(
                     locationImages = locationImagesList,
                     commonImages = commonImagesList,
                     likes = (doc.get("likes") as? Number)?.toInt() ?: 0,
+                    isLiked = post.likedBy.contains(uid),
                     commentCount = (doc.get("commentCount") as? Number)?.toInt() ?: 0,
                     runRecord = doc.get("runRecord", RunRecord::class.java),
                     // 🔹 주소 정보 추가
@@ -114,11 +117,90 @@ class CommunityDataSourceImpl @Inject constructor(
                 )
 
             }
-            // 데이터와 커서를 함께 반환
+
             AuthResult.Success(Pair(postList, lastSnapshot))
 
         } catch (e: Exception) {
+            Log.e("CommunityDataSource", "Combined Query Error: ${e.message}")
             AuthResult.Fail(e.localizedMessage ?: "로드 실패")
+        }
+    }
+
+    suspend fun getTargetUserPosts(
+        targetUid: String,
+        tabType: String, // "POSTS", "HEARTS", "COMMENTS", "FOLLOWS"
+        filter: FilterState,
+        lastVisibleSnapshot: DocumentSnapshot? = null,
+        limit: Long = 4L
+    ): AuthResult<Pair<List<Post>, DocumentSnapshot?>> {
+        return try {
+            var query: Query = firestore.collection("Posts")
+            val myUid = auth.currentUser?.uid ?: ""
+
+            // ── [1단계] 탭 타입에 따른 대상 필터링 ──
+            query = when (tabType) {
+                "POSTS" -> query.whereEqualTo("authorId", targetUid)
+                "HEARTS" -> query.whereArrayContains("likedBy", targetUid)
+                "COMMENTS" -> query.whereArrayContains("commentedBy", targetUid)
+                "FOLLOWS" -> query.whereArrayContains("followedBy", targetUid)
+                else -> query.whereEqualTo("authorId", targetUid)
+            }
+
+            // ── [2단계] 지역 필터링 (기존 로직 유지) ──
+            if (filter.type != FilterType.ALL) {
+                if (filter.city.isNotEmpty()) query = query.whereEqualTo("city", filter.city)
+                if (filter.district.isNotEmpty()) query = query.whereEqualTo("district", filter.district)
+                if (filter.dong.isNotEmpty()) query = query.whereEqualTo("dong", filter.dong)
+            }
+
+            // ── [3단계] 정렬 및 페이징 ──
+            query = query.orderBy("timestamp", Query.Direction.DESCENDING).limit(limit)
+
+            if (lastVisibleSnapshot != null) {
+                query = query.startAfter(lastVisibleSnapshot)
+            }
+
+            val snapshot = query.get().await()
+            val lastSnapshot = snapshot.documents.lastOrNull()
+
+            // 🔹 데이터 매핑 (기존과 동일)
+            val postList = snapshot.documents.mapNotNull { doc ->
+                val post = doc.toObject(Post::class.java)
+                val locationImages = doc.get("locationImages") as? List<Map<String, Any>> ?: emptyList()
+                val commonImages = doc.get("commonImages") as? List<Map<String, Any>> ?: emptyList()
+
+                post?.copy(
+                    postId = doc.id,
+                    authorId = doc.getString("authorId") ?: "",
+                    authorName = doc.getString("authorName") ?: "익명",
+                    authorProfileUrl = doc.getString("userProfileUrlMini") ?: "",
+                    content = doc.getString("content") ?: "",
+                    locationImages = locationImages.map { map ->
+                        PostImage(
+                            url = map["url"] as? String ?: "",
+                            thumbnailUrl = map["thumbnailUrl"] as? String ?: "",
+                            location = map["location"] as? GeoPoint
+                        )
+                    },
+                    commonImages = commonImages.map { map ->
+                        PostImage(url = map["url"] as? String ?: "")
+                    },
+                    likes = (doc.get("likes") as? Number)?.toInt() ?: 0,
+                    isLiked = (doc.get("likedBy") as? List<String>)?.contains(myUid) ?: false,
+                    commentCount = (doc.get("commentCount") as? Number)?.toInt() ?: 0,
+                    // ── 🔹 추가된 팔로우 데이터 매핑 ── 📍
+                    followCount = (doc.get("followCount") as? Number)?.toInt() ?: 0,
+                    followedBy = doc.get("followedBy") as? List<String> ?: emptyList(),
+                    city = doc.getString("city") ?: "",
+                    district = doc.getString("district") ?: "",
+                    dong = doc.getString("dong") ?: ""
+                )
+            }
+
+            AuthResult.Success(Pair(postList, lastSnapshot))
+        } catch (e: Exception) {
+            Log.e("DataSource", "TargetUser Query Error: ${e.message}")
+            AuthResult.Fail(e.localizedMessage ?: "데이터 로드 실패")
         }
     }
 
@@ -160,53 +242,124 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
-    // CommunityDataSourceImpl.kt 의 toggleLike 함수 수정
+    // CommunityDataSourceImpl.kt
+
     suspend fun toggleLike(postId: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+
         return try {
-            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
-            val postRef = firestore.collection("Posts").document(postId)
-            val likeRef = postRef.collection("Likes").document(uid)
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+                val likedBy = postSnapshot.get("likedBy") as? List<String> ?: emptyList()
+                val isAlreadyLiked = likedBy.contains(myUid)
 
-            val isAlreadyLiked = likeRef.get().await().exists()
+                // 🔹 [Posts] 업데이트: 좋아요 수 & ID 리스트 (필수 유지)
+                if (isAlreadyLiked) {
+                    transaction.update(postRef, "likes", FieldValue.increment(-1))
+                    transaction.update(postRef, "likedBy", FieldValue.arrayRemove(myUid))
+                } else {
+                    transaction.update(postRef, "likes", FieldValue.increment(1))
+                    transaction.update(postRef, "likedBy", FieldValue.arrayUnion(myUid))
+                }
 
-            if (isAlreadyLiked) {
-                // 이미 눌렀다면: 좋아요 취소
-                likeRef.delete().await()
-                postRef.update("likes", FieldValue.increment(-1)).await()
-            } else {
-                // 안 눌렀다면: 좋아요 추가
-                likeRef.set(mapOf("timestamp" to System.currentTimeMillis())).await()
-                postRef.update("likes", FieldValue.increment(1)).await()
-            }
+                // 🔹 [UserData] -> 내 PostStats/info 에 게시물 ID 기록만 남김
+                val myStatsRef = firestore.collection("UserData").document(myUid)
+                    .collection("PostStats").document("info")
 
-            AuthResult.Success(!isAlreadyLiked) // true면 좋아요됨, false면 취소됨
+                val updateAction = if (isAlreadyLiked) FieldValue.arrayRemove(postId) else FieldValue.arrayUnion(postId)
+                transaction.set(myStatsRef, mapOf("likedPostIds" to updateAction), SetOptions.merge())
+
+                !isAlreadyLiked
+            }.await().let { AuthResult.Success(it) }
         } catch (e: Exception) {
-            AuthResult.Fail(e.localizedMessage ?: "좋아요 처리 실패")
+            AuthResult.Fail(e.localizedMessage ?: "좋아요 실패")
         }
     }
 
-    // 4. 댓글 추가 로직
     suspend fun addComment(postId: String, content: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+
         return try {
-            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
-            val userDoc = firestore.collection("UserData").document(uid).get().await()
+            val userDoc = firestore.collection("UserData").document(myUid).get().await()
             val userName = userDoc.getString("userName") ?: "익명"
-            val userProfileUrlMini = userDoc.getString("userProfileUrlMini") ?: "userProfileUrl"
+            val userCommentProfileUrl = userDoc.getString("userProfileUrlMini") ?: ""
 
-            val commentMap = mapOf(
-                "authorName" to userName,
-                "authorProfileUrlMini" to userProfileUrlMini,
-                "content" to content,
-                "timestamp" to System.currentTimeMillis()
-            )
+            firestore.runTransaction { transaction ->
+                // 🔹 [Posts] 하위 Comments 추가 및 정보 업데이트
+                val newCommentRef = postRef.collection("Comments").document()
+                transaction.set(newCommentRef, mapOf(
+                    "authorId" to myUid,
+                    "authorName" to userName,
+                    "authorProfileUrlMini" to userCommentProfileUrl,
+                    "content" to content,
+                    "timestamp" to System.currentTimeMillis()
+                ))
 
-            val postRef = firestore.collection("Posts").document(postId)
-            postRef.collection("Comments").add(commentMap).await()
-            postRef.update("commentCount", FieldValue.increment(1)).await()
+                // 🔹 [Posts] 댓글 수 증가 & 댓글 작성자 리스트 업데이트 (삭제 시 필요)
+                transaction.update(postRef, "commentCount", FieldValue.increment(1))
+                transaction.update(postRef, "commentedBy", FieldValue.arrayUnion(myUid))
 
+                // 🔹 [UserData] -> 내 PostStats/info 에 기록
+                val myStatsRef = firestore.collection("UserData").document(myUid)
+                    .collection("PostStats").document("info")
+                transaction.set(myStatsRef, mapOf("commentedPostIds" to FieldValue.arrayUnion(postId)), SetOptions.merge())
+
+                true
+            }.await()
             AuthResult.Success(true)
         } catch (e: Exception) {
-            AuthResult.Fail(e.localizedMessage ?: "댓글 작성 실패")
+            AuthResult.Fail(e.localizedMessage ?: "댓글 실패")
+        }
+    }
+
+    suspend fun deleteComment(postId: String, commentId: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+        val commentRef = postRef.collection("Comments").document(commentId)
+
+        return try {
+            firestore.runTransaction { transaction ->
+                // 댓글 데이터 확인
+                val commentSnapshot = transaction.get(commentRef)
+                if (!commentSnapshot.exists()) throw Exception("존재하지 않는 댓글입니다.")
+                if (commentSnapshot.getString("authorId") != myUid) throw Exception("삭제 권한이 없습니다.")
+
+                // 댓글 삭제 및 카운트 감소
+                transaction.delete(commentRef)
+                transaction.update(postRef, "commentCount", FieldValue.increment(-1))
+
+                null // 트랜잭션 내에서 비동기 쿼리를 직접 수행할 수 없으므로 일단 닫음
+            }.await()
+
+            // 3. [동기화 핵심] 이 포스트에 내가 쓴 다른 댓글이 있는지 확인
+            val remainingComments = postRef.collection("Comments")
+                .whereEqualTo("authorId", myUid)
+                .limit(1)
+                .get()
+                .await()
+
+            // 더 이상 내 댓글이 없다면 흔적 지우기 🔹
+            if (remainingComments.isEmpty) {
+                firestore.runBatch { batch ->
+                    // 포스트의 '댓글 단 사람' 리스트에서 제거
+                    batch.update(postRef, "commentedBy", FieldValue.arrayRemove(myUid))
+
+                    // 내 통계 리스트에서 해당 포스트 ID 제거
+                    val myStatsRef = firestore.collection("UserData").document(myUid)
+                        .collection("PostStats").document("info")
+                    batch.set(myStatsRef, mapOf("commentedPostIds" to FieldValue.arrayRemove(postId)), SetOptions.merge())
+                }.await()
+
+                // 💡 ViewModel에게 "통계에서 이 포스트를 지워야 함"을 알리기 위해 true 반환
+                AuthResult.Success(true)
+            } else {
+                // 아직 내 댓글이 다른 게 남아있음
+                AuthResult.Success(false)
+            }
+        } catch (e: Exception) {
+            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
         }
     }
 
@@ -223,6 +376,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 val comments = snapshot?.documents?.mapNotNull { doc ->
                     Comment(
                         commentId = doc.id,
+                        authorId = doc.getString("authorId") ?: "",
                         authorName = doc.getString("authorName") ?: "익명",
                         authorProfileUrlMini = doc.getString("authorProfileUrlMini") ?: "",
                         content = doc.getString("content") ?: "",
@@ -248,6 +402,10 @@ class CommunityDataSourceImpl @Inject constructor(
             val realUserName = userDoc.getString("userName") ?: "Runner"
             val profileMiniUrl = userDoc.getString("userProfileUrlMini") ?: ""
 
+            // 🔹 내 활동 통계 문서 참조
+            val myStatsRef = firestore.collection("UserData").document(uid)
+                .collection("PostStats").document("info")
+
             // --- [수정 시작] 트랜잭션을 통한 Post ID 생성 로직 ---
             val metadataRef = firestore.collection("Metadata").document("postInfo")
 
@@ -261,8 +419,16 @@ class CommunityDataSourceImpl @Inject constructor(
                 // 번호 업데이트 (Int 형태로 다시 저장)
                 transaction.update(metadataRef, "lastPostNumber", nextNumber)
 
-                // "post1", "post2" 형태의 문자열 생성
-                "post$nextNumber"
+                // ── [핵심 수정] 내 업로드 리스트에 ID 추가 (중복 방지) ──
+                val generatedId = "post$nextNumber"
+                transaction.set(
+                    myStatsRef,
+                    mapOf("uploadPostIds" to FieldValue.arrayUnion(generatedId)),
+                    SetOptions.merge()
+                )
+
+
+                generatedId
             }.await()
 
             val postRef = firestore.collection("Posts").document(customPostId)
@@ -354,6 +520,89 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
+    suspend fun deletePost(post: Post): AuthResult<Boolean> = coroutineScope {
+        try {
+            val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
+            if (post.authorId != uid) return@coroutineScope AuthResult.Fail("삭제 권한이 없습니다.")
+
+            val postRef = firestore.collection("Posts").document(post.postId)
+            val commentsRef = postRef.collection("Comments")
+
+            // ── 🔹 [1] 이미지 삭제 로직 복구 (Storage) ── 📍
+            val allImageUrls = mutableListOf<String>()
+
+            // 위치 이미지 (원본 + 썸네일)
+            post.locationImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+                if (it.thumbnailUrl.isNotEmpty()) allImageUrls.add(it.thumbnailUrl)
+            }
+            // 일반 이미지
+            post.commonImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+            }
+
+            // 비동기로 모든 이미지 삭제 실행
+            val deleteTasks = allImageUrls.distinct().map { url ->
+                async(Dispatchers.IO) {
+                    try {
+                        storage.getReferenceFromUrl(url).delete().await()
+                    } catch (e: Exception) {
+                        // 이미 삭제되었거나 없는 경우를 대비해 로그만 찍고 진행
+                        Log.e("DeleteError", "이미지 삭제 실패 ($url): ${e.message}")
+                    }
+                }
+            }
+            deleteTasks.awaitAll()
+
+            // 댓글 데이터 미리 가져오기
+            val commentsSnapshot = commentsRef.get().await()
+
+            // ── 🔹 [2] Firestore 트랜잭션 청소 ──
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+
+                val actualLikedBy = postSnapshot.get("likedBy") as? List<String> ?: emptyList()
+                val actualCommentedBy = postSnapshot.get("commentedBy") as? List<String> ?: emptyList()
+                val actualFollowedBy = postSnapshot.get("followedBy") as? List<String> ?: emptyList() // 👈 추가📍
+
+                // (1) 서브컬렉션(댓글) 삭제
+                commentsSnapshot.forEach { commentDoc ->
+                    transaction.delete(commentDoc.reference)
+                }
+
+                // (2) 포스트 본체 삭제
+                transaction.delete(postRef)
+
+                // (3) 작성자의 업로드 리스트에서 제거
+                val myStatsRef = firestore.collection("UserData").document(uid).collection("PostStats").document("info")
+                transaction.update(myStatsRef, "uploadPostIds", FieldValue.arrayRemove(post.postId))
+
+                // (4) 좋아요 기록 전역 삭제
+                actualLikedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "likePostIds", FieldValue.arrayRemove(post.postId))
+                }
+
+                // (5) 댓글 기록 전역 삭제
+                actualCommentedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "commentPostIds", FieldValue.arrayRemove(post.postId))
+                }
+
+                // (6) [신규] 따라뛰기(Follow) 기록 전역 삭제 ── 👟📍
+                actualFollowedBy.forEach { userId ->
+                    val ref = firestore.collection("UserData").document(userId).collection("PostStats").document("info")
+                    transaction.update(ref, "followPostIds", FieldValue.arrayRemove(post.postId))
+                }
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            Log.e("DeleteError", "삭제 전체 공정 실패: ${e.localizedMessage}")
+            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+        }
+    }
+
     // 1. 원본 압축 함수 (기존 quality 80 용)
     private fun compressImage(uri: Uri, quality: Int): ByteArray? {
         val inputStream = context.contentResolver.openInputStream(uri)
@@ -411,45 +660,38 @@ class CommunityDataSourceImpl @Inject constructor(
         return rotatedImg
     }
 
-    // 게시글 삭제 (Firestore 문서 + Storage 이미지 전체)
-    suspend fun deletePost(post: Post): AuthResult<Boolean> = coroutineScope {
-        try {
-            val uid = auth.currentUser?.uid ?: return@coroutineScope AuthResult.Fail("로그인 필요")
+    suspend fun followRunning(postId: String): AuthResult<Boolean> {
+        val myUid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+        val postRef = firestore.collection("Posts").document(postId)
+        val myStatsRef = firestore.collection("UserData").document(myUid)
+            .collection("PostStats").document("info")
 
-            // 1. 권한 확인 (본인 글인지 다시 한번 검증)
-            if (post.authorId != uid) return@coroutineScope AuthResult.Fail("삭제 권한이 없습니다.")
+        return try {
+            firestore.runTransaction { transaction ->
+                val postSnapshot = transaction.get(postRef)
+                if (!postSnapshot.exists()) throw Exception("포스트가 존재하지 않습니다.")
 
-            val deleteTasks = mutableListOf<Deferred<Unit>>()
+                val followedBy = postSnapshot.get("followedBy") as? List<String> ?: emptyList()
 
-            post.locationImages.forEach { image ->
-                deleteTasks.add(async {
-                    storage.getReferenceFromUrl(image.url).delete().await()
-                    Unit // 명시적으로 Unit 반환
-                })
-                image.thumbnailUrl?.let { thumbUrl ->
-                    deleteTasks.add(async {
-                        storage.getReferenceFromUrl(thumbUrl).delete().await()
-                        Unit // 명시적으로 Unit 반환
-                    })
+                // ── [방어 로직] 이미 팔로우했는지 확인 ── 🔹
+                if (!followedBy.contains(myUid)) {
+                    // 처음 클릭한 경우에만 숫자 증가 및 ID 추가
+                    transaction.update(postRef, "followCount", FieldValue.increment(1))
+                    transaction.update(postRef, "followedBy", FieldValue.arrayUnion(myUid))
                 }
-            }
 
-            post.commonImages.forEach { image ->
-                deleteTasks.add(async {
-                    storage.getReferenceFromUrl(image.url).delete().await()
-                    Unit // 명시적으로 Unit 반환
-                })
-            }
+                // ── [내 통계 업데이트] 중복되어도 arrayUnion이 알아서 처리 ──
+                transaction.set(myStatsRef, mapOf(
+                    "followedPostIds" to FieldValue.arrayUnion(postId)
+                ), SetOptions.merge())
 
-            // 3. 모든 이미지 삭제 병렬 실행
-            deleteTasks.awaitAll()
-
-            // 4. Firestore 게시글 문서 삭제
-            firestore.collection("Posts").document(post.postId).delete().await()
-
+                true
+            }.await()
             AuthResult.Success(true)
         } catch (e: Exception) {
-            AuthResult.Fail(e.localizedMessage ?: "삭제 실패")
+            AuthResult.Fail(e.localizedMessage ?: "팔로우 실패")
         }
     }
+
+
 }
