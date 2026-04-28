@@ -15,5 +15,6 @@ enum class Screen {
     RUNNINGTEST,
     LOCALDB,
     MYPAGE,
-    COMMUNITY_DETAIL
+    COMMUNITY_DETAIL,
+    SETTINGS
 }

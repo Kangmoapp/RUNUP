@@ -49,7 +49,7 @@ fun RunUpApp(
                 onBackClick = {viewModel.navigateTo(Screen.HOME)},
                 onCorseClick = {viewModel.navigateTo(Screen.RECOMMEND)},
                 onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
-                onOptionClick= { },
+                onOptionClick= {viewModel.navigateTo(Screen.SETTINGS)},
                 onHelpClick= { },
                 onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
                 onMypageClick= {viewModel.navigateTo(Screen.MYPAGE)},
@@ -100,6 +100,11 @@ fun RunUpApp(
 
             Screen.MYPAGE -> MyPageScreen(
                 onBackClick = {viewModel.navigateTo(Screen.MENU)},
+            )
+
+            Screen.SETTINGS -> SettingsScreen(
+                onBackClick = { viewModel.navigateTo(Screen.MENU) },
+                onLogoutClick = { viewModel.navigateTo(Screen.START) }
             )
 
             else -> {}
