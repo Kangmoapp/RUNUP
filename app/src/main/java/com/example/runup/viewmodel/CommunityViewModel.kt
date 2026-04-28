@@ -19,13 +19,19 @@ import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Comment // 추가됨
+import com.example.runup.domain.model.FilterState
+import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.Post
+import com.example.runup.domain.model.PostImage
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
+import com.example.runup.domain.model.ViewScope
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
+import com.example.runup.ui.util.CommunityRefreshManager
+import com.example.runup.ui.util.ImagePreloader
 import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.GeoPoint
@@ -49,7 +55,8 @@ data class CommunityUiState(
     val isInitialLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val filterState: FilterState = FilterState(),
-    val isFilterDialogOpen: Boolean = false
+    val isFilterDialogOpen: Boolean = false,
+    val isLastPage: Boolean = false // 🔹 추가
 )
 
 data class PostUploadUiState(
@@ -57,7 +64,7 @@ data class PostUploadUiState(
     val selectedRunRecord: RunRecord? = null,
     val isSheetOpen: Boolean = false,
     val isLoading: Boolean = false,
-    // 🔹 페이지네이션 상태 추가
+    // 🔹 페이지네이션 상태
     val hasMore: Boolean = true,
     val lastDate: Long? = null,
     val isPaging: Boolean = false
@@ -72,14 +79,7 @@ data class MapSnapshot(
 private var lastVisibleSnapshot: DocumentSnapshot? = null
 private var isLastPage = false
 
-data class FilterState(
-    val type: FilterType = FilterType.ALL,
-    val city: String = "",
-    val district: String = "",
-    val dong: String = ""
-)
 
-enum class FilterType { ALL, MY_LOCATION, CUSTOM_LOCATION }
 
 @HiltViewModel
 class CommunityViewModel @Inject constructor(
@@ -87,7 +87,9 @@ class CommunityViewModel @Inject constructor(
     private val dataSource: CommunityDataSourceImpl,
     private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase,
     private val locationRepository: LocationRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val refreshManager: CommunityRefreshManager,
+    private val imagePreloader: ImagePreloader,
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -113,18 +115,21 @@ class CommunityViewModel @Inject constructor(
     private val _mapSnapshotCache = MutableStateFlow<Map<String, MapSnapshot>>(emptyMap())
     val mapSnapshotCache = _mapSnapshotCache.asStateFlow()
 
-    // [B] 리스트 마커용 썸네일 캐시 (URL 기준) - 기존 _bitmapCache를 마커 전용으로 명시
-    private val _thumbnailCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
-    val thumbnailCache = _thumbnailCache.asStateFlow()
+    // [A] 지도 마커 및 피드 리스트용 (최우선 순위)
+    private val _locationMarkerCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val locationMarkerCache = _locationMarkerCache.asStateFlow()
 
-    // [C] 원본/페이지 이동용 고해상도 캐시 (URL 기준)
-    private val _fullBitmapCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
-    val fullBitmapCache = _fullBitmapCache.asStateFlow()
+    // [B] 유저 프로필 이미지용 (작성자 + 댓글 작성자)
+    private val _profileCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val profileCache = _profileCache.asStateFlow()
+
+    // [C] 상세/확대 보기용 고해상도 이미지
+    private val _fullImageCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val fullImageCache = _fullImageCache.asStateFlow()
 
     val addressUiState: StateFlow<AddressModel?> = locationRepository.addressState
 
     // 🔹 단계별로 분리해서 저장
-    private val _cityLocations = MutableStateFlow<List<AdmVO>>(emptyList())
     private val _districtLocations = MutableStateFlow<List<AdmVO>>(emptyList())
     private val _dongLocations = MutableStateFlow<List<AdmVO>>(emptyList())
 
@@ -139,6 +144,7 @@ class CommunityViewModel @Inject constructor(
 
     init {
         requestInitialAddress()
+        observeRefreshEvents()
     }
 
     // 데이터 저장 함수들
@@ -161,8 +167,6 @@ class CommunityViewModel @Inject constructor(
         // isLoading 상태거나, 처음이 아니면서 마지막페이지이면
         if (_communityUiState.value.isLoading || (isLastPage && !isInitial)) return
 
-
-
         if (isInitial) {
             lastVisibleSnapshot = null // 마지막 보던 곳
             isLastPage = false // 마지막 페이지 여부
@@ -178,8 +182,28 @@ class CommunityViewModel @Inject constructor(
             try {
                 val currentFilter = _communityUiState.value.filterState
 
+                // 🔹 [핵심] 스코프에 따른 ID 리스트 준비
+                val targetIds = when (currentFilter.scope) {
+                    ViewScope.MINE -> listOf(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "")
+                    ViewScope.FRIENDS -> {
+                        // 1. Repository에서 친구 UID 리스트를 가져옵니다.
+                        val result = userRepository.getFriendUids()
+                        if (result is AuthResult.Success) {
+                            // 친구가 한 명도 없을 경우를 대비해 처리
+                            if (result.data.isEmpty()) {
+                                emptyList()
+                            } else {
+                                result.data
+                            }
+                        } else {
+                            emptyList()
+                        }
+                    }
+                    ViewScope.ALL -> emptyList()
+                }
+
                 // 마지막 보던 곳에서 최대 3개 가져오기
-                val result = dataSource.getPosts(lastVisibleSnapshot, 3L, currentFilter)
+                val result = dataSource.getPosts(lastVisibleSnapshot, 3L, currentFilter, friendIds = targetIds)
 
                 if (result is AuthResult.Success) {
                     val (newPosts, lastSnapshot) = result.data
@@ -210,111 +234,85 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
+    private fun observeRefreshEvents() {
+        viewModelScope.launch {
+            // SharedFlow를 통해 전역적으로 발생하는 리프레시 신호를 수집합니다 👂
+            refreshManager.refreshEvent.collectLatest {
+                Log.d("CommunityViewModel", "외부 데이터 변경(좋아요/댓글/삭제 등) 감지 -> 피드 새로고침")
+
+                // 🔹 기존에 만들어두신 fetchPosts를 호출하여 서버 데이터를 최신화합니다.
+                // isInitial = true -> 페이징 초기화
+                // forceRefresh = true -> 로딩 바 활성화 및 캐시 무시
+                fetchPosts(isInitial = true, forceRefresh = true)
+            }
+        }
+    }
+
+    // ViewModel 내부
+
     private fun preloadBitmaps(posts: List<Post>, onComplete: () -> Unit = {}) {
-        if (posts.isEmpty()) {
-            onComplete()
-            return
-        }
+        if (posts.isEmpty()) { onComplete(); return }
 
-        val locationImages = posts.flatMap { it.locationImages }
-        val commonImages = posts.flatMap { it.commonImages }
+        val urlMap = imagePreloader.extractUrlsFromPosts(posts)
 
-        // 1. 게시글 작성자 프로필 URL 추출
-        val postAuthorUrls = posts.map { it.authorProfileUrl }
+        val markerImages = urlMap["MARKER"] as List<PostImage>
+        val authorUrls = urlMap["AUTHOR"] as List<String>
+        val commentUrls = urlMap["COMMENT"] as List<String>
+        val fullUrls = urlMap["FULL"] as List<String>
 
-        // 2. 모든 게시글의 댓글 작성자 프로필 URL 추출 (중첩 리스트 풀기)
-        val commentAuthorUrls = posts.flatMap { post ->
-            post.comments.map { it.authorProfileUrlMini }
-        }
-
-        // 3. 모든 프로필 URL 합치기 + 비어있는 값 제거 + 중복 제거
-        val allProfileUrls = (postAuthorUrls + commentAuthorUrls)
-            .filter { it.isNotEmpty() }
-            .distinct()
-
-        // 1. 필수 로딩 (마커 썸네일) - 얘네가 다 돼야 onComplete를 부름
+        // ── [1단계: ESSENTIAL] 마커 + 작성자 프로필 (onComplete 트리거) ──
+        val totalEssential = markerImages.size + authorUrls.size
         var essentialLoadedCount = 0
-        val totalEssential = locationImages.size
 
         if (totalEssential == 0) {
             onComplete()
         } else {
-            locationImages.forEach { postImage ->
+            // [A] 마커 이미지 로드 (locationMarkerCache 저장)
+            markerImages.forEach { img ->
                 viewModelScope.launch(Dispatchers.IO) {
-                    // 마커용 썸네일 (150px) 캐싱
-                    val targetUrl = postImage.thumbnailUrl.ifEmpty { postImage.url }
-                    preloadToStateManager(targetUrl, postImage.url, 150, "THUMB")
-
-                    // UI 스레드에서 카운트 체크
+                    val targetUrl = img.thumbnailUrl.ifEmpty { img.url }
+                    val bitmap = imagePreloader.loadBitmap(targetUrl, 150)
+                    bitmap?.let { b ->
+                        // 🔹 핵심: 저장 키는 반드시 원본 img.url 사용!
+                        _locationMarkerCache.update { it + (img.url to b) }
+                    }
                     launch(Dispatchers.Main) {
                         essentialLoadedCount++
-                        if (essentialLoadedCount >= totalEssential) {
-                            onComplete() // 필수 로딩 완료! 로딩 바 제거
-                        }
+                        if (essentialLoadedCount >= totalEssential) onComplete()
+                    }
+                }
+            }
+
+            // [B] 작성자 프로필 로드 (profileCache 저장)
+            authorUrls.forEach { url ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    val bitmap = imagePreloader.loadBitmap(url, 150)
+                    bitmap?.let { b -> _profileCache.update { it + (url to b) } }
+                    launch(Dispatchers.Main) {
+                        essentialLoadedCount++
+                        if (essentialLoadedCount >= totalEssential) onComplete()
                     }
                 }
             }
         }
 
-        // 2. 백그라운드 로딩 (상세/원본 이미지) - onComplete와 상관없이 계속 진행
-        locationImages.forEach { postImage ->
+        // ── [2단계: BG_THUMB] 댓글 작성자 프로필 (profileCache 저장) ──
+        commentUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
-                // 마커 클릭 시 뜰 원본 (별도의 키로 저장하거나 원본 URL 그대로 사용)
-                // 키를 다르게 하고 싶다면 postImage.url + "_full" 형태 사용 가능
-                preloadToStateManager(postImage.url, postImage.url + "_full", 800, "FULL")
+                val bitmap = imagePreloader.loadBitmap(url, 150)
+                bitmap?.let { b -> _profileCache.update { it + (url to b) } }
             }
         }
 
-        commonImages.forEach { commonImage ->
+        // ── [3단계: FULL] 고해상도 이미지 (fullImageCache 저장) ──
+        fullUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
-                // 페이저에서 보일 일반 이미지들
-                preloadToStateManager(commonImage.url, commonImage.url, 800, "FULL")
-            }
-        }
-
-        // (2) [수정] 수집된 모든 프로필(게시글 작성자 + 댓글 작성자) 미리 로드
-        allProfileUrls.forEach { url ->
-            viewModelScope.launch(Dispatchers.IO) {
-                // 프로필은 150~200px 정도면 충분히 선명합니다.
-                preloadToStateManager(url, url, 150, "THUMB")
+                val bitmap = imagePreloader.loadBitmap(url, 800)
+                bitmap?.let { b -> _fullImageCache.update { it + (url + "_full" to b) } }
             }
         }
     }
 
-    // 프리로딩 함수 수정 (용도별로 캐시 분리 적재)
-    private suspend fun preloadToStateManager(url: String, cacheKey: String, size: Int, type: String) {
-        if (url.isEmpty()) return
-        val request = ImageRequest.Builder(context)
-            .data(url)
-            .size(size)
-            .allowHardware(false)
-            .build()
-
-        val result = context.imageLoader.execute(request)
-        if (result is SuccessResult) {
-            val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
-            bitmap?.let {
-                when (type) {
-                    "THUMB" -> _thumbnailCache.update { current -> current + (cacheKey to it) }
-                    "FULL" -> _fullBitmapCache.update { current -> current + (cacheKey to it) }
-                }
-            }
-        }
-    }
-
-    fun fetchPostDetail(postId: String) {
-        viewModelScope.launch {
-            _communityUiState.update { it.copy(
-                isLoading = true,
-                selectedPost = null,
-            ) }
-            val result = dataSource.getPostById(postId)
-            if (result is AuthResult.Success) {
-                _communityUiState.update { it.copy(selectedPost = result.data) }
-            }
-            _communityUiState.update { it.copy(isLoading = false) }
-        }
-    }
 
     // --- 추가된 부분: 실시간 댓글 감시 ---
     fun observeComments(postId: String) {
@@ -330,9 +328,6 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             val result = dataSource.addComment(postId, content)
             if (result is AuthResult.Success) {
-                // 댓글 작성 후 상세 정보를 갱신하여 댓글 수 카운트 업데이트
-                fetchPostDetail(postId)
-
                 // 2. 목록 화면의 posts 리스트에 있는 해당 포스트 숫자도 +1
                 _communityUiState.update { state ->
                     val updatedPosts = state.posts.map { post ->
@@ -340,6 +335,33 @@ class CommunityViewModel @Inject constructor(
                         else post
                     }
                     state.copy(posts = updatedPosts)
+                }
+            }
+        }
+    }
+
+    fun deleteComment(postId: String, commentId: String) {
+        viewModelScope.launch {
+            // 1. 데이터소스(서버)에 삭제 요청
+            val result = dataSource.deleteComment(postId, commentId)
+
+            if (result is AuthResult.Success) {
+                // 3. 목록 화면(posts) 및 댓글 리스트 UI 즉시 반영 🔹
+                _communityUiState.update { state ->
+                    // 메인 리스트의 댓글 수 -1
+                    val updatedPosts = state.posts.map { post ->
+                        if (post.postId == postId) {
+                            post.copy(commentCount = (post.commentCount - 1).coerceAtLeast(0))
+                        } else post
+                    }
+
+                    // 현재 열려있는 댓글 리스트에서 삭제된 댓글 제거
+                    val updatedComments = state.comments.filterNot { it.commentId == commentId }
+
+                    state.copy(
+                        posts = updatedPosts,
+                        comments = updatedComments
+                    )
                 }
             }
         }
@@ -374,7 +396,6 @@ class CommunityViewModel @Inject constructor(
 
         // 2. 피드 상세 및 댓글 상태 통합 초기화
         _communityUiState.update { it.copy(
-            selectedPost = null,
             comments = emptyList()
         ) }
     }
@@ -442,14 +463,11 @@ class CommunityViewModel @Inject constructor(
                     val updatedPosts = state.posts.map { post ->
                         if (post.postId == postId) {
                             val newLikes = if (isLiked) post.likes + 1 else (post.likes - 1).coerceAtLeast(0)
-                            post.copy(likes = newLikes)
+                            post.copy(likes = newLikes,
+                                isLiked = isLiked)
                         } else post
                     }
-                    val updatedSelectedPost = if (state.selectedPost?.postId == postId) {
-                        val newLikes = if (isLiked) state.selectedPost.likes + 1 else (state.selectedPost.likes - 1).coerceAtLeast(0)
-                        state.selectedPost.copy(likes = newLikes)
-                    } else state.selectedPost
-                    state.copy(posts = updatedPosts, selectedPost = updatedSelectedPost)
+                    state.copy(posts = updatedPosts)
                 }
             }
         }
@@ -506,31 +524,41 @@ class CommunityViewModel @Inject constructor(
 
     fun setFilter(type: FilterType, city: String = "", district: String = "", dong: String = "") {
         viewModelScope.launch {
-            val finalFilter = when (type) {
-                FilterType.MY_LOCATION -> {
-                    val address = addressUiState.value
-                    FilterState(type, address?.city ?: "", address?.district ?: "", address?.dong ?: "")
+            _communityUiState.update { currentState ->
+                // 🔹 현재의 scope(전체/친구/나)를 그대로 유지하면서 지역 정보만 업데이트합니다.
+                val updatedFilter = when (type) {
+                    FilterType.MY_LOCATION -> {
+                        val address = addressUiState.value
+                        currentState.filterState.copy(
+                            type = type,
+                            city = address?.city ?: "",
+                            district = address?.district ?: "",
+                            dong = address?.dong ?: ""
+                        )
+                    }
+                    else -> {
+                        currentState.filterState.copy(
+                            type = type,
+                            city = city,
+                            district = district,
+                            dong = dong
+                        )
+                    }
                 }
-                else -> FilterState(type, city, district, dong)
+                currentState.copy(filterState = updatedFilter)
             }
 
-            _communityUiState.update { it.copy(filterState = finalFilter) }
-            fetchPosts(isInitial = true, forceRefresh = true) // 🔹 필터 적용 후 새로고침
+            // 필터가 바뀌었으니 데이터 새로고침
+            fetchPosts(isInitial = true, forceRefresh = true)
         }
     }
-
-    fun setFilterByMyLocation(depth: String) { // "city", "district", "dong"
-        val loc = locationRepository.currentLocation.value ?: return
+    fun setViewScope(scope: ViewScope) {
         viewModelScope.launch {
-            val addr = locationRepository.getAddressFromCoords(loc.latitude, loc.longitude) ?: return@launch
-
-            val filter = when(depth) {
-                "city" -> FilterState(FilterType.MY_LOCATION, addr.city, "", "")
-                "district" -> FilterState(FilterType.MY_LOCATION, addr.city, addr.district, "")
-                else -> FilterState(FilterType.MY_LOCATION, addr.city, addr.district, addr.dong)
-            }
-
-            _communityUiState.update { it.copy(filterState = filter) }
+            // 1. 스코프 변경
+            _communityUiState.update { it.copy(
+                filterState = it.filterState.copy(scope = scope)
+            ) }
+            // 2. 새로운 필터로 포스트 다시 불러오기 (페이징 초기화 포함)
             fetchPosts(isInitial = true, forceRefresh = true)
         }
     }
@@ -579,6 +607,33 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             locationRepository.currentLocation.value?.let {
                 locationRepository.refreshAddressIfNeeded(it.latitude, it.longitude)
+            }
+        }
+    }
+
+    fun onFollowClick(postId: String, onCourseReady: (Post) -> Unit) {
+        viewModelScope.launch {
+            val result = dataSource.followRunning(postId)
+            if (result is AuthResult.Success) {
+                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+
+                // 1. 리스트 상태만 즉시 업데이트 🔹
+                _communityUiState.update { state ->
+                    val updatedPosts = state.posts.map { post ->
+                        if (post.postId == postId) {
+                            val alreadyFollowed = post.followedBy.contains(myUid)
+                            val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
+                            val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
+                            post.copy(followCount = newCount, followedBy = newFollowedBy)
+                        } else post
+                    }
+                    state.copy(posts = updatedPosts)
+                }
+
+                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
+                _communityUiState.value.posts.find { it.postId == postId }?.let {
+                    onCourseReady(it)
+                }
             }
         }
     }

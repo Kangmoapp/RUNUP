@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.BuildConfig
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Scores
@@ -46,6 +47,7 @@ data class HomeUiState(
     val showPaceDialog: Boolean = false,
     val isRunning:Boolean = false,
     val selectedTab: HomeTab = HomeTab.RUNNING,
+    val isInitialLoading: Boolean = true,
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
@@ -86,6 +88,7 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
+    private val userPreferenceDataSource: UserPreferenceDataSource
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
@@ -132,6 +135,7 @@ class HomeViewModel @Inject constructor(
         observeLocation()
         loadUserGoal()
 
+        startCurrentLocationTracking()
 
         bleSensorManager.startDataProcessing()
         observeSensorData()
@@ -143,6 +147,11 @@ class HomeViewModel @Inject constructor(
             launch {
                 locationRepository.currentLocation.collect { geoPoint ->
                     _homeUiState.update { it.copy(currentLocation = geoPoint) }
+
+                    // 🔹 초기 로딩 중이고, 첫 좌표(geoPoint)가 null이 아니면 로딩 해제!
+                    if (_homeUiState.value.isInitialLoading && geoPoint != null) {
+                        _homeUiState.update { it.copy(isInitialLoading = false) }
+                    }
 
                     // 위치가 업데이트될 때마다 100m 이동했는지 체크하여 주소 갱신
                     geoPoint?.let {
@@ -268,7 +277,30 @@ class HomeViewModel @Inject constructor(
 
             // 자세가 바뀌었고, 확률이 70% 이상일 때 음성 알림
             if (posture != lastInferenceResult && probability > 0.7f) {
-                ttsManager.speakOut("$posture 입니다")
+                val message = when(posture) {
+                    // --- [러닝 중 경고 멘트] ---
+                    "과도한 뒤꿈치 착지" -> "뒤꿈치 충격이 큽니다. 발바닥 전체로 착지해 보세요."
+                    "오버스트라이드" -> "보폭이 너무 깁니다. 몸의 중심 아래로 발을 딛어보세요."
+                    "케이던스 부족" -> "발구름이 느립니다. 보폭을 조금 줄이고, 리듬을 더 빠르게 가져가 보세요."
+                    "전족부 착지" -> "발 앞꿈치로만 착지하고 있습니다. 종아리에 무리가 갈 수 있으니 발바닥 전체를 사용해 보세요."
+                    "지친 상태의 러닝" -> "자세가 흐트러지고 있습니다. 어깨에 힘을 빼고 시선을 멀리 보세요."
+
+                    // --- [보행 및 일상 경고 멘트] ---
+                    "왼쪽 짝다리" -> "왼쪽 발에 체중이 쏠려 있습니다. 양발에 체중을 고르게 분산시켜 보세요."
+                    "오른쪽 짝다리" -> "오른쪽 발에 체중이 쏠려 있습니다. 골반의 균형을 맞춰보세요."
+                    "팔자 걸음" -> "팔자걸음이 감지되었습니다. 발끝이 정면을 향하도록 11자로 걸어보세요."
+                    "내회전" -> "발목이 안쪽으로 무너지고 있습니다. 발의 아치를 세운다는 느낌으로 걸어보세요."
+                    "외회전" -> "발목이 바깥쪽으로 꺾여 있습니다. 발바닥 안쪽에도 힘을 실어보세요."
+
+                    // --- [정상 상태 (필요시 사용, 보통은 쿨타임 로직에서 미리 걸러짐)] ---
+                    "정지" -> "올바른 정지 자세입니다."
+                    "걷기" -> "올바른 보행 자세입니다."
+                    "뛰기" -> "좋은 자세를 유지하고 있습니다. 페이스를 유지하세요."
+
+                    // 매칭되는 라벨이 없을 경우 기본값
+                    else -> posture
+                }
+                ttsManager.speakOut(message)
                 lastInferenceResult = posture
             }
         }

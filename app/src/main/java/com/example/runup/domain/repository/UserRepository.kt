@@ -3,6 +3,7 @@ import android.net.Uri
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
+import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.UserData
 import kotlinx.coroutines.flow.Flow
 
@@ -64,4 +65,23 @@ interface UserRepository {
 
     // 사용자 로그인 상태 가져오기
     suspend fun getIsLogin(): AuthResult<Boolean>
+
+    suspend fun getUserActivityStats(uid: String): AuthResult<UserActivityStats>
+
+    // --------------------------------------------------------------------------------//
+    //친구 기능
+
+    suspend fun searchUserByEmail(searchId: String): AuthResult<UserData>
+
+    suspend fun sendFriendRequest(targetUid: String): AuthResult<Boolean>
+
+    suspend fun acceptFriendRequest(targetUid: String): AuthResult<Boolean>
+
+    suspend fun declineFriendRequest(targetUid: String): AuthResult<Boolean>
+
+    suspend fun getUsersSummary(uidList: List<String>): AuthResult<List<UserData>>
+
+    suspend fun getFriendUids(): AuthResult<List<String>>
+
+    suspend fun deleteFriend(targetUid: String): AuthResult<Boolean>
 }

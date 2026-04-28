@@ -100,6 +100,7 @@ import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
 import com.example.runup.ui.util.calculateCalories
+import com.example.runup.ui.util.mapper.DistanceMapper
 
 @Preview
 @Composable
@@ -136,28 +137,35 @@ fun HomeScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ){
-        HomeContent(
-            homeUiState = homeUiState,
-            runningUiState = runningUiState,
-            guideUiState = guideUiState,
-            onMenuClick = onMenuClick,
-            onRunClick = {viewModel.onRunClick()},
-            stopRunningTracking = {viewModel.stopRunningTracking()},
-            recordRunningCourse = { scores ->
-                viewModel.recordRunningCourse(scores)},
-            onDistanceClick = {viewModel.openDistanceDialog()},
-            onDistanceClose = {viewModel.closeDistanceDialog()},
-            onDistanceConfirm = {viewModel.confirmDistance(it)},
-            onPaceClick = {viewModel.openPaceDialog()},
-            onPaceClose = {viewModel.closePaceDialog()},
-            onPaceConfirm = { minute, second ->
-                viewModel.confirmPace(minute, second)
-            },
-            onToggleAi = {
-                viewModel.toggleAi()               // 기존 AI 상태 변경
-                viewModel.startBluetoothScan()     // 🌟 스캔 같이 시작!
-            }
-        )
+        // 초기 위치를 잡는 중
+        if (homeUiState.isInitialLoading) {
+            LoadingScreen()
+        }
+        // 위치를 잡았을 때
+        else {
+            HomeContent(
+                homeUiState = homeUiState,
+                runningUiState = runningUiState,
+                guideUiState = guideUiState,
+                onMenuClick = onMenuClick,
+                onRunClick = {viewModel.onRunClick()},
+                stopRunningTracking = {viewModel.stopRunningTracking()},
+                recordRunningCourse = { scores ->
+                    viewModel.recordRunningCourse(scores)},
+                onDistanceClick = {viewModel.openDistanceDialog()},
+                onDistanceClose = {viewModel.closeDistanceDialog()},
+                onDistanceConfirm = {viewModel.confirmDistance(it)},
+                onPaceClick = {viewModel.openPaceDialog()},
+                onPaceClose = {viewModel.closePaceDialog()},
+                onPaceConfirm = { minute, second ->
+                    viewModel.confirmPace(minute, second)
+                },
+                onToggleAi = {
+                    viewModel.toggleAi()               // 기존 AI 상태 변경
+                    viewModel.startBluetoothScan()     // 🌟 스캔 같이 시작!
+                }
+            )
+        }
         if(homeUiState.isLoading){
             LoadingStart(timer)
         }
@@ -194,7 +202,7 @@ private fun HomeContent(
     var sheetHeightPx by remember { mutableFloatStateOf(hiddenHeightPx) }
     // 현재 주소 상태
     val addressUiState by viewModel.addressUiState.collectAsState()
-
+    // 러닝 완료 후 결과창 뜬 상태
     var isResultLocked by remember { mutableStateOf(false) }
 
     Surface(
@@ -241,7 +249,7 @@ private fun HomeContent(
                     ) {
                         Text(
                             text = "현재 위치",
-                            color = WhiteTextColor.copy(alpha = 0.8f),
+                            color = Color.Black,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             style = TextStyle(
@@ -579,7 +587,6 @@ private fun BottomSection(
                             }
                             onHeightChange(finalHeight)
                         }
-                        onHeightChange(finalHeight)
                     }
                 )
         ) {
@@ -776,6 +783,9 @@ private fun MapViewContainer(
 
     val density = LocalDensity.current
 
+    // 🔹 [핵심] 처음 지도가 켜졌을 때만 순간이동을 하기 위한 플래그
+    var isFirstLoad by remember { mutableStateOf(true) }
+
     val locationSource = remember {
         com.naver.maps.map.util.FusedLocationSource(context as android.app.Activity, 1000)
     }
@@ -899,6 +909,16 @@ private fun MapViewContainer(
                 // 지도에 위치 소스 연결
                 if (naverMap.locationSource == null) {
                     naverMap.locationSource = locationSource
+                }
+
+                // 🔹 [핵심 추가] 첫 로딩 시 애니메이션 없이 순간이동
+                if (isFirstLoad) {
+                    // CameraUpdate.scrollTo()는 애니메이션 없이 즉시 좌표로 이동
+                    val initialCamera = CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
+                    naverMap.moveCamera(initialCamera)
+
+                    isFirstLoad = false // 이동 후 플래그를 꺼서 다음부터는 애니메이션이 작동하게 함
+                    return@getMapAsync // 첫 프레임에서는 여기서 종료하여 아래 중복 이동을 방지
                 }
 
                 // 트래킹 모드 설정 (현재 지도 모드와 위젯 상태가 다를 때만 업데이트)
@@ -1191,7 +1211,7 @@ fun RunningResultContent(
         ) {
             Column(modifier = Modifier.padding(16.dp)) { // 🔹 20dp -> 16dp
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    ResultItem("거리", "${String.format("%.2f", runningUiState.totalDistance / 1000)} km", Modifier.weight(1f))
+                    ResultItem("거리", DistanceMapper.formatDistance(runningUiState.totalDistance), Modifier.weight(1f))
                     ResultItem("시간", "${runningUiState.totalTime / 60}:${String.format("%02d", runningUiState.totalTime % 60)}", Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.height(16.dp)) // 🔹 24dp -> 16dp

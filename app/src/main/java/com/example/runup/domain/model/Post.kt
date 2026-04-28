@@ -12,8 +12,13 @@ data class Post(
     val commonImages: List<PostImage> = emptyList(),
     val runRecord: RunRecord? = null,
     val likes: Int = 0,
+    val likedBy: List<String> = emptyList(), // 🔹 좋아요 누른 유저 ID 리스트
+    val isLiked: Boolean = false,            // UI 판단용 (서버 저장 X)
     val commentCount: Int = 0,
     val comments: List<Comment> = emptyList(),
+    val commentedBy: List<String> = emptyList(),
+    val followCount: Int = 0,
+    val followedBy: List<String> = emptyList(),
     val timestamp: Long = 0L,
     val city: String = "",
     val district: String = "",
@@ -22,6 +27,7 @@ data class Post(
 
 data class Comment(
     val commentId: String = "",
+    val authorId: String = "",
     val authorName: String = "",
     val authorProfileUrlMini: String = "",
     val content: String = "",
@@ -40,3 +46,11 @@ enum class MarkerSlot {
     BOTTOM_LEFT,  // 225도
     TOP_LEFT      // 315도
 }
+
+data class UserActivityStats(
+    val userName: String = "",
+    val uploadPostIds: List<String> = emptyList(),
+    val likePostIds: List<String> = emptyList(),
+    val commentPostIds: List<String> = emptyList(),
+    val followPostIds: List<String> = emptyList()
+)

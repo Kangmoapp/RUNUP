@@ -16,5 +16,5 @@ enum class Screen {
     LOCALDB,
     MYPAGE,
     COMMUNITY_DETAIL,
-    SETTINGS
+    USER_POSTS
 }

@@ -8,6 +8,7 @@ import com.example.runup.data.source.remote.user.UserDataSource
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
+import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.repository.UserRepository
 import kotlinx.coroutines.flow.Flow
@@ -166,5 +167,47 @@ class UserRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             AuthResult.Fail(e.message ?: "로그인 상태 조회 실패")
         }
+    }
+
+    override suspend fun getUserActivityStats(uid: String): AuthResult<UserActivityStats>{
+        return userdatasource.getUserActivityStats(uid)
+    }
+
+
+
+    //----------------------------------------------------------------------------------------//
+    //친구 기능
+
+    // 1. ID로 사용자 검색
+    override suspend fun searchUserByEmail(searchId: String): AuthResult<UserData> {
+        return userdatasource.searchUserByEmail(searchId)
+    }
+
+    // 2. 친구 신청 보내기
+    override suspend fun sendFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return userdatasource.sendFriendRequest(targetUid)
+    }
+
+    // 3. 친구 신청 수락 (Transaction 처리 포함됨)
+    override suspend fun acceptFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return userdatasource.acceptFriendRequest(targetUid)
+    }
+
+    // 4. 친구 신청 거절 또는 보낸 신청 취소
+    override suspend fun declineFriendRequest(targetUid: String): AuthResult<Boolean> {
+        return userdatasource.declineFriendRequest(targetUid)
+    }
+
+    // 5. UID 리스트를 통한 사용자 요약 정보 일괄 획득
+    override suspend fun getUsersSummary(uidList: List<String>): AuthResult<List<UserData>> {
+        return userdatasource.getUsersSummary(uidList)
+    }
+
+    override suspend fun getFriendUids(): AuthResult<List<String>> {
+        return userdatasource.getFriendUids()
+    }
+
+    override suspend fun deleteFriend(targetUid: String): AuthResult<Boolean> {
+        return userdatasource.deleteFriend(targetUid)
     }
 }
