@@ -60,19 +60,9 @@ fun RunUpApp(
                 onMenuClick = {viewModel.openMenu()},
                 onBackClick = {viewModel.popBackStack()},
             )
-            /*
-            Screen.RUNNING -> RunningScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-            )
-
-             */
 
             Screen.COMMUNITY -> CommunityScreen(
                 onBackClick = { viewModel.popBackStack() },
-                onPostClick = { postId ->
-                    // 이제 "1"이 아니라 실제 클릭한 postId를 들고 갑니다.
-                    viewModel.navigateToDetail(postId)
-                },
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
                 },
@@ -91,11 +81,13 @@ fun RunUpApp(
             )
 
             Screen.LOADING -> LoadingScreen ()
-
+/*
             Screen.RECOMMEND -> CourseRecommendationScreen (
                 onBackClick = {viewModel.popBackStack()},
                 onMenuClick = {viewModel.openMenu()},
             )
+
+ */
             Screen.TEST -> TestScreen()
 
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})

@@ -99,9 +99,14 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
+import com.example.runup.ui.components.CategoryDialog
+import com.example.runup.ui.components.CourseInfoCard
+import com.example.runup.ui.components.LoopSelectionDialog
 import com.example.runup.ui.navigation.HomeUi
+import com.example.runup.ui.theme.Gray
 import com.example.runup.ui.util.calculateCalories
 import com.example.runup.ui.util.mapper.DistanceMapper
+import com.example.runup.viewmodel.CourseRecommendationUiState
 
 @Preview
 @Composable
@@ -110,6 +115,7 @@ private fun Preview_HomeContent() {
         homeUiState = HomeUiState(homeUi = HomeUi.HOME),
         runningUiState = RunningUiState(),
         guideUiState = GuideUiState(),
+        courseRecommendationUiState = CourseRecommendationUiState(),
         onMenuClick = {},
         onRunClick = {},
         stopRunningTracking = {},
@@ -133,6 +139,7 @@ fun HomeScreen(
     val homeUiState by viewModel.homeUiState.collectAsState()
     val runningUiState by viewModel.runningUiState.collectAsStateWithLifecycle()
     val guideUiState by viewModel.GuideUiState.collectAsState()
+    val courseRecommendationUiState by viewModel.courseRecommendationUiState.collectAsState()
     val timer by viewModel.loadingTimer.collectAsState()
 
     Box(
@@ -148,6 +155,7 @@ fun HomeScreen(
                 homeUiState = homeUiState,
                 runningUiState = runningUiState,
                 guideUiState = guideUiState,
+                courseRecommendationUiState = courseRecommendationUiState,
                 onMenuClick = onMenuClick,
                 onRunClick = {viewModel.onRunClick()},
                 stopRunningTracking = {viewModel.stopRunningTracking()},
@@ -178,6 +186,7 @@ private fun HomeContent(
     homeUiState: HomeUiState,
     runningUiState: RunningUiState,
     guideUiState: GuideUiState,
+    courseRecommendationUiState: CourseRecommendationUiState,
     onMenuClick:()->Unit,
     onRunClick:()->Unit,
     stopRunningTracking:()->Unit,
@@ -206,6 +215,7 @@ private fun HomeContent(
     // 러닝 완료 후 결과창 뜬 상태
     var isResultLocked by remember { mutableStateOf(false) }
 
+
     Surface(
         modifier = Modifier
             .fillMaxSize(),
@@ -221,10 +231,17 @@ private fun HomeContent(
                 homeUiState.currentLocation?.let { geoPoint ->
                     MapViewContainer(
                         cameraPosition = LatLng(geoPoint.latitude, geoPoint.longitude),
+                        recommendCameraLocation = courseRecommendationUiState.cameraLocation,
                         bearing = homeUiState.currentBearing,
                         homeUi = homeUiState.homeUi,
                         latLngList = runningUiState.latLngList,
+
                         guidePath = guideUiState.guidePath,
+                        recommendPath = courseRecommendationUiState.recommendedCourses
+                            .getOrNull(courseRecommendationUiState.courseIndex)
+                            ?.path?.points?.map { LatLng(it.latitude, it.longitude) } ?: emptyList(),
+                        selectedCoursePath = homeUiState.selectedRecommendCourse
+                            ?.path?.points?.map { LatLng(it.latitude, it.longitude) } ?: emptyList(),
                         destinationMarkerPos = guideUiState.destinationMarker,
                         guideDistance = guideUiState.guideDistance,
                         guideDuration = guideUiState.guideDuration,
@@ -291,6 +308,25 @@ private fun HomeContent(
                     modifier = Modifier
                         .padding(top = 20.dp)
                 )
+
+                if (homeUiState.homeUi == HomeUi.RECOMMEND) {
+                    val currentCourse = courseRecommendationUiState.recommendedCourses
+                        .getOrNull(courseRecommendationUiState.courseIndex)
+
+                    currentCourse?.let { course ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 18.dp, top = 12.dp), // 👈 왼쪽 여백 18dp로 주소창과 라인 맞춤
+                            contentAlignment = Alignment.TopStart // 👈 왼쪽 정렬!
+                        ) {
+                            CourseInfoCard(
+                                uiState = courseRecommendationUiState,
+                                course = course
+                            )
+                        }
+                    }
+                }
             }
             Column(
                 verticalArrangement = Arrangement.Bottom,
@@ -299,9 +335,16 @@ private fun HomeContent(
             ){
                 BottomSection(
                     selectedTab = homeUiState.selectedTab,
-                    onTabSelect = {
-                        viewModel.selectTab(it)
-                        sheetHeightPx = collapsedHeightPx },
+                    onTabSelect = { tab ->
+                        viewModel.selectTab(tab)
+
+                        // 🔹 탭에 따른 초기 시트 높이 결정
+                        val targetHeight = when(tab) {
+                            HomeTab.RECOMMEND -> with(density) { 140.dp.toPx() } // 추천 탭 전용 높이
+                            else -> collapsedHeightPx // 나머지는 기본 높이
+                        }
+                        sheetHeightPx = targetHeight
+                    },
                     homeUi = homeUiState.homeUi,
                     runningUiState = runningUiState,
                     sheetHeightPx = sheetHeightPx,
@@ -390,7 +433,129 @@ private fun HomeContent(
                             }
                         }
                         HomeTab.RECOMMEND -> {
-                            Text("추천 코스 리스트가 여기에 나타납니다.", color = Color.White, modifier = Modifier.padding(20.dp))
+                            val selectedCourse = homeUiState.selectedRecommendCourse
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 20.dp)
+                            ) {
+                                // ── 🔹 상황 1: 아직 코스 추천을 받지 않은 상태 (설정 화면) ── 📍
+                                if (selectedCourse == null && !courseRecommendationUiState.isRecommendClick) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                        Text(
+                                            text = "나에게 맞는 코스 찾기",
+                                            color = WhiteTextColor,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Column(modifier = Modifier.clickable { viewModel.openRecommendDistanceDialog() }) {
+                                                Text("목표 거리", color = Gray, fontSize = 11.sp)
+                                                Text("${courseRecommendationUiState.goalDistance / 1000.0}km", color = PointColor, fontWeight = FontWeight.Bold)
+                                            }
+                                            Column(modifier = Modifier.clickable { viewModel.openRecommendLoopDialog() }) {
+                                                Text("계산 방법", color = Gray, fontSize = 11.sp)
+                                                Text(if(courseRecommendationUiState.isLoop) "왕복" else "편도", color = PointColor, fontWeight = FontWeight.Bold)
+                                            }
+                                            Column(modifier = Modifier.clickable { viewModel.openRecommendSortDialog() }) {
+                                                Text("정렬 기준", color = Gray, fontSize = 11.sp)
+                                                Text(courseRecommendationUiState.currentSort.label, color = PointColor, fontWeight = FontWeight.Bold)
+                                            }
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            ControlButton(
+                                                text = if(courseRecommendationUiState.isLoading) "찾는 중.." else "코스 추천",
+                                                color = PointColor
+                                            ) { viewModel.onSearchClick() }
+                                        }
+                                    }
+                                }
+
+                                // ── 🔹 상황 2: 코스 추천 결과가 나온 상태 (브라우징/선택 대기) ── 📍
+                                else if (selectedCourse == null && courseRecommendationUiState.isRecommendClick) {
+                                    val currentCourse = courseRecommendationUiState.recommendedCourses.getOrNull(courseRecommendationUiState.courseIndex)
+
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "다시 설정",
+                                                color = Gray,
+                                                modifier = Modifier.clickable { viewModel.clearRecommendation() }
+                                            )
+
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                ControlButton("이전", Color.DarkGray) { viewModel.subtractRecommendCourseIndex() }
+                                                ControlButton("다음", Color.DarkGray) { viewModel.addRecommendCourseIndex() }
+                                                ControlButton("선택", PointColor) {
+                                                    currentCourse?.let { viewModel.selectRecommendCourse(it) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 🔹 상황 3: 코스를 최종 선택한 후 (제어 모드) ── 📍
+                                // 윤석님이 말씀하신 대로 가장 마지막(밑)에 배치했습니다!
+                                else if (selectedCourse != null) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Text(
+                                            text = "준비된 코스: ${selectedCourse.originCourse.id}",
+                                            color = PointColor,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween, // 공간을 더 넓게 활용
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                // ── 🔹 [핵심] 길 안내 중인지에 따라 버튼 이름과 기능 변경 ── 📍
+                                                if (guideUiState.isGuiding) {
+                                                    ControlButton(text = "안내 종료", color = Color.Red) {
+                                                        // 파란색 안내선만 제거하고, 코스(노란색)는 그대로 유지!
+                                                        viewModel.clearNavigation()
+                                                    }
+                                                } else {
+                                                    ControlButton(text = "경로 안내", color = PointColor) {
+                                                        // 시작점까지의 파란색 안내선 생성
+                                                        val firstPoint = selectedCourse.path.points.first()
+                                                        viewModel.startNavigation(LatLng(firstPoint.latitude, firstPoint.longitude))
+                                                    }
+                                                }
+
+                                                // 따라가기 버튼
+                                                val trackingText = if (guideUiState.isTrackingMode) "추적 중" else "따라가기"
+                                                ControlButton(text = trackingText, color = Color.DarkGray) {
+                                                    viewModel.toggleTrackingMode()
+                                                }
+                                            }
+
+                                            // [코스 취소]: 코스(노란색) 자체를 아예 지도에서 지우고 초기화
+                                            Text(
+                                                text = "코스 취소",
+                                                color = Gray,
+                                                fontSize = 13.sp,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        viewModel.clearSelectedCourse()
+                                                        sheetHeightPx = collapsedHeightPx
+                                                    }
+                                                    .padding(8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                         HomeTab.COURSE -> {
                             Row(
@@ -469,6 +634,33 @@ private fun HomeContent(
                 onDismiss = onPaceClose
             )
         }
+
+        // 2. [추가] 코스 추천 전용 설정 다이얼로그들 🚀
+        if (courseRecommendationUiState.showDistanceDialog) {
+            DistanceGoalSettingDialog(
+                range = 0..100,
+                startNumber = (courseRecommendationUiState.goalDistance / 100 + 1),
+                onConfirm = { viewModel.confirmRecommendDistance(it) }, // 추천 전용 함수 호출
+                onDismiss = { viewModel.closeRecommendDistanceDialog() }
+            )
+        }
+
+        if (courseRecommendationUiState.showSortDialog) {
+            CategoryDialog(
+                currentSort = courseRecommendationUiState.currentSort,
+                onConfirm = { viewModel.confirmRecommendSort(it) },
+                onDismiss = { viewModel.closeRecommendSortDialog() }
+            )
+        }
+
+        if (courseRecommendationUiState.showLoop) {
+            // 왕복/편도 선택 다이얼로그 (간단하게 AlertDialog 등으로 구현 가능)
+            LoopSelectionDialog(
+                isLoop = courseRecommendationUiState.isLoop,
+                onSelect = { viewModel.selectRecommendLoop(it) },
+                onDismiss = { viewModel.closeRecommendLoopDialog() }
+            )
+        }
     }
 }
 
@@ -492,21 +684,15 @@ private fun BottomSection(
     // 바텀 시트 높이
     val hiddenHeightPx = with(density) { 60.dp.toPx() } // 시트가 아예 내려가 있는 상태 (처음)
     val collapsedHeightPx = with(density) { 100.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
+    val recommendTabHeightPx = with(density) { 140.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
     val expandedHeightPx = with(density) { 550.dp.toPx() }  // 최대로 올렸을 때 높이
 
     val animatedHeight by animateDpAsState(targetValue = with(density) { sheetHeightPx.toDp() })
     // 최대 바텀 시트 높이
-    val maxAllowedHeight = when {
-        // 러닝 탭이면서 결과창을 보여줘야 할 때 (러닝 종료 후)
-        selectedTab == HomeTab.RUNNING && (homeUi == HomeUi.HOME) && runningUiState.totalDistance > 0 -> expandedHeightPx
-
-        // 코스 탭
-        selectedTab == HomeTab.COURSE -> expandedHeightPx
-
-        // 추천 탭
-        selectedTab == HomeTab.RECOMMEND -> expandedHeightPx
-
-        // 그 외 기본 상태
+    val maxAllowedHeight = when (selectedTab) {
+        HomeTab.RECOMMEND -> recommendTabHeightPx // 추천 탭은 설정/결과/안내 모두 이 높이 유지
+        HomeTab.COURSE -> expandedHeightPx
+        HomeTab.RUNNING -> if (homeUi == HomeUi.HOME && runningUiState.totalDistance > 0) expandedHeightPx else collapsedHeightPx
         else -> collapsedHeightPx
     }
 
@@ -581,9 +767,18 @@ private fun BottomSection(
                             val finalHeight = when {
                                 (selectedTab == HomeTab.COURSE || selectedTab == HomeTab.RECOMMEND) &&
                                         sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
+
+                                // 2. 추천 탭에서 기본 높이 유지 (170dp 근처일 때) 🚀
+                                selectedTab == HomeTab.RECOMMEND &&
+                                        sheetHeightPx > (collapsedHeightPx + recommendTabHeightPx) / 2 -> recommendTabHeightPx
+
                                 selectedTab == HomeTab.RUNNING && (homeUi == HomeUi.HOME) && runningUiState.totalDistance > 0 &&
                                         sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
+
+                                // 일반 접힘 상태
                                 sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
+
+                                // 아예 숨김 상태
                                 else -> hiddenHeightPx
                             }
                             onHeightChange(finalHeight)
@@ -647,7 +842,7 @@ private fun BottomSection(
                             .clickable {
                                 if (!isResultLocked) { // 👈 평가 중에는 탭 클릭 무시
                                     onTabSelect(tab)
-                                    onHeightChange(collapsedHeightPx)
+                                    //onHeightChange(collapsedHeightPx)
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -768,11 +963,15 @@ private fun InfoBtn(
 @Composable
 private fun MapViewContainer(
     cameraPosition:LatLng,
+    recommendCameraLocation: LatLng?,
     bearing: Float = 0.0f, // 추가
     homeUi: HomeUi = HomeUi.RUN,
-    latLngList: List<LatLng> = emptyList(),   // 지금까지 이동 경로
-    guidePath: List<LatLng> = emptyList(),    // 🔹 추가: 안내할 경로
+    latLngList: List<LatLng> = emptyList(),   // 지금까지 나의 러닝 경로 (러닝 모드)
+    guidePath: List<LatLng> = emptyList(),    // 코스 시작점까지의 안내 경로
+    recommendPath: List<LatLng> = emptyList(), // 추천된 코스 경로 (추천 모드)
+    selectedCoursePath: List<LatLng> = emptyList(),
     destinationMarkerPos: LatLng? = null,     // 🔹 추가: 목적지 마커
+
     guideDistance: Int = 0,    // 🔹 추가: 미터 단위 거리
     guideDuration: Long = 0L,  // 🔹 추가: 밀리초 단위 시간
     isTrackingMode: Boolean = false,
@@ -806,6 +1005,30 @@ private fun MapViewContainer(
 
     val marker = remember { Marker() }
 
+    // ── 🔹 추천 코스 전용 오버레이 설정 ── 📍
+    val recommendPathOverlay = remember {
+        PathOverlay().apply {
+            color = Color.Cyan.toArgb() // 추천 코스는 하늘색으로 구분
+            outlineColor = Color.Black.toArgb()
+            width = with(density) { 8.dp.toPx() }.toInt()
+            outlineWidth = with(density) { 2.dp.toPx() }.toInt()
+
+            // 화살표 패턴 추가
+            patternImage = OverlayImage.fromResource(R.drawable.arrow_path)
+            patternInterval = with(density) { 20.dp.toPx() }.toInt()
+        }
+    }
+
+    // ── 🔹 최종 선택된 코스 전용 오버레이 추가 ── 📍
+    val selectedPathOverlay = remember {
+        PathOverlay().apply {
+            color = Color.Yellow.toArgb() // 선택된 코스는 우리 앱의 포인트 컬러인 노란색으로! 💛
+            outlineColor = Color.Black.toArgb()
+            width = with(density) { 10.dp.toPx() }.toInt()
+            patternImage = OverlayImage.fromResource(R.drawable.arrow_path)
+        }
+    }
+
     // 🔹 안내 경로용 오버레이 (새로 추가)
     val guidePathOverlay = remember {
         PathOverlay().apply {
@@ -832,7 +1055,6 @@ private fun MapViewContainer(
                 captionRequestedWidth = 100.dp.toPx().toInt()
             }
             captionTextSize = 14f
-            // ... 나머지 설정
         }
     }
 
@@ -939,35 +1161,78 @@ private fun MapViewContainer(
                 }
 
                 if (isTrackingMode) {
-                    // 🔹 따라가기 모드일 때는 아래의 수동 카메라 이동(moveCamera)을 건너뜁니다.
+                    // 🔹 따라가기 모드일 때는 시스템이 위치를 추적하므로 수동 이동 건너뜀
                     naverMap.locationOverlay.isVisible = true
                 } else {
-                    // 🔹 따라가기 모드가 아닐 때만 우리가 넘겨준 좌표로 직접 설정합니다.
+                    // 🔹 따라가기 모드가 아닐 때: 내 위치 오버레이 수동 설정
                     naverMap.locationOverlay.apply {
                         isVisible = true
-                        position = cameraPosition // 수동 좌표 주입
-                        setBearing(bearing)         // 수동 방향 주입
-
-                        // 아이콘 설정
+                        position = cameraPosition
+                        setBearing(bearing)
                         subIcon = OverlayImage.fromResource(com.naver.maps.map.R.drawable.navermap_default_location_overlay_sub_icon_arrow)
-                        iconWidth = LocationOverlay.SIZE_AUTO
-                        iconHeight = LocationOverlay.SIZE_AUTO
-                        subIconWidth = LocationOverlay.SIZE_AUTO
-                        subIconHeight = LocationOverlay.SIZE_AUTO
                     }
 
-                    if (guidePath.size >= 2) { // 목적지 안내 모드
-                        val bounds = LatLngBounds.Builder().apply {
-                            guidePath.forEach { include(it) }
-                        }.build()
-                        naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
-                    } else if (homeUi == HomeUi.HOME) { // 목적지 안내 모드 아니면서 달리는 중 아닐때
-                        naverMap.moveCamera(
-                            CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
-                                .animate(CameraAnimation.Easing, 1200)
-                        )
+                    // ── 🔹 카메라 이동 우선순위 결정 ── 📍
+                    when {
+                        // 1순위: 경로 안내(내비게이션) 중일 때 (시작점까지 찾아가는 중)
+                        guidePath.size >= 2 -> {
+                            val bounds = LatLngBounds.Builder().apply {
+                                guidePath.forEach { include(it) }
+                            }.build()
+                            naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
+                        }
+
+                        //
+                        // 2순위: homeUi가 HOME이더라도 selectedRecommendCourse가 있으면 코스를 우선적으로 비춤
+                        selectedCoursePath.size >= 2 -> { // ── 🔹 리스트가 비어있지 않은지 확인 📍
+                            val boundsBuilder = LatLngBounds.Builder()
+
+                            // 1. 현재 내 위치 포함
+                            boundsBuilder.include(cameraPosition)
+
+                            // 2. ── 🔹 넘겨받은 리스트(selectedCoursePath)를 직접 순회 ── 📍
+                            selectedCoursePath.forEach { latLng ->
+                                boundsBuilder.include(latLng)
+                            }
+
+                            try {
+                                val bounds = boundsBuilder.build()
+                                // 3. 모든 지점이 포함되도록 카메라 업데이트 생성
+                                // Padding 200: 왼쪽 상단 카드에 가려지지 않게 넉넉히 여백 부여
+                                val cameraUpdate = CameraUpdate.fitBounds(bounds, 200)
+                                    .animate(CameraAnimation.Easing, 1000)
+
+                                naverMap.moveCamera(cameraUpdate)
+                            } catch (e: Exception) {
+                                // 혹시 모를 에러 발생 시 리스트의 첫 번째 좌표로 이동하는 방어 로직
+                                val fallbackTarget = selectedCoursePath.first()
+                                naverMap.moveCamera(
+                                    CameraUpdate.toCameraPosition(CameraPosition(fallbackTarget, 15.5))
+                                        .animate(CameraAnimation.Easing, 1000)
+                                )
+                            }
+                        }
+
+                        // 3순위: 코스 추천 브라우징 모드일 때 (이전/다음 버튼 누르며 구경 중)
+                        homeUi == HomeUi.RECOMMEND && recommendCameraLocation != null -> {
+                            naverMap.moveCamera(
+                                CameraUpdate.toCameraPosition(CameraPosition(recommendCameraLocation, 16.0))
+                                    .animate(CameraAnimation.Easing, 1000)
+                            )
+                        }
+
+                        // 4순위: 일반 홈 화면 (찜한 코스도 없고, 구경 중도 아닐 때 -> 나를 비춤)
+                        homeUi == HomeUi.HOME -> {
+                            naverMap.moveCamera(
+                                CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
+                                    .animate(CameraAnimation.Easing, 1200)
+                            )
+                        }
                     }
                 }
+
+
+                // 코스 그리는 부분 (내 러닝 코스, 경로 코스, 추천 코스)
 
                 if (latLngList.size >= 2) {
                     polyline.coords = latLngList
@@ -1011,6 +1276,21 @@ private fun MapViewContainer(
                     destMarker.captionText = "목적지"
                 } ?: run {
                     destMarker.map = null
+                }
+
+                // ── 🔹 추천 경로(Path) 그리기 로직 ── 📍
+                if (homeUi == HomeUi.RECOMMEND && recommendPath.size >= 2) {
+                    recommendPathOverlay.coords = recommendPath
+                    recommendPathOverlay.map = naverMap
+                } else {
+                    recommendPathOverlay.map = null
+                }
+
+                if (selectedCoursePath.size >= 2) {
+                    selectedPathOverlay.coords = selectedCoursePath
+                    selectedPathOverlay.map = naverMap
+                } else {
+                    selectedPathOverlay.map = null
                 }
             }
         }

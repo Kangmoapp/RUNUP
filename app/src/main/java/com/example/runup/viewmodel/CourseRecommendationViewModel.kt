@@ -1,5 +1,5 @@
 package com.example.runup.viewmodel
-
+/*
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -266,4 +266,4 @@ class CourseRecommendationViewModel @Inject constructor(
         else
             updateState{it.copy(courseIndex = _recommendUiState.value.recommendedCourses.size-1)}
     }
-}
+}*/

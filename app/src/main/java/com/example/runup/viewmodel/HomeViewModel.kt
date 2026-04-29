@@ -57,6 +57,7 @@ data class HomeUiState(
     val homeUi: HomeUi = HomeUi.HOME,
     val selectedTab: HomeTab = HomeTab.RUNNING,
     val isInitialLoading: Boolean = true,
+    val selectedRecommendCourse: CourseRecommendation? = null,
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
@@ -83,7 +84,6 @@ data class RunningUiState(
 data class CourseRecommendationUiState(
     val goalDistance: Int = 0,
     val cameraLocation: LatLng? = null,
-    val currentLocation: LatLng? = null,
     val currentSort: SortType = SortType.DISTANCE,
     val isLoop: Boolean = true,
     val showLoop: Boolean = false,
@@ -100,7 +100,6 @@ enum class HomeTab { RUNNING, RECOMMEND, COURSE }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val saveCourseUseCase: SaveCourseUseCase,
     private val recordRunningUseCase: RecordRunningUseCase,
 
     private val goalsettingUseCase: GoalSettingUseCase,
@@ -121,8 +120,8 @@ class HomeViewModel @Inject constructor(
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
 
-    private val _recommendUiState = MutableStateFlow(CourseRecommendationUiState())
-    val recommendUiState: StateFlow<CourseRecommendationUiState> = _recommendUiState
+    private val _courseRecommendationUiState = MutableStateFlow(CourseRecommendationUiState())
+    val courseRecommendationUiState: StateFlow<CourseRecommendationUiState> = _courseRecommendationUiState
 
     private val _isTracking = MutableStateFlow(false)
 
@@ -373,7 +372,7 @@ class HomeViewModel @Inject constructor(
             locationRepository.startTimer()
             startRunningTracking()
         }
-
+    }
     // 러닝 최종 저장 혹은 취소 시 서비스 종료 📍
     private fun stopForegroundService() {
         val intent = Intent(context, LocationService::class.java).apply {
@@ -474,6 +473,10 @@ class HomeViewModel @Inject constructor(
 
     fun selectTab(tab: HomeTab) {
         _homeUiState.update { it.copy(selectedTab = tab) }
+
+        if (tab != HomeTab.RECOMMEND) {
+            clearRecommendation()
+        }
     }
 
     // HomeViewModel.kt 내부
@@ -548,5 +551,186 @@ class HomeViewModel @Inject constructor(
     // 코스추천 로직
     // =====================================
 
+    fun onSearchClick() {
+        if(_courseRecommendationUiState.value.isRecommendClick){
 
+        }
+        else{
+            updateRecommendState {
+                it.copy(
+                    isLoading = true
+                )
+            }
+
+            val location = _homeUiState.value.currentLocation ?: run {
+                Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
+                return
+            }
+            viewModelScope.launch {
+                val result = getRecommendedCourseUseCase.invoke(
+                    _courseRecommendationUiState.value.goalDistance,
+                    // GeoPoint(location.latitude, location.longitude),
+                    location,
+                    _courseRecommendationUiState.value.isLoop,
+                    _courseRecommendationUiState.value.currentSort,
+                    3
+                )
+
+                when (result) {
+                    is AuthResult.Success -> {
+                        Log.d("RUNUP_TEST", "총 추천 개수: ${result.data.size}")
+
+                        updateRecommendState {
+                            it.copy(
+                                recommendedCourses = result.data,
+                                courseIndex = 0
+                            )
+                        }
+                        // ── 🔹 [추가] 검색 성공 시 메인 화면 모드를 RECOMMEND로 전환 ── 📍
+                        _homeUiState.update { it.copy(homeUi = HomeUi.RECOMMEND) }
+
+                        Log.d("RUNUP_TEST", "추천 코스 목록: ${_courseRecommendationUiState.value.recommendedCourses}")
+
+                        result.data.forEachIndexed { i, item ->
+                            Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
+                            Log.d(
+                                "RUNUP_TEST",
+                                "    -> 거리: ${item.path.distance}m | 좌표수: ${item.path.points.size} | 중심: ${item.path.centerPoint}"
+                            )
+
+                            item.path.points.firstOrNull()?.let {
+                                Log.d("RUNUP_TEST", "    -> 시작점 체크: ${it.latitude}, ${it.longitude}")
+                            }
+                        }
+
+                        delay(1500)
+                        updateRecommendState {
+                            it.copy(
+                                isRecommendClick = true,
+                                isLoading = false
+                            )
+                        }
+                    }
+
+                    is AuthResult.Fail -> {
+                        Log.e("RUNUP_TEST", "에러 발생: ${result.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    fun selectRecommendCourse(course: CourseRecommendation) {
+        _homeUiState.update { it.copy(
+            selectedRecommendCourse = course,
+            homeUi = HomeUi.HOME // 👈 선택 완료 후 메인 홈 화면으로 복귀
+        ) }
+
+        // 추천 브라우징 상태(이전/다음 보던 것) 정리
+        clearRecommendation()
+    }
+
+    // ── 🔹 [추가] 만약 선택한 코스를 취소하고 싶을 때를 대비 📍
+    fun clearSelectedCourse() {
+        _homeUiState.update { it.copy(selectedRecommendCourse = null) }
+        clearNavigation() // 코스를 안 볼 거면 길 안내도 당연히 종료
+    }
+
+    private fun updateRecommendState(
+        transform: (CourseRecommendationUiState) -> CourseRecommendationUiState
+    ) {
+        _courseRecommendationUiState.update { state ->
+            val newState = transform(state)
+            newState.copy(
+                cameraLocation = resolveRecommendCameraLocation(newState)
+            )
+        }
+    }
+
+    private fun resolveRecommendCameraLocation(state: CourseRecommendationUiState): LatLng? {
+        return if (state.isRecommendClick) {
+            // 코스를 선택(클릭)한 상태라면 해당 코스의 중심점을 반환
+            state.recommendedCourses.getOrNull(state.courseIndex)?.path?.centerPoint?.let {
+                LatLng(it.latitude, it.longitude)
+            }
+        } else {
+            // 그 외에는 현재 내 위치를 반환
+            _homeUiState.value.currentLocation?.let { LatLng(it.latitude, it.longitude) }
+        }
+    }
+
+    // 추천 코스 인덱스 조절 (이전/다음)
+    fun addRecommendCourseIndex() {
+        val size = _courseRecommendationUiState.value.recommendedCourses.size
+        if (size == 0) return
+        updateRecommendState {
+            it.copy(courseIndex = (it.courseIndex + 1) % size)
+        }
+    }
+
+    fun subtractRecommendCourseIndex() {
+        val size = _courseRecommendationUiState.value.recommendedCourses.size
+        if (size == 0) return
+        updateRecommendState {
+            val newIdx = if (it.courseIndex - 1 < 0) size - 1 else it.courseIndex - 1
+            it.copy(courseIndex = newIdx)
+        }
+    }
+
+    fun clearRecommendation() {
+        updateRecommendState {
+            it.copy(
+                isRecommendClick = false,
+                recommendedCourses = emptyList(),
+                courseIndex = 0
+            )
+        }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
+    }
+
+    fun openRecommendLoopDialog() {
+        updateRecommendState { it.copy(showLoop = true) }
+    }
+
+    fun closeRecommendLoopDialog() {
+        updateRecommendState { it.copy(showLoop = false) }
+    }
+
+    fun selectRecommendLoop(isFirst: Boolean = true) {
+        if (isFirst) {
+            updateRecommendState { it.copy(showLoop = false) }
+        } else {
+            updateRecommendState {
+                it.copy(isLoop = !it.isLoop, showLoop = false)
+            }
+        }
+    }
+    fun openRecommendSortDialog() {
+        updateRecommendState { it.copy(showSortDialog = true) }
+    }
+
+    fun closeRecommendSortDialog() {
+        updateRecommendState { it.copy(showSortDialog = false) }
+    }
+
+    fun openRecommendDistanceDialog() {
+        updateRecommendState { it.copy(showDistanceDialog = true) }
+    }
+
+    fun closeRecommendDistanceDialog() {
+        updateRecommendState { it.copy(showDistanceDialog = false) }
+    }
+
+    fun confirmRecommendDistance(distanceKm: Int) {
+        val distanceMeter = distanceKm * 100
+        updateRecommendState {
+            it.copy(showDistanceDialog = false, goalDistance = distanceMeter)
+        }
+    }
+
+    fun confirmRecommendSort(sortType: SortType) {
+        updateRecommendState {
+            it.copy(showSortDialog = false, currentSort = sortType)
+        }
+    }
 }
