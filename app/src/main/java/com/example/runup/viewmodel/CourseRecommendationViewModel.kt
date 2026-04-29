@@ -9,7 +9,7 @@ import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
-import com.google.android.gms.maps.model.LatLng
+import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class CourseRecommendationUiState(
+data class aCourseRecommendationUiState(
     val goalDistance: Int = 0,
     val cameraLocation: LatLng? = null,
     val currentLocation: LatLng? = null,
@@ -42,8 +42,8 @@ class CourseRecommendationViewModel @Inject constructor(
     private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(CourseRecommendationUiState())
-    val uiState: StateFlow<CourseRecommendationUiState> = _uiState
+    private val _recommendUiState = MutableStateFlow(CourseRecommendationUiState())
+    val recommendUiState: StateFlow<CourseRecommendationUiState> = _recommendUiState
 
     init {
         loadUserGoal()
@@ -68,7 +68,7 @@ class CourseRecommendationViewModel @Inject constructor(
     private fun updateState(
         transform: (CourseRecommendationUiState) -> CourseRecommendationUiState
     ) {
-        _uiState.update { state ->
+        _recommendUiState.update { state ->
             val newState = transform(state)
             newState.copy(
                 cameraLocation = resolveCameraLocation(newState)
@@ -113,11 +113,11 @@ class CourseRecommendationViewModel @Inject constructor(
     }
 
     fun resetUiState() {
-        _uiState.value = CourseRecommendationUiState()
+        _recommendUiState.value = CourseRecommendationUiState()
     }
 
     fun onSearchClick() {
-        if(_uiState.value.isRecommendClick){
+        if(_recommendUiState.value.isRecommendClick){
 
         }
         else{
@@ -127,17 +127,17 @@ class CourseRecommendationViewModel @Inject constructor(
                 )
             }
 
-            val location = _uiState.value.currentLocation ?: run {
+            val location = _recommendUiState.value.currentLocation ?: run {
                 Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
                 return
             }
             viewModelScope.launch {
                 val result = getRecommendedCourseUseCase.invoke(
-                    _uiState.value.goalDistance,
+                    _recommendUiState.value.goalDistance,
                     // GeoPoint(location.latitude, location.longitude),
                     GeoPoint(35.88948381055103, 128.6095353131536),
-                    _uiState.value.isLoop,
-                    _uiState.value.currentSort,
+                    _recommendUiState.value.isLoop,
+                    _recommendUiState.value.currentSort,
                     3
                 )
 
@@ -152,7 +152,7 @@ class CourseRecommendationViewModel @Inject constructor(
                             )
                         }
 
-                        Log.d("RUNUP_TEST", "추천 코스 목록: ${_uiState.value.recommendedCourses}")
+                        Log.d("RUNUP_TEST", "추천 코스 목록: ${_recommendUiState.value.recommendedCourses}")
 
                         result.data.forEachIndexed { i, item ->
                             Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
@@ -254,16 +254,16 @@ class CourseRecommendationViewModel @Inject constructor(
     }
 
     fun addIndex(){
-        if(_uiState.value.courseIndex < (_uiState.value.recommendedCourses.size-1))
-            updateState{it.copy(courseIndex = _uiState.value.courseIndex+1)}
+        if(_recommendUiState.value.courseIndex < (_recommendUiState.value.recommendedCourses.size-1))
+            updateState{it.copy(courseIndex = _recommendUiState.value.courseIndex+1)}
         else
             updateState{it.copy(courseIndex = 0)}
     }
 
     fun subtractIndex(){
-        if(_uiState.value.courseIndex >0)
-            updateState{it.copy(courseIndex = _uiState.value.courseIndex-1)}
+        if(_recommendUiState.value.courseIndex >0)
+            updateState{it.copy(courseIndex = _recommendUiState.value.courseIndex-1)}
         else
-            updateState{it.copy(courseIndex = _uiState.value.recommendedCourses.size-1)}
+            updateState{it.copy(courseIndex = _recommendUiState.value.recommendedCourses.size-1)}
     }
 }

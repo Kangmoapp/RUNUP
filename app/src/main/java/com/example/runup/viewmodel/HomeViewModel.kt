@@ -10,8 +10,11 @@ import com.example.runup.BuildConfig
 import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.Scores
+import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.RecordRunningUseCase
@@ -24,6 +27,7 @@ import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TMapApiService
 import com.example.runup.service.TMapRouteRequest
 import com.example.runup.service.TtsManager
+import com.example.runup.ui.navigation.HomeUi
 import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,7 +54,7 @@ data class HomeUiState(
     val isLoading:Boolean = false,
     val showDistanceDialog: Boolean = false,
     val showPaceDialog: Boolean = false,
-    val isRunning:Boolean = false,
+    val homeUi: HomeUi = HomeUi.HOME,
     val selectedTab: HomeTab = HomeTab.RUNNING,
     val isInitialLoading: Boolean = true,
 
@@ -76,6 +80,22 @@ data class RunningUiState(
     val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
 )
 
+data class CourseRecommendationUiState(
+    val goalDistance: Int = 0,
+    val cameraLocation: LatLng? = null,
+    val currentLocation: LatLng? = null,
+    val currentSort: SortType = SortType.DISTANCE,
+    val isLoop: Boolean = true,
+    val showLoop: Boolean = false,
+    val showDistanceDialog: Boolean = false,
+    val showSortDialog: Boolean = false,
+    val isRecommendClick: Boolean = false,
+    val recommendedCourses: List<CourseRecommendation> = emptyList(),
+    val courseIndex: Int = 0,
+    val isLoading:Boolean = false
+)
+
+
 enum class HomeTab { RUNNING, RECOMMEND, COURSE }
 
 @HiltViewModel
@@ -94,11 +114,15 @@ class HomeViewModel @Inject constructor(
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
     private val userPreferenceDataSource: UserPreferenceDataSource,
-    @ApplicationContext private val context: Context,
+    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
 
-    ): ViewModel(){
+    @ApplicationContext private val context: Context,
+): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
+
+    private val _recommendUiState = MutableStateFlow(CourseRecommendationUiState())
+    val recommendUiState: StateFlow<CourseRecommendationUiState> = _recommendUiState
 
     private val _isTracking = MutableStateFlow(false)
 
@@ -283,7 +307,30 @@ class HomeViewModel @Inject constructor(
 
             // 자세가 바뀌었고, 확률이 70% 이상일 때 음성 알림
             if (posture != lastInferenceResult && probability > 0.7f) {
-                ttsManager.speakOut("$posture 입니다")
+                val message = when(posture) {
+                    // --- [러닝 중 경고 멘트] ---
+                    "과도한 뒤꿈치 착지" -> "뒤꿈치 충격이 큽니다. 발바닥 전체로 착지해 보세요."
+                    "오버스트라이드" -> "보폭이 너무 깁니다. 몸의 중심 아래로 발을 딛어보세요."
+                    "케이던스 부족" -> "발구름이 느립니다. 보폭을 조금 줄이고, 리듬을 더 빠르게 가져가 보세요."
+                    "전족부 착지" -> "발 앞꿈치로만 착지하고 있습니다. 종아리에 무리가 갈 수 있으니 발바닥 전체를 사용해 보세요."
+                    "지친 상태의 러닝" -> "자세가 흐트러지고 있습니다. 어깨에 힘을 빼고 시선을 멀리 보세요."
+
+                    // --- [보행 및 일상 경고 멘트] ---
+                    "왼쪽 짝다리" -> "왼쪽 발에 체중이 쏠려 있습니다. 양발에 체중을 고르게 분산시켜 보세요."
+                    "오른쪽 짝다리" -> "오른쪽 발에 체중이 쏠려 있습니다. 골반의 균형을 맞춰보세요."
+                    "팔자 걸음" -> "팔자걸음이 감지되었습니다. 발끝이 정면을 향하도록 11자로 걸어보세요."
+                    "내회전" -> "발목이 안쪽으로 무너지고 있습니다. 발의 아치를 세운다는 느낌으로 걸어보세요."
+                    "외회전" -> "발목이 바깥쪽으로 꺾여 있습니다. 발바닥 안쪽에도 힘을 실어보세요."
+
+                    // --- [정상 상태 (필요시 사용, 보통은 쿨타임 로직에서 미리 걸러짐)] ---
+                    "정지" -> "올바른 정지 자세입니다."
+                    "걷기" -> "올바른 보행 자세입니다."
+                    "뛰기" -> "좋은 자세를 유지하고 있습니다. 페이스를 유지하세요."
+
+                    // 매칭되는 라벨이 없을 경우 기본값
+                    else -> posture
+                }
+                ttsManager.speakOut(message)
                 lastInferenceResult = posture
             }
         }
@@ -304,7 +351,7 @@ class HomeViewModel @Inject constructor(
                 _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
 
@@ -314,9 +361,7 @@ class HomeViewModel @Inject constructor(
 
     fun onRunClick() {
         viewModelScope.launch {
-            _homeUiState.update { it.copy(isLoading = true, isRunning = true) }
-
-
+            _homeUiState.update { it.copy(isLoading = true, homeUi = HomeUi.RUN) }
             for (i in 3 downTo 1) {
                 _loadingTimer.value = i
                 delay(1000)
@@ -328,7 +373,6 @@ class HomeViewModel @Inject constructor(
             locationRepository.startTimer()
             startRunningTracking()
         }
-    }
 
     // 러닝 최종 저장 혹은 취소 시 서비스 종료 📍
     private fun stopForegroundService() {
@@ -413,7 +457,7 @@ class HomeViewModel @Inject constructor(
             }
         }
         stopForegroundService()
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun cancelRunningCourse() {
@@ -425,7 +469,7 @@ class HomeViewModel @Inject constructor(
 
         // 3. UI 상태를 러닝 종료로 변경
         stopForegroundService()
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun selectTab(tab: HomeTab) {
@@ -499,4 +543,10 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
+
+    // =====================================
+    // 코스추천 로직
+    // =====================================
+
+
 }

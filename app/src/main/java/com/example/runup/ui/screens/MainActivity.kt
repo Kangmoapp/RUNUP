@@ -47,28 +47,18 @@ fun RunUpApp(
 ) {
     val currentScreen by viewModel.currentScreen.collectAsState()
     val isSplashLoading by viewModel.isSplashLoading.collectAsState()
+    val isMenuVisible by viewModel.isMenuVisible.collectAsState()
     Box(modifier = Modifier.fillMaxSize()){
         when (currentScreen) {
             Screen.START -> StartScreen (
                 onHomeClick = { viewModel.DelayToHome(Screen.HOME) },
             )
             Screen.HOME -> HomeScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
             )
             Screen.GOALSETTING -> GoalSettingScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
                 onBackClick = {viewModel.popBackStack()},
-            )
-            Screen.MENU -> MenuScreen (
-                onBackClick = {viewModel.popBackStack()},
-                onCorseClick = {viewModel.navigateTo(Screen.RECOMMEND)},
-                onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
-                onOptionClick= { },
-                onHelpClick= { },
-                onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
-                onMypageClick= {viewModel.navigateTo(Screen.MYPAGE)},
-                onLocalDBClick = { viewModel.navigateTo(Screen.LOCALDB)},
-                onLogoutClick = {viewModel.navigateTo(Screen.START)}
             )
             /*
             Screen.RUNNING -> RunningScreen(
@@ -104,7 +94,7 @@ fun RunUpApp(
 
             Screen.RECOMMEND -> CourseRecommendationScreen (
                 onBackClick = {viewModel.popBackStack()},
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
             )
             Screen.TEST -> TestScreen()
 
@@ -134,6 +124,22 @@ fun RunUpApp(
         }
         if(isSplashLoading){
             LoadingScreen()
+        }
+        if (isMenuVisible) {
+            MenuScreen(
+                onBackClick = { viewModel.closeMenu() },
+                onCorseClick = { viewModel.navigateFromMenu(Screen.RECOMMEND) },
+                onGoalClick = { viewModel.navigateFromMenu(Screen.GOALSETTING) },
+                onOptionClick = { },
+                onHelpClick = { },
+                onCommunityClick = { viewModel.navigateFromMenu(Screen.COMMUNITY) },
+                onMypageClick = { viewModel.navigateFromMenu(Screen.MYPAGE) },
+                onLocalDBClick = { viewModel.navigateFromMenu(Screen.LOCALDB) },
+                onLogoutClick = {
+                    viewModel.closeMenu()
+                    viewModel.logout()
+                }
+            )
         }
     }
 }
