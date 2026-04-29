@@ -39,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.layout.ModifierLocalBeyondBoundsLayout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -49,7 +48,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.DistanceGoalSettingDialog
-import com.example.runup.ui.components.MyGoogleMap
+import com.example.runup.ui.components.MyNaverMap
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.Gray
@@ -68,7 +67,7 @@ fun CourseRecommendationScreen(
     onMenuClick:()->Unit,
     viewModel: CourseRecommendationViewModel = hiltViewModel()
 ){
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.recommendUiState.collectAsState()
     CourseRecommendationContent(
         uiState = uiState,
         onDistanceClick = {viewModel.openDistanceDialog()},
@@ -151,7 +150,7 @@ private fun CourseRecommendationContent(
             ){
                 Box{
                     uiState.cameraLocation?.let { location ->
-                        MyGoogleMap(
+                        MyNaverMap(
                             cameraPosition = location,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(24.dp))

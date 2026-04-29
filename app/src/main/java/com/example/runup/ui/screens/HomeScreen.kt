@@ -99,6 +99,7 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
+import com.example.runup.ui.navigation.HomeUi
 import com.example.runup.ui.util.calculateCalories
 import com.example.runup.ui.util.mapper.DistanceMapper
 
@@ -106,7 +107,7 @@ import com.example.runup.ui.util.mapper.DistanceMapper
 @Composable
 private fun Preview_HomeContent() {
     HomeContent(
-        homeUiState = HomeUiState(isRunning = true),
+        homeUiState = HomeUiState(homeUi = HomeUi.HOME),
         runningUiState = RunningUiState(),
         guideUiState = GuideUiState(),
         onMenuClick = {},
@@ -221,7 +222,7 @@ private fun HomeContent(
                     MapViewContainer(
                         cameraPosition = LatLng(geoPoint.latitude, geoPoint.longitude),
                         bearing = homeUiState.currentBearing,
-                        isRunning = homeUiState.isRunning,
+                        homeUi = homeUiState.homeUi,
                         latLngList = runningUiState.latLngList,
                         guidePath = guideUiState.guidePath,
                         destinationMarkerPos = guideUiState.destinationMarker,
@@ -301,7 +302,7 @@ private fun HomeContent(
                     onTabSelect = {
                         viewModel.selectTab(it)
                         sheetHeightPx = collapsedHeightPx },
-                    isRunning = homeUiState.isRunning,
+                    homeUi = homeUiState.homeUi,
                     runningUiState = runningUiState,
                     sheetHeightPx = sheetHeightPx,
                     onHeightChange = { sheetHeightPx = it },
@@ -372,7 +373,7 @@ private fun HomeContent(
                                             modifier = Modifier.wrapContentWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            if (!homeUiState.isRunning) {
+                                            if (homeUiState.homeUi == HomeUi.HOME) {
                                                 ControlButton(text = "Run", color = PointColor) { onRunClick() }
                                             } else {
                                                 val pauseOrResumeText = if (runningUiState.isTracking) "일시 정지" else "재개"
@@ -477,7 +478,7 @@ private fun BottomSection(
     modifier: Modifier = Modifier,
     selectedTab: HomeTab,
     onTabSelect: (HomeTab) -> Unit,
-    isRunning: Boolean,            // 추가
+    homeUi: HomeUi,            // 추가
     runningUiState: RunningUiState, // 추가
     sheetHeightPx: Float,
     onHeightChange: (Float) -> Unit,
@@ -497,7 +498,7 @@ private fun BottomSection(
     // 최대 바텀 시트 높이
     val maxAllowedHeight = when {
         // 러닝 탭이면서 결과창을 보여줘야 할 때 (러닝 종료 후)
-        selectedTab == HomeTab.RUNNING && !isRunning && runningUiState.totalDistance > 0 -> expandedHeightPx
+        selectedTab == HomeTab.RUNNING && (homeUi == HomeUi.HOME) && runningUiState.totalDistance > 0 -> expandedHeightPx
 
         // 코스 탭
         selectedTab == HomeTab.COURSE -> expandedHeightPx
@@ -511,7 +512,7 @@ private fun BottomSection(
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 정보창 영역 (시트 바로 위에 부착되어 함께 이동) ---
-        if (isRunning &&  sheetHeightPx < expandedHeightPx - 10f) {
+        if ((homeUi == HomeUi.RUN) &&  sheetHeightPx < expandedHeightPx - 10f) {
             val runningPace = if (runningUiState.totalDistance < 100.0) 0.0
             else (runningUiState.totalTime / runningUiState.totalDistance) * 1000
 
@@ -580,7 +581,7 @@ private fun BottomSection(
                             val finalHeight = when {
                                 (selectedTab == HomeTab.COURSE || selectedTab == HomeTab.RECOMMEND) &&
                                         sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
-                                selectedTab == HomeTab.RUNNING && !isRunning && runningUiState.totalDistance > 0 &&
+                                selectedTab == HomeTab.RUNNING && (homeUi == HomeUi.HOME) && runningUiState.totalDistance > 0 &&
                                         sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
                                 sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
                                 else -> hiddenHeightPx
@@ -768,7 +769,7 @@ private fun InfoBtn(
 private fun MapViewContainer(
     cameraPosition:LatLng,
     bearing: Float = 0.0f, // 추가
-    isRunning: Boolean = false,
+    homeUi: HomeUi = HomeUi.RUN,
     latLngList: List<LatLng> = emptyList(),   // 지금까지 이동 경로
     guidePath: List<LatLng> = emptyList(),    // 🔹 추가: 안내할 경로
     destinationMarkerPos: LatLng? = null,     // 🔹 추가: 목적지 마커
@@ -960,7 +961,7 @@ private fun MapViewContainer(
                             guidePath.forEach { include(it) }
                         }.build()
                         naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
-                    } else if (!isRunning) { // 목적지 안내 모드 아니면서 달리는 중 아닐때
+                    } else if (homeUi == HomeUi.HOME) { // 목적지 안내 모드 아니면서 달리는 중 아닐때
                         naverMap.moveCamera(
                             CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
                                 .animate(CameraAnimation.Easing, 1200)

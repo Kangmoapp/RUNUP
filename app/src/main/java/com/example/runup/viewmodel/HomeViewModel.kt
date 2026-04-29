@@ -7,8 +7,11 @@ import com.example.runup.BuildConfig
 import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.Scores
+import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.RecordRunningUseCase
@@ -20,6 +23,7 @@ import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TMapApiService
 import com.example.runup.service.TMapRouteRequest
 import com.example.runup.service.TtsManager
+import com.example.runup.ui.navigation.HomeUi
 import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -45,7 +49,7 @@ data class HomeUiState(
     val isLoading:Boolean = false,
     val showDistanceDialog: Boolean = false,
     val showPaceDialog: Boolean = false,
-    val isRunning:Boolean = false,
+    val homeUi: HomeUi = HomeUi.HOME,
     val selectedTab: HomeTab = HomeTab.RUNNING,
     val isInitialLoading: Boolean = true,
 
@@ -71,6 +75,22 @@ data class RunningUiState(
     val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
 )
 
+data class CourseRecommendationUiState(
+    val goalDistance: Int = 0,
+    val cameraLocation: LatLng? = null,
+    val currentLocation: LatLng? = null,
+    val currentSort: SortType = SortType.DISTANCE,
+    val isLoop: Boolean = true,
+    val showLoop: Boolean = false,
+    val showDistanceDialog: Boolean = false,
+    val showSortDialog: Boolean = false,
+    val isRecommendClick: Boolean = false,
+    val recommendedCourses: List<CourseRecommendation> = emptyList(),
+    val courseIndex: Int = 0,
+    val isLoading:Boolean = false
+)
+
+
 enum class HomeTab { RUNNING, RECOMMEND, COURSE }
 
 @HiltViewModel
@@ -88,10 +108,14 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
-    private val userPreferenceDataSource: UserPreferenceDataSource
+    private val userPreferenceDataSource: UserPreferenceDataSource,
+    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
+
+    private val _recommendUiState = MutableStateFlow(CourseRecommendationUiState())
+    val recommendUiState: StateFlow<CourseRecommendationUiState> = _recommendUiState
 
     private val _isTracking = MutableStateFlow(false)
     private val _totalTime = MutableStateFlow(0)
@@ -321,7 +345,7 @@ class HomeViewModel @Inject constructor(
                 _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
 
@@ -331,7 +355,7 @@ class HomeViewModel @Inject constructor(
 
     fun onRunClick() {
         viewModelScope.launch {
-            _homeUiState.update { it.copy(isLoading = true, isRunning = true) }
+            _homeUiState.update { it.copy(isLoading = true, homeUi = HomeUi.RUN) }
             for (i in 3 downTo 1) {
                 _loadingTimer.value = i
                 delay(1000)
@@ -415,11 +439,11 @@ class HomeViewModel @Inject constructor(
                 if (result is AuthResult.Success) {
                     // 저장 성공 후 경로 데이터만 초기화
                     locationRepository.clearData()
-                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
+                    _totalTime.value = 0 // 저장 성+공 후 시간 초기화
                 }
             }
         }
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun cancelRunningCourse() {
@@ -431,7 +455,7 @@ class HomeViewModel @Inject constructor(
         _totalTime.value = 0
 
         // 3. UI 상태를 러닝 종료로 변경
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun selectTab(tab: HomeTab) {
@@ -505,4 +529,10 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
+
+    // =====================================
+    // 코스추천 로직
+    // =====================================
+
+
 }
