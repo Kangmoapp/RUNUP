@@ -1,5 +1,8 @@
 package com.example.runup.viewmodel
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,6 +18,7 @@ import com.example.runup.domain.usecase.RecordRunningUseCase
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
+import com.example.runup.service.LocationService
 import com.example.runup.service.NaverMapApiService
 import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TMapApiService
@@ -23,6 +27,7 @@ import com.example.runup.service.TtsManager
 import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -88,13 +93,14 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
-    private val userPreferenceDataSource: UserPreferenceDataSource
-): ViewModel(){
+    private val userPreferenceDataSource: UserPreferenceDataSource,
+    @ApplicationContext private val context: Context,
+
+    ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
 
     private val _isTracking = MutableStateFlow(false)
-    private val _totalTime = MutableStateFlow(0)
 
     private val _GuideUiState = MutableStateFlow(GuideUiState())
     val GuideUiState: StateFlow<GuideUiState> = _GuideUiState
@@ -115,7 +121,7 @@ class HomeViewModel @Inject constructor(
         locationRepository.recordedNodes,
         locationRepository.totalDistance,
         _isTracking,
-        _totalTime
+        locationRepository.totalTime
     ) { nodes, totalDistance, isTracking, totalTime ->
         RunningUiState(
             latLngList = nodes.map {
@@ -309,15 +315,27 @@ class HomeViewModel @Inject constructor(
     fun onRunClick() {
         viewModelScope.launch {
             _homeUiState.update { it.copy(isLoading = true, isRunning = true) }
+
+
             for (i in 3 downTo 1) {
                 _loadingTimer.value = i
                 delay(1000)
             }
             _homeUiState.update { it.copy(isLoading = false) }
-            startCurrentLocationTracking()
+
+            // 2. 추적 및 타이머 시작 (중복 호출 제거) 🔹
+            locationRepository.startTracking()
+            locationRepository.startTimer()
             startRunningTracking()
         }
+    }
 
+    // 러닝 최종 저장 혹은 취소 시 서비스 종료 📍
+    private fun stopForegroundService() {
+        val intent = Intent(context, LocationService::class.java).apply {
+            action = "STOP_TRACKING" // 📍 LocationService에 정의한 액션과 맞춰야 함
+        }
+        context.startService(intent) // 또는 stopService(intent)
     }
 
     fun startCurrentLocationTracking() {
@@ -342,8 +360,6 @@ class HomeViewModel @Inject constructor(
                 // 1초마다 레포지토리의 현재 위치를 노드로 변환하여 저장
                 if(_isTracking.value){
                     locationRepository.addNodeFromCurrentLocation()
-                    // 2. 시간 1초 증가 (초 단위)
-                    _totalTime.value += 1
                     delay(1000L)
                 } else {
                     delay(500L) // false일 때도 잠깐 쉬기
@@ -357,6 +373,7 @@ class HomeViewModel @Inject constructor(
     fun stopRunningTracking() {
         if(_isTracking.value){
             locationRepository.markLastNodeAsStopped()
+            locationRepository.stopTimer()
             _isTracking.value = false
         }
         else _isTracking.value = true
@@ -385,17 +402,17 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val nodes = locationRepository.recordedNodes.value
             val distance = locationRepository.totalDistance.value.toInt()
-            val timeInMillis = _totalTime.value * 1000
+            val timeInMillis = locationRepository.totalTime.value * 1000L
 
             if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis, scores)
+                val result = recordRunningUseCase(nodes, distance, timeInMillis.toInt(), scores)
                 if (result is AuthResult.Success) {
                     // 저장 성공 후 경로 데이터만 초기화
                     locationRepository.clearData()
-                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
                 }
             }
         }
+        stopForegroundService()
         _homeUiState.update { it.copy(isRunning = false) }
     }
 
@@ -405,9 +422,9 @@ class HomeViewModel @Inject constructor(
 
         // 2. 저장 없이 데이터만 초기화
         locationRepository.clearData()
-        _totalTime.value = 0
 
         // 3. UI 상태를 러닝 종료로 변경
+        stopForegroundService()
         _homeUiState.update { it.copy(isRunning = false) }
     }
 
@@ -469,7 +486,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun toggleTrackingMode() {
-        _GuideUiState.update { it.copy(isTrackingMode = !it.copy().isTrackingMode) }
+        _GuideUiState.update { it.copy(isTrackingMode = !it.isTrackingMode) }
     }
 
     fun clearNavigation() {

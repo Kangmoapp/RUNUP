@@ -115,6 +115,27 @@ class UserPostViewModel @Inject constructor(
 
     private var currentLoadedUid: String? = null // 현재 로드된 데이터의 주인 🔹
 
+    fun initUserPage(targetUid: String) {
+        // 1. 페이징 관련 내부 변수 초기화 (매우 중요!)
+        lastVisibleSnapshot = null
+        isLastPage = false
+
+        // 2. UI 상태 초기화 (리스트 비우고 로딩 띄우기)
+        _communityUiState.update { it.copy(
+            posts = emptyList(),
+            isInitialLoading = true, // 새로운 데이터를 가져올 때까지 로딩 화면 강제 🔹
+            isRefreshing = false,
+            isLastPage = false
+        ) }
+
+        // 3. 탭 상태도 기본값으로 (필요시)
+        _currentTab.value = "POSTS"
+
+        // 4. 새로운 데이터 로드 시작
+        fetchUserPosts(targetUid, isInitial = true)
+        loadUserStats(targetUid)
+    }
+
     // 🔹 이 화면의 핵심: 누구의 글을 보여줄 것인가?
     fun fetchUserPosts(targetUid: String, isInitial: Boolean = false, forceRefresh: Boolean = false) {
         // 최초 진입 시 현재 타겟 아이디 저장

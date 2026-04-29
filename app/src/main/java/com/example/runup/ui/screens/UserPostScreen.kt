@@ -1,6 +1,5 @@
 package com.example.runup.ui.screens
 
-import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -12,12 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,17 +22,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,8 +43,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButtonDefaults.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -88,6 +85,7 @@ import com.example.runup.ui.components.CustomLocationPicker
 import com.example.runup.ui.components.EnlargedImageDialog
 import com.example.runup.ui.components.LocationMenuContent
 import com.example.runup.ui.components.PostItem
+import com.example.runup.ui.components.ProfileMiniPopup
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.components.getSelectedLocationText
 import com.example.runup.ui.theme.BackGroudColor
@@ -100,18 +98,20 @@ import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.MapSnapshot
 import com.example.runup.viewmodel.UserPostViewModel
 import com.example.runup.viewmodel.UserTotalStats
-import kotlin.io.path.moveTo
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserPostScreen(
     targetUid: String,
     onBackClick: () -> Unit,
+    onNavigateToUser: (String) -> Unit,
     viewModel: UserPostViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.communityUiState.collectAsState()
     val addressUiState by viewModel.addressUiState.collectAsState()
     val selectedPostForPopup by viewModel.selectedPostForPopup.collectAsState()
+    var selectedMiniProfileId by remember { mutableStateOf<String?>(null) }
 
     val selectedTab by viewModel.currentTab.collectAsState()
     val stats by viewModel.userStats.collectAsState()
@@ -156,19 +156,24 @@ fun UserPostScreen(
 
 
     LaunchedEffect(targetUid) {
-        viewModel.onTabSelected("POSTS")
-        viewModel.loadUserStats(targetUid) // 1. 전체 개수 먼저 로드
-        viewModel.fetchUserPosts(targetUid, isInitial = true) // 2. 첫 번째 탭 데이터 로드
+        // 기존의 개별 호출을 하나로 통합하여 순차/원자적 실행 보장
+        viewModel.initUserPage(targetUid)
     }
 
-    // 시스템 뒤로가기 대응
-    BackHandler {
-        when {
-            showCommentSheet -> showCommentSheet = false // 댓글창 닫기
-            selectedPostForPopup != null -> viewModel.selectPost(null) // 상세 팝업 닫기
-            else -> onBackClick() // 화면 나가기
-        }
+    BackHandler(enabled = showCommentSheet) {
+        // 아무것도 안 함 (CommentBottomSheet가 처리)
     }
+
+    // 포스트 팝업만 열렸을 때
+    BackHandler(enabled = !showCommentSheet && selectedPostForPopup != null) {
+        viewModel.selectPost(null)
+    }
+
+    // 아무것도 없을 때
+    BackHandler(enabled = !showCommentSheet && selectedPostForPopup == null) {
+        onBackClick()
+    }
+
 
     Scaffold(
         containerColor = BackGroudColor,
@@ -486,7 +491,9 @@ fun UserPostScreen(
                         onDeletePost = { viewModel.deletePost(livePopupPost); viewModel.selectPost(null) },
                         onImageClick = { enlargedImageUri = it },
                         onSaveMapSnapshot = { viewModel.saveMapSnapshot(livePopupPost.postId, it) },
-                        onProfileClick = { viewModel.selectPost(null) }
+                        onProfileClick = { clickedUid ->
+                            selectedMiniProfileId = clickedUid
+                        }
                     )
                 }
             }
@@ -507,6 +514,9 @@ fun UserPostScreen(
             sheetState = sheetState,
             containerColor = BackGroudColor,
             dragHandle = { BottomSheetDefaults.DragHandle(color = Color.Gray) },
+            properties = ModalBottomSheetProperties(
+                shouldDismissOnBackPress = false  // 백버튼 dismiss를 ModalBottomSheet에게 맡기지 않음
+            )
         ) {
             CommentBottomSheet(
                 postId = livePopupPost.postId,
@@ -518,7 +528,12 @@ fun UserPostScreen(
                     viewModel.deleteComment(pId, cId)
                 },
                 bitmapCache = profileCache,
-                onDismiss = { showCommentSheet = false }
+                onPostClick = { clickedUid ->
+                    showCommentSheet = false      // 1. 일단 댓글창을 닫는다.
+                    viewModel.selectPost(null)   // 2. 혹시 상세 팝업이 떠있다면 그것도 닫는다.
+                    onNavigateToUser(clickedUid)  // 3. 해당 유저 페이지로 이동한다! 🏃‍♂️
+                },
+                onDismiss = { showCommentSheet = false },
             )
         }
     }
@@ -536,6 +551,22 @@ fun UserPostScreen(
             imageUrl = enlargedImageUri!!,
             displayBitmap = displayBitmap,
             onDismiss = { enlargedImageUri = null }
+        )
+    }
+
+    if (selectedMiniProfileId != null) {
+        ProfileMiniPopup(
+            userId = selectedMiniProfileId!!,
+            onDismiss = { selectedMiniProfileId = null },
+            onViewPosts = { uid ->
+                selectedMiniProfileId = null // 팝업 닫기
+
+                // 만약 현재 보고 있는 페이지의 주인과 다른 사람이라면 이동
+                if (uid != targetUid) {
+                    viewModel.selectPost(null) // 상세 팝업도 닫아주기
+                    onNavigateToUser(uid)
+                }
+            }
         )
     }
 }
@@ -577,6 +608,11 @@ fun PostThumbnail(
     // 내가 좋아요를 눌렀는지 확인
     val isLiked = remember(post.likedBy, myUid) {
         myUid != null && post.likedBy.contains(myUid)
+    }
+
+    // ── 🔹 내가 이 코스를 팔로우(따라뛰기) 중인지 확인 ── 📍
+    val isFollowed = remember(post.followedBy, myUid) {
+        myUid != null && post.followedBy.contains(myUid)
     }
 
     Card(
@@ -678,8 +714,23 @@ fun PostThumbnail(
                         Icon(imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null,tint = if (isLiked) Color.Red else WhiteTextColor, modifier = Modifier.size(10.dp))
                         Text(" ${post.likes}", color = Color.White, fontSize = 9.sp)
                         Spacer(Modifier.width(6.dp))
-                        Text("💬", fontSize = 9.sp)
+
+                        Icon(
+                            imageVector = Icons.Default.ChatBubbleOutline,
+                            contentDescription = "댓글",
+                            tint = WhiteTextColor, // 좋아요의 기본 색상과 통일
+                            modifier = Modifier.size(10.dp) // 크기 24dp로 고정
+                        )
                         Text(" ${post.commentCount}", color = Color.White, fontSize = 9.sp)
+                        Spacer(Modifier.width(6.dp))
+
+                        Icon(
+                            imageVector = Icons.Outlined.Route,
+                            contentDescription = null,
+                            tint = if (isFollowed) PointColor else WhiteTextColor,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Text(" ${post.followCount}", color = Color.White, fontSize = 9.sp)
                     }
 
                     // 3. 날짜

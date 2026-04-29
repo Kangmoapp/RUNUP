@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,8 +35,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.ViewScope
@@ -47,6 +50,7 @@ import com.example.runup.ui.components.PostItem
 import com.example.runup.ui.components.ProfileMiniPopup
 import com.example.runup.ui.components.ScopeButton
 import com.example.runup.ui.components.getSelectedLocationText
+import com.example.runup.R
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -130,7 +134,17 @@ fun CommunityScreen(
         topBar = {
             TopBar(
                 onBackClick = onBackClick,
-                text = "커뮤니티",
+                titleContent = {
+                    Image(
+                        painter = painterResource(id = R.drawable.coursepick),
+                        contentDescription = "CoursePick Logo",
+                        modifier = Modifier
+                            .height(28.dp) // 로고 높이를 고정하면 가로는 비율에 맞춰 자동으로 조절됩니다 🔹
+                            .padding(bottom = 2.dp), // 시각적으로 중앙을 맞추기 위한 미세 조정
+                        contentScale = ContentScale.Fit
+                    )
+                },
+                text = "",
                 isMenu = false,
                 insteadMenuComponent = {
                     // 🔹 [수정] 아이콘 밑으로 늘어지는 메뉴 구조
@@ -418,7 +432,8 @@ fun CommunityScreen(
                     viewModel.deleteComment(postId, commentId)
                 },
                 bitmapCache = profilesCaches,
-                onDismiss = { showCommentSheet = false }
+                onDismiss = { showCommentSheet = false },
+                onPostClick = { uid -> onAuthorProfileClick(uid) }
             )
         }
     }

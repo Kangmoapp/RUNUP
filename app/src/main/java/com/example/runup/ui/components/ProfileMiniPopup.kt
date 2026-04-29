@@ -1,6 +1,5 @@
 package com.example.runup.ui.components
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,10 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
@@ -33,9 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,12 +42,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.runup.domain.model.UserData
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.util.mapper.DistanceMapper
 import com.example.runup.viewmodel.FriendViewModel
-
-// ui/components/ProfileMiniPopup.kt
 
 @Composable
 fun ProfileMiniPopup(
@@ -164,7 +153,7 @@ fun ProfileMiniPopup(
                                     Icon(
                                         imageVector = if (isAlreadyFriend) Icons.Default.Check else Icons.Default.PersonAdd,
                                         contentDescription = null,
-                                        tint = if (isAlreadyFriend) Color.Green else if (isActionDisabled) Color.Gray else PointColor,
+                                        tint = if (isAlreadyFriend) PointColor else if (isActionDisabled) Color.Gray else PointColor,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }

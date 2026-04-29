@@ -86,7 +86,7 @@ fun RunUpApp(
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
                 },
-                onPopupPostClick = { uid ->
+                onAuthorProfileClick = { uid ->
                     viewModel.navigateToUserPosts(uid)
                 }
             )
@@ -125,9 +125,8 @@ fun RunUpApp(
                     // 상황에 맞게 popBackStack 처럼 동작하게 하거나 특정 화면을 지정합니다.
                     viewModel.popBackStack()
                 },
-                onPostClick = { postId ->
-                    // 상세 게시물로 연결 (기존 로직 재활용)
-                    viewModel.navigateToDetail(postId)
+                onNavigateToUser = { uid ->
+                    viewModel.navigateToUserPosts(uid)
                 }
             )
 

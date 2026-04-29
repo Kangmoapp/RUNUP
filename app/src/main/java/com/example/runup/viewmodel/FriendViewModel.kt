@@ -59,13 +59,20 @@ class FriendViewModel @Inject constructor(
         refreshAllFriendData()
     }
 
+    // ── 🔹 탭 전환 및 창 닫기 시 일시적 상태 초기화 ──
+    fun resetTransientStates() {
+        _uiState.update { it.copy(
+            searchResult = null,
+            deletingFriendId = null,
+            searchErrorMessage = null,
+            isSearching = false
+        ) }
+    }
+
     // ── [핵심 로직 1] 모든 친구 데이터 동기화 ──
     fun refreshAllFriendData() {
         viewModelScope.launch {
             _uiState.update { it.copy(
-                friends = emptyList(),
-                sentRequests = emptyList(),
-                receivedRequests = emptyList(),
                 isLoading = true
             ) }
 

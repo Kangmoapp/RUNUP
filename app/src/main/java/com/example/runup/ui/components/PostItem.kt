@@ -74,7 +74,9 @@ import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.ui.util.assignSlots
 import com.example.runup.ui.util.calculateCloserOffset
+import com.example.runup.ui.util.calculatePace
 import com.example.runup.ui.util.latLngToPixel
+import com.example.runup.ui.util.mapper.TimeMapper.formatDurationMmSs
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.MapSnapshot
 import com.naver.maps.map.compose.ExperimentalNaverMapApi
@@ -586,6 +588,73 @@ private fun MapSection(
                     PhotoMarkerFromBitmap(bitmap)
                 }
             }
+
+            post.runRecord?.let { record ->
+                // ── 🔹 [LAYER 4] 잔상 없는 순수 블랙 대시보드 ── 🏃‍♂️📍
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp)
+                        .clip(RoundedCornerShape(16.dp)) // 1. 먼저 자르고
+                        .background(Color(0xFF000000).copy(alpha = 0.75f)) // 2. 순수 블랙 85% (색 변형 방지) 🔹
+                        .padding(horizontal = 18.dp, vertical = 10.dp), // 3. 내부 여백
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // [1] 대형 거리 표시
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Text(
+                                text = String.format("%.2f", record.course.distance / 1000.0),
+                                color = PointColor,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = (-1).sp
+                            )
+                            Text(
+                                text = "km",
+                                color = PointColor.copy(alpha = 0.8f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp, start = 2.dp)
+                            )
+                        }
+
+                        // [2] 하단 데이터 (페이스, 시간, 칼로리)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // 📍 SmallStatItem 내부에 혹시 background가 있다면 꼭 제거하세요! 🔹
+                            SmallStatItem("평균 페이스", calculatePace(record.time.toInt(), record.course.distance.toDouble()))
+                            SmallStatItem("시간", formatDurationMmSs(record.time.toLong()))
+
+                            val kcal = (record.course.distance / 1000.0 * 70).toInt()
+                            SmallStatItem("칼로리", "$kcal")
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+fun SmallStatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.4f),
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
