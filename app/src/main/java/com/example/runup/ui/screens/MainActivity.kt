@@ -114,6 +114,11 @@ fun RunUpApp(
                 }
             )
 
+            Screen.SETTINGS -> SettingsScreen(
+                onBackClick = { viewModel.navigateTo(Screen.MENU) },
+                onLogoutClick = { viewModel.navigateTo(Screen.START) }
+            )
+
             else -> {}
         }
         if(isSplashLoading){
