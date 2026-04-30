@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.util.Log
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -95,9 +96,11 @@ import com.example.runup.ui.util.assignSlots
 import com.example.runup.ui.util.calculateCloserOffset
 import com.example.runup.ui.util.latLngToPixel
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
+import com.example.runup.viewmodel.HomeViewModel
 import com.example.runup.viewmodel.MapSnapshot
 import com.example.runup.viewmodel.UserPostViewModel
 import com.example.runup.viewmodel.UserTotalStats
+import com.google.firebase.firestore.GeoPoint
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,7 +109,9 @@ fun UserPostScreen(
     targetUid: String,
     onBackClick: () -> Unit,
     onNavigateToUser: (String) -> Unit,
-    viewModel: UserPostViewModel = hiltViewModel()
+    onFollowClick: () -> Unit,
+    viewModel: UserPostViewModel = hiltViewModel(),
+    mainViewModel: HomeViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
 ) {
     val uiState by viewModel.communityUiState.collectAsState()
     val addressUiState by viewModel.addressUiState.collectAsState()
@@ -480,8 +485,44 @@ fun UserPostScreen(
                         onLikeClick = { viewModel.onLikeClick(livePopupPost.postId) },
                         onFollowClick = {
                             viewModel.onFollowClick(livePopupPost.postId) { readyPost ->
-                                // 메인 화면으로 이동하는 내비게이션 로직 등을 여기에 작성 🏃‍♂️
-                                Log.d("Follow", "상세창에서 팔로우 성공")
+
+                                // 1. runRecord가 null이면 바로 종료 (Safe Call + Return)
+                                val runRecord = readyPost.runRecord ?: return@onFollowClick
+
+                                // 2. course와 좌표 데이터 추출
+                                val course = runRecord.course
+                                val locationNodes = course.locationPoints
+
+                                // 3. 좌표가 하나도 없으면 진행할 의미가 없으니 체크!
+                                if (locationNodes.isEmpty()) {
+                                    Log.e("RUNUP_DEBUG", "코스 좌표 데이터가 비어있습니다.")
+                                    return@onFollowClick
+                                }
+
+                                // 4. 좌표 변환 (Node -> GeoPoint)
+                                val pathPoints = locationNodes.map { it.locationPoint }
+
+                                // 5. 중심점 계산 (Bounding Box 중앙값)
+                                val centerLat = if (course.minLat != 0.0) (course.minLat + course.maxLat) / 2.0 else pathPoints.first().latitude
+                                val centerLng = if (course.minLng != 0.0) (course.minLng + course.maxLng) / 2.0 else pathPoints.first().longitude
+
+                                // 6. Path 객체 생성 (도메인 모델에 맞춰서)
+                                val extractedPath = com.example.runup.domain.model.Path( // 패키지명 주의
+                                    distance = course.distance,
+                                    points = pathPoints,
+                                    centerPoint = GeoPoint(centerLat, centerLng)
+                                )
+
+                                // 7. [핵심] HomeViewModel(MainViewModel)로 데이터 전달 📍
+                                // UserPostScreen이 MainViewModel을 주입받거나, 콜백으로 던져줘야 합니다.
+                                mainViewModel.setCourseFromCommunity(
+                                    path = extractedPath,
+                                    authorName = livePopupPost.authorName
+                                )
+
+                                // 8. 상세 팝업을 닫고 메인(홈) 화면으로 복귀
+                                viewModel.selectPost(null)
+                                onFollowClick() // 이 함수가 호출되면 홈 화면으로 돌아가겠죠?
                             }
                         },
                         onCommentClick = {

@@ -462,10 +462,18 @@ class HomeViewModel @Inject constructor(
     }
 
     fun selectTab(tab: HomeTab) {
+        // 1. 일단 탭 선택 상태 업데이트
         _homeUiState.update { it.copy(selectedTab = tab) }
 
-        if (tab != HomeTab.RECOMMEND) {
-            clearRecommendation()
+        // 2. ── 🔹 [핵심] 러닝 중 탭 복구 로직 📍 ──
+        if (tab == HomeTab.RUNNING) {
+            // 현재 러닝 데이터가 있거나 트래킹 중이라면 UI 모드를 RUN으로 강제 전환
+            if (runningUiState.value.isTracking || runningUiState.value.totalDistance > 0) {
+                _homeUiState.update { it.copy(homeUi = HomeUi.RUN) }
+            } else {
+                // 러닝 중이 아니라면 일반 HOME 모드로
+                _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
+            }
         }
     }
 

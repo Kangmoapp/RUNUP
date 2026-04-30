@@ -424,8 +424,9 @@ private fun HomeContent(
                     onTabSelect = { tab ->
                         val isCurrentlyRunning = homeUiState.homeUi == HomeUi.RUN
                         val isRunningTabClicked = tab == HomeTab.RUNNING
+                        val isAlreadyOnRunningTab = homeUiState.selectedTab == HomeTab.RUNNING
 
-                        if (isCurrentlyRunning && isRunningTabClicked) {
+                        if (isCurrentlyRunning && isRunningTabClicked && isAlreadyOnRunningTab) {
                             // 러닝 중인데 러닝 탭을 또 누른 경우: 아무것도 하지 않고 리턴!
                             return@BottomSection
                         }
