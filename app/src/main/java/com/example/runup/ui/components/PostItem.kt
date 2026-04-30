@@ -590,7 +590,7 @@ private fun MapSection(
             }
 
             post.runRecord?.let { record ->
-                // ── 🔹 [LAYER 4] 잔상 없는 순수 블랙 대시보드 ── 🏃‍♂️📍
+                // 잔상 없는 블랙 대시보드
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -629,7 +629,7 @@ private fun MapSection(
                         ) {
                             // 📍 SmallStatItem 내부에 혹시 background가 있다면 꼭 제거하세요! 🔹
                             SmallStatItem("평균 페이스", calculatePace(record.time.toInt(), record.course.distance.toDouble()))
-                            SmallStatItem("시간", formatDurationMmSs(record.time.toLong()))
+                            SmallStatItem("시간", formatDurationMmSs(record.time.toLong() / 1000))
 
                             val kcal = (record.course.distance / 1000.0 * 70).toInt()
                             SmallStatItem("칼로리", "$kcal")

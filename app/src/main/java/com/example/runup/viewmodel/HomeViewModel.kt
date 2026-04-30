@@ -762,13 +762,12 @@ class HomeViewModel @Inject constructor(
         updateRecommendState { it.copy(showLoop = false) }
     }
 
-    fun selectRecommendLoop(isFirst: Boolean = true) {
-        if (isFirst) {
-            updateRecommendState { it.copy(showLoop = false) }
-        } else {
-            updateRecommendState {
-                it.copy(isLoop = !it.isLoop, showLoop = false)
-            }
+    fun selectRecommendLoop(isLoop: Boolean) {
+        updateRecommendState {
+            it.copy(
+                isLoop = isLoop,
+                showLoop = false // 다이얼로그 닫기
+            )
         }
     }
     fun openRecommendSortDialog() {

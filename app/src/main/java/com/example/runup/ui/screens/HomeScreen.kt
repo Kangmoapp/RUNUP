@@ -102,14 +102,12 @@ import com.example.runup.viewmodel.HomeTab
 import com.example.runup.viewmodel.RunningUiState
 import com.naver.maps.geometry.LatLngBounds
 import com.naver.maps.map.LocationTrackingMode
-import com.naver.maps.map.overlay.LocationOverlay
 import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.AiReasonBubble
-import com.example.runup.ui.components.CategoryDialog
 import com.example.runup.ui.components.CourseInfoCard
 import com.example.runup.ui.components.FailMessageBubble
 import com.example.runup.ui.components.LoopSelectionDialog
@@ -440,6 +438,8 @@ private fun HomeContent(
                     onHeightChange = { sheetHeightPx = it },
                     isResultLocked = isResultLocked,
                     imeHeightPx = imeHeightPx,
+                    goalDistance = homeUiState.goalDistance,
+                    goalPace = homeUiState.goalPace
                 ) {
                     when (homeUiState.selectedTab) {
 
@@ -613,7 +613,7 @@ private fun HomeContent(
                                                     modifier = Modifier.weight(1f),
                                                     decorationBox = { innerTextField ->
                                                         if (aiChatInput.isEmpty()) {
-                                                            Text("어디를 달리고 싶나요? (예: 한강변)", color = Gray, fontSize = 14.sp)
+                                                            Text("예) 일청담 근처 밝은 코스 추천해줘!", color = Gray, fontSize = 14.sp)
                                                         }
                                                         innerTextField()
                                                     }
@@ -868,6 +868,8 @@ private fun BottomSection(
     onHeightChange: (Float) -> Unit,
     isResultLocked: Boolean,
     imeHeightPx: Int = 0,
+    goalDistance: Int = 0,
+    goalPace: Int = 0,
     content: @Composable () -> Unit // 탭에 따른 내용
 ) {
     val density = LocalDensity.current
@@ -890,28 +892,42 @@ private fun BottomSection(
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // 정보창 영역 (시트 바로 위에 부착되어 함께 이동) ---
-        if ((homeUi == HomeUi.RUN) &&  sheetHeightPx < expandedHeightPx - 10f) {
+        if ((homeUi == HomeUi.RUN) && sheetHeightPx < expandedHeightPx - 10f) {
             val runningPace = if (runningUiState.totalDistance < 100.0) 0.0
             else (runningUiState.totalTime / runningUiState.totalDistance) * 1000
 
+            // ── 🔹 색상 결정을 위한 조건 계산 📍 ──
+            // 거리 목표: goalDistance(단위: 100m)를 미터 단위로 변환하여 비교
+            val isDistanceGoalAchieved = runningUiState.totalDistance >= (goalDistance * 100)
+            val distanceColor = if (isDistanceGoalAchieved) Color(0xFF4CAF50) else PointColor // 초록색 또는 기본 노란색
+
+            // 페이스 목표: 페이스는 숫자가 작을수록 빠름 (단위: 초/km)
+            // goalPace가 0(설정 안 함)이 아닐 때만 비교 로직 작동
+            val paceColor = when {
+                goalPace == 0 -> PointColor
+                runningPace <= goalPace -> Color(0xFF4CAF50) // 목표보다 빠름 (초록)
+                else -> Color(0xFFF44336) // 목표보다 느림 (빨강)
+            }
+
             Column(
                 modifier = Modifier
-                    .padding(start = 20.dp, bottom = 10.dp) // 시트와의 간격
+                    .padding(start = 20.dp, bottom = 10.dp)
                     .background(BackGroudColor.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
                     .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp) // 각 항목 간격
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 1. 거리 정보
                 Column {
                     Text(text = "거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
                     Text(
                         text = "${runningUiState.totalDistance.toInt()}m",
-                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                        color = distanceColor, // 👈 동적 색상 적용 📍
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                // 2. 시간 정보
+                // 2. 시간 정보 (기존 유지)
                 Column {
                     Text(text = "시간", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
                     Text(
@@ -920,16 +936,18 @@ private fun BottomSection(
                     )
                 }
 
-                //3. 현재 페이스
+                // 3. 현재 페이스
                 Column {
                     Text(text = "페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
                     Text(
                         text = "${(runningPace / 60).toInt()}'${(runningPace % 60).toInt()}\"",
-                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                        color = paceColor, // 👈 동적 색상 적용 📍
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                // 4. 칼로리 정보
+                // 4. 칼로리 정보 (기존 유지)
                 Column {
                     val caloriesValue = calculateCalories(runningUiState.totalDistance)
                     Text(text = "칼로리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
@@ -1044,106 +1062,6 @@ private fun BottomSection(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun HomeComponent(
-    textTop: String,
-    textTopValue:String,
-    textBottom: String,
-    textBottomValue:String,
-    onPaceClick:()->Unit,
-    onDistanceClick:()->Unit,
-    modifier: Modifier = Modifier
-        .padding(top = 35.dp, start = 18.dp, end = 18.dp)
-){
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .wrapContentSize()
-    ){
-        InfoBtn(
-            texttop = textTop,
-            textbottom = textTopValue,
-            onClick = onPaceClick,
-            modifier = Modifier
-                .height(130.dp)
-                .weight(1f)
-        )
-        Box(
-            modifier = Modifier
-                .background(color = White, shape = RoundedCornerShape(20.dp))
-                .width(1.dp)
-                .height(120.dp)
-        )
-        InfoBtn(
-            texttop = textBottom,
-            textbottom = textBottomValue,
-            onClick = onDistanceClick,
-            modifier = Modifier
-                .height(130.dp)
-                .weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun HomeExpandedContent(
-    text: String,
-    onClick:()->Unit
-){
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(150.dp)
-            .padding(top = 30.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .height(60.dp)
-                .width(300.dp)
-                .background(color = White, shape = RoundedCornerShape(5.dp))
-                .clickable { onClick() }
-        ){
-            Text(
-                text = text,
-                color = TextBlack,
-                fontSize = 30.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun InfoBtn(
-    texttop: String,
-    textbottom:String,
-    onClick:()->Unit,
-    fontsize: TextUnit = 25.sp,
-    modifier:Modifier = Modifier
-        .fillMaxSize()
-){
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier
-            .clickable(onClick = onClick)
-    ){
-        Text(
-            text = texttop,
-            fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
-        )
-        Text(
-            text = textbottom,
-            fontSize = fontsize,
-            color = TextWhite,
-            modifier = Modifier
-        )
     }
 }
 

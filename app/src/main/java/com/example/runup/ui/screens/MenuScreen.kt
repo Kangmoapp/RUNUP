@@ -51,14 +51,12 @@ import com.example.runup.viewmodel.MenuViewModel
 @Preview
 @Composable
 fun PreviewMenuScreen(){
-    MenuScreen({},{},{},{},{},{},{}, {}, {})
+    MenuScreen({},{},{},{},{}, {}, {})
 }
 
 @Composable
 fun MenuScreen(
     onBackClick: () -> Unit,
-    onCorseClick: () -> Unit,
-    onGoalClick: () -> Unit,
     onOptionClick: () -> Unit,
     onHelpClick: () -> Unit,
     onCommunityClick: () -> Unit,
@@ -95,8 +93,6 @@ fun MenuScreen(
             MenuSectionTitle("나의 러닝")
 
             // 핵심 메뉴는 PointColor 아이콘으로 강조
-            MainMenuItem(text = "코스 추천", icon = Icons.Default.DirectionsRun, onClick = onCorseClick)
-            MainMenuItem(text = "목표 설정", icon = Icons.Default.Flag, onClick = onGoalClick)
             MainMenuItem(text = "커뮤니티", icon = Icons.Default.People, onClick = onCommunityClick)
             MainMenuItem(text = "마이페이지", icon = Icons.Default.Person, onClick = onMypageClick)
 

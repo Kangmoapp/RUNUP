@@ -108,6 +108,7 @@ fun RunUpApp(
                     // 상황에 맞게 popBackStack 처럼 동작하게 하거나 특정 화면을 지정합니다.
                     viewModel.popBackStack()
                 },
+                onFollowClick = {viewModel.navigateTo(Screen.HOME)},
                 onNavigateToUser = { uid ->
                     viewModel.navigateToUserPosts(uid)
                 }
@@ -121,8 +122,6 @@ fun RunUpApp(
         if (isMenuVisible) {
             MenuScreen(
                 onBackClick = { viewModel.closeMenu() },
-                onCorseClick = { viewModel.navigateFromMenu(Screen.RECOMMEND) },
-                onGoalClick = { viewModel.navigateFromMenu(Screen.GOALSETTING) },
                 onOptionClick = { },
                 onHelpClick = { },
                 onCommunityClick = { viewModel.navigateFromMenu(Screen.COMMUNITY) },

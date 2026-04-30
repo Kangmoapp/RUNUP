@@ -32,24 +32,8 @@ object TimeMapper {
         }
     }
 
-    fun formatDuration(seconds: Long): String {
-        val h = seconds / 3600
-        val m = (seconds % 3600) / 60
-        val s = seconds % 60
-        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
-    }
-
-    fun calculatePace(meters: Double, seconds: Long): String {
-        if (meters <= 0.0) return "0'00\""
-        val totalMinutes = (seconds / 60.0) / (meters / 1000.0)
-        val mins = totalMinutes.toInt()
-        val secs = ((totalMinutes - mins) * 60).toInt()
-        return String.format("%d'%02d\"", mins, secs)
-    }
-
     // ── 🔹 시간 포맷팅 헬퍼 (mm:ss) ── 📍
     fun formatDurationMmSs(seconds: Long): String {
-        // val seconds = ms / 1000  ← 이 줄 삭제
         val m = seconds / 60
         val s = seconds % 60
         return String.format("%02d:%02d", m, s)
