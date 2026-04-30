@@ -2,6 +2,7 @@ package com.example.runup.ui.components
 
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,9 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.TextGray
 
@@ -24,7 +28,8 @@ fun RunupLazyColumn(
     ItemHeight:Int = 56,
     VisibleItemsCount:Int = 3,
     textMapper: (Int) -> String,
-    onSelectedNumberChange: (Int) -> Unit
+    onSelectedNumberChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val startNumber =
         if(startNumber == 0) 0
@@ -34,10 +39,16 @@ fun RunupLazyColumn(
     val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
     val isScrolling = listState.isScrollInProgress
 
+    // ── 🔹 [핵심 추가] 초기 진입 시 위치 강제 고정 📍 ──
+    LaunchedEffect(Unit) {
+        // 첫 화면이 그려진 직후, 지정된 인덱스로 소수점 오차 없이 딱 맞춰 이동합니다.
+        listState.scrollToItem(startNumber)
+    }
+
     LazyColumn(
         state = listState,
         flingBehavior = snapFlingBehavior,
-        modifier = Modifier.height((ItemHeight * VisibleItemsCount).dp),
+        modifier = modifier.height((ItemHeight * VisibleItemsCount).dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item{
@@ -70,14 +81,16 @@ private fun TextBox(
 ) {
     Box(
         modifier = Modifier
-            .wrapContentWidth()
+            .fillMaxWidth()
             .height(ItemHeight),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center // 👈 'Center'로 변경하여 정중앙 정렬 📍
     ) {
         Text(
             text = text,
             fontSize = 30.sp,
-            color = if (isGray) TextGray else TextBlack
+            // ── 🔹 색상도 우리 앱의 포인트 컬러에 맞춰주면 더 예쁩니다 📍 ──
+            color = if (isGray) Color.Gray else PointColor,
+            fontWeight = if (isGray) FontWeight.Normal else FontWeight.Bold
         )
     }
 }

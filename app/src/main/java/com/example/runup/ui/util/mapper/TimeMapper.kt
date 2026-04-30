@@ -31,4 +31,13 @@ object TimeMapper {
             else -> "${years}년 전"
         }
     }
+
+    // ── 🔹 시간 포맷팅 헬퍼 (mm:ss) ── 📍
+    fun formatDurationMmSs(seconds: Long): String {
+        val m = seconds / 60
+        val s = seconds % 60
+        return String.format("%02d:%02d", m, s)
+    }
+
+
 }

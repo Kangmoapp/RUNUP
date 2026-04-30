@@ -16,12 +16,15 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.FilterState
 import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.Post
+import com.example.runup.domain.model.PostImage
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.ViewScope
+import com.example.runup.domain.repository.CourseRepository
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.ui.util.CommunityRefreshManager
+import com.example.runup.ui.util.ImagePreloader
 import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,7 +52,9 @@ class UserPostViewModel @Inject constructor(
     private val dataSource: CommunityDataSourceImpl,
     private val userRepository: UserRepository,
     private val locationRepository: LocationRepository,
+    private val courseRepository: CourseRepository,
     private val refreshManager: CommunityRefreshManager,
+    private val imagePreloader: ImagePreloader,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
@@ -70,13 +75,17 @@ class UserPostViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserTotalStats())
 
-    // 캐시 저장소 (기존과 동일)
     private val _mapSnapshotCache = MutableStateFlow<Map<String, MapSnapshot>>(emptyMap())
     val mapSnapshotCache = _mapSnapshotCache.asStateFlow()
-    private val _thumbnailCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
-    val thumbnailCache = _thumbnailCache.asStateFlow()
-    private val _fullBitmapCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
-    val fullBitmapCache = _fullBitmapCache.asStateFlow()
+
+    private val _locationMarkerCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val locationMarkerCache = _locationMarkerCache.asStateFlow()
+
+    private val _profileCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val profileCache = _profileCache.asStateFlow()
+
+    private val _fullImageCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
+    val fullImageCache = _fullImageCache.asStateFlow()
 
     private var lastVisibleSnapshot: DocumentSnapshot? = null
     private var isLastPage = false
@@ -105,6 +114,27 @@ class UserPostViewModel @Inject constructor(
     private var currentTargetUid: String = ""
 
     private var currentLoadedUid: String? = null // 현재 로드된 데이터의 주인 🔹
+
+    fun initUserPage(targetUid: String) {
+        // 1. 페이징 관련 내부 변수 초기화 (매우 중요!)
+        lastVisibleSnapshot = null
+        isLastPage = false
+
+        // 2. UI 상태 초기화 (리스트 비우고 로딩 띄우기)
+        _communityUiState.update { it.copy(
+            posts = emptyList(),
+            isInitialLoading = true, // 새로운 데이터를 가져올 때까지 로딩 화면 강제 🔹
+            isRefreshing = false,
+            isLastPage = false
+        ) }
+
+        // 3. 탭 상태도 기본값으로 (필요시)
+        _currentTab.value = "POSTS"
+
+        // 4. 새로운 데이터 로드 시작
+        fetchUserPosts(targetUid, isInitial = true)
+        loadUserStats(targetUid)
+    }
 
     // 🔹 이 화면의 핵심: 누구의 글을 보여줄 것인가?
     fun fetchUserPosts(targetUid: String, isInitial: Boolean = false, forceRefresh: Boolean = false) {
@@ -135,10 +165,9 @@ class UserPostViewModel @Inject constructor(
         viewModelScope.launch {
             _communityUiState.update { it.copy(isLoading = true) }
 
-            // 🔹 새로 만든 전용 함수 호출
             val result = dataSource.getTargetUserPosts(
                 targetUid = currentTargetUid,
-                tabType = _currentTab.value, // 현재 선택된 탭 정보
+                tabType = _currentTab.value,
                 filter = _communityUiState.value.filterState,
                 lastVisibleSnapshot = lastVisibleSnapshot,
                 limit = 4L
@@ -169,94 +198,66 @@ class UserPostViewModel @Inject constructor(
         _mapSnapshotCache.update { it + (postId to snapshot) }
     }
 
+    // ── 🔹 [개편] 3단계 프리로딩 아키텍처 적용 ── 📍
     private fun preloadBitmaps(posts: List<Post>, onComplete: () -> Unit = {}) {
-        if (posts.isEmpty()) {
-            onComplete()
-            return
-        }
+        if (posts.isEmpty()) { onComplete(); return }
 
-        val locationImages = posts.flatMap { it.locationImages }
-        val commonImages = posts.flatMap { it.commonImages }
+        // 1. URL 추출 유틸리티 활용
+        val urlMap = imagePreloader.extractUrlsFromPosts(posts)
 
-        // 1. 게시글 작성자 프로필 URL 추출
-        val postAuthorUrls = posts.map { it.authorProfileUrl }
+        val markerImages = urlMap["MARKER"] as List<PostImage>
+        val authorUrls = urlMap["AUTHOR"] as List<String>
+        val commentUrls = urlMap["COMMENT"] as List<String>
+        val fullUrls = urlMap["FULL"] as List<String>
 
-        // 2. 모든 게시글의 댓글 작성자 프로필 URL 추출 (중첩 리스트 풀기)
-        val commentAuthorUrls = posts.flatMap { post ->
-            post.comments.map { it.authorProfileUrlMini }
-        }
-
-        // 3. 모든 프로필 URL 합치기 + 비어있는 값 제거 + 중복 제거
-        val allProfileUrls = (postAuthorUrls + commentAuthorUrls)
-            .filter { it.isNotEmpty() }
-            .distinct()
-
-        // 1. 필수 로딩 (마커 썸네일) - 얘네가 다 돼야 onComplete를 부름
+        // ── [1단계: ESSENTIAL] 마커 + 작성자 프로필 (로딩 인디케이터 해제 기준) ── 📍
+        val totalEssential = markerImages.size + authorUrls.size
         var essentialLoadedCount = 0
-        val totalEssential = locationImages.size
 
         if (totalEssential == 0) {
             onComplete()
         } else {
-            locationImages.forEach { postImage ->
+            // [A] 마커 이미지 로드 (locationMarkerCache)
+            markerImages.forEach { img ->
                 viewModelScope.launch(Dispatchers.IO) {
-                    // 마커용 썸네일 (150px) 캐싱
-                    val targetUrl = postImage.thumbnailUrl.ifEmpty { postImage.url }
-                    preloadToStateManager(targetUrl, postImage.url, 150, "THUMB")
-
-                    // UI 스레드에서 카운트 체크
+                    val targetUrl = img.thumbnailUrl.ifEmpty { img.url }
+                    val bitmap = imagePreloader.loadBitmap(targetUrl, 150)
+                    bitmap?.let { b ->
+                        _locationMarkerCache.update { it + (img.url to b) }
+                    }
                     launch(Dispatchers.Main) {
                         essentialLoadedCount++
-                        if (essentialLoadedCount >= totalEssential) {
-                            onComplete() // 필수 로딩 완료! 로딩 바 제거
-                        }
+                        if (essentialLoadedCount >= totalEssential) onComplete()
+                    }
+                }
+            }
+
+            // [B] 게시글 작성자 프로필 로드 (profileCache)
+            authorUrls.forEach { url ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    val bitmap = imagePreloader.loadBitmap(url, 150)
+                    bitmap?.let { b -> _profileCache.update { it + (url to b) } }
+                    launch(Dispatchers.Main) {
+                        essentialLoadedCount++
+                        if (essentialLoadedCount >= totalEssential) onComplete()
                     }
                 }
             }
         }
 
-        // 2. 백그라운드 로딩 (상세/원본 이미지) - onComplete와 상관없이 계속 진행
-        locationImages.forEach { postImage ->
+        // ── [2단계: BG_THUMB] 댓글 작성자 프로필 (profileCache) ──
+        commentUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
-                // 마커 클릭 시 뜰 원본 (별도의 키로 저장하거나 원본 URL 그대로 사용)
-                // 키를 다르게 하고 싶다면 postImage.url + "_full" 형태 사용 가능
-                preloadToStateManager(postImage.url, postImage.url + "_full", 800, "FULL")
+                val bitmap = imagePreloader.loadBitmap(url, 150)
+                bitmap?.let { b -> _profileCache.update { it + (url to b) } }
             }
         }
 
-        commonImages.forEach { commonImage ->
+        // ── [3단계: FULL] 고해상도 상세 이미지 (fullImageCache) ──
+        fullUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
-                // 페이저에서 보일 일반 이미지들
-                preloadToStateManager(commonImage.url, commonImage.url, 800, "FULL")
-            }
-        }
-
-        // (2) [수정] 수집된 모든 프로필(게시글 작성자 + 댓글 작성자) 미리 로드
-        allProfileUrls.forEach { url ->
-            viewModelScope.launch(Dispatchers.IO) {
-                // 프로필은 150~200px 정도면 충분히 선명합니다.
-                preloadToStateManager(url, url, 150, "THUMB")
-            }
-        }
-    }
-
-    // 프리로딩 함수 수정 (용도별로 캐시 분리 적재)
-    private suspend fun preloadToStateManager(url: String, cacheKey: String, size: Int, type: String) {
-        if (url.isEmpty()) return
-        val request = ImageRequest.Builder(context)
-            .data(url)
-            .size(size)
-            .allowHardware(false)
-            .build()
-
-        val result = context.imageLoader.execute(request)
-        if (result is SuccessResult) {
-            val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
-            bitmap?.let {
-                when (type) {
-                    "THUMB" -> _thumbnailCache.update { current -> current + (cacheKey to it) }
-                    "FULL" -> _fullBitmapCache.update { current -> current + (cacheKey to it) }
-                }
+                val bitmap = imagePreloader.loadBitmap(url, 800)
+                bitmap?.let { b -> _fullImageCache.update { it + (url to b) } }
             }
         }
     }
@@ -427,6 +428,7 @@ class UserPostViewModel @Inject constructor(
             val result = dataSource.followRunning(postId)
             if (result is AuthResult.Success) {
                 val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                var updatedPost: Post? = null
 
                 _communityUiState.update { state ->
                     // 1. 게시물 리스트 업데이트
@@ -435,20 +437,36 @@ class UserPostViewModel @Inject constructor(
                             val alreadyFollowed = post.followedBy.contains(myUid)
                             val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
                             val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
-                            post.copy(followCount = newCount, followedBy = newFollowedBy)
+
+                            val newPost = post.copy(followCount = newCount, followedBy = newFollowedBy)
+                            updatedPost = newPost // 상태 저장 📍
+                            newPost
                         } else post
                     }
 
-                    // 2. 상세 팝업(selectedPostForPopup) 실시간 동기화 🔹
+                    // 2. 상세 팝업(selectedPostForPopup) 실시간 동기화
                     val currentPopup = _selectedPostForPopup.value
                     if (currentPopup?.postId == postId) {
                         val alreadyFollowed = currentPopup.followedBy.contains(myUid)
                         val newCount = if (alreadyFollowed) currentPopup.followCount else currentPopup.followCount + 1
                         val newFollowedBy = if (alreadyFollowed) currentPopup.followedBy else currentPopup.followedBy + myUid
-                        _selectedPostForPopup.value = currentPopup.copy(followCount = newCount, followedBy = newFollowedBy)
+
+                        val newPopupPost = currentPopup.copy(followCount = newCount, followedBy = newFollowedBy)
+                        _selectedPostForPopup.value = newPopupPost
+                        updatedPost = newPopupPost // 팝업이 최신이면 팝업 데이터 기준 📍
                     }
 
                     state.copy(posts = updatedPosts)
+                }
+
+                // ── 🔹 [핵심] 따라뛰기 5회 달성 시 공식 코스로 승격 ── 📍
+                updatedPost?.let { post ->
+                    if (post.followCount == 5 && post.runRecord != null) {
+                        val saveResult = courseRepository.saveCourse(post.runRecord.course)
+                        if (saveResult is AuthResult.Success) {
+                            Log.d("CoursePromotion", "내 활동 페이지에서 공식 코스 등록 성공: ${post.postId}")
+                        }
+                    }
                 }
 
                 // ── 🔹 추가: 내 페이지일 경우 통계(followedPostIds) 업데이트 ── 📍

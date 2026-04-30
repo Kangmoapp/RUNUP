@@ -1,10 +1,9 @@
 package com.example.runup.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,14 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DirectionsRun
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Flag
@@ -51,20 +46,17 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
-import com.example.runup.ui.theme.TextWhite
 import com.example.runup.viewmodel.MenuViewModel
 
 @Preview
 @Composable
 fun PreviewMenuScreen(){
-    MenuScreen({},{},{},{},{},{},{}, {}, {})
+    MenuScreen({},{},{},{},{}, {}, {})
 }
 
 @Composable
 fun MenuScreen(
     onBackClick: () -> Unit,
-    onCorseClick: () -> Unit,
-    onGoalClick: () -> Unit,
     onOptionClick: () -> Unit,
     onHelpClick: () -> Unit,
     onCommunityClick: () -> Unit,
@@ -78,6 +70,10 @@ fun MenuScreen(
     // 데이터 프리로드는 백그라운드에서 계속 진행 (마이페이지 등을 위해 유지)
     LaunchedEffect(Unit) {
         viewModel.initPreload(context)
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     Scaffold(
@@ -97,8 +93,6 @@ fun MenuScreen(
             MenuSectionTitle("나의 러닝")
 
             // 핵심 메뉴는 PointColor 아이콘으로 강조
-            MainMenuItem(text = "코스 추천", icon = Icons.Default.DirectionsRun, onClick = onCorseClick)
-            MainMenuItem(text = "목표 설정", icon = Icons.Default.Flag, onClick = onGoalClick)
             MainMenuItem(text = "커뮤니티", icon = Icons.Default.People, onClick = onCommunityClick)
             MainMenuItem(text = "마이페이지", icon = Icons.Default.Person, onClick = onMypageClick)
 

@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -74,17 +75,26 @@ fun FriendListDialog(
     viewModel: FriendViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val myUid = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // 선택된 친구 id
     var selectedProfileId by remember { mutableStateOf<String?>(null) }
     val profileBitmaps by viewModel.profileBitmaps.collectAsState()
 
+    // ── 🔹 [해결 3] 탭 전환 시 일시적 상태 초기화 ── 📍
+    LaunchedEffect(selectedTab) {
+        viewModel.resetTransientStates() // 검색 결과 및 삭제 모드 초기화
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.7f))
-            .clickable { onDismiss() },
+            .clickable {
+                viewModel.resetTransientStates()
+                onDismiss()
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -117,7 +127,10 @@ fun FriendListDialog(
                     tint = Color.Gray,
                     modifier = Modifier
                         .size(24.dp)
-                        .clickable { onDismiss() }
+                        .clickable {
+                            viewModel.resetTransientStates() // 초기화 후 닫기
+                            onDismiss()
+                        }
                 )
             }
 
@@ -144,8 +157,12 @@ fun FriendListDialog(
                     FriendSearchTab(
                         uiState,
                         profileBitmaps,
+                        myUid = myUid,
                         onSearch = { viewModel.searchUser(it) },
-                        onAdd = { viewModel.sendRequest(it) })
+                        onAdd = { viewModel.sendRequest(it) } ,
+                        onUserClick = { id -> selectedProfileId = id }
+                    )
+
                 }
             }
         }
@@ -166,7 +183,8 @@ fun FriendListDialog(
     if (uiState.showManagementDialog) {
         FriendManagementDialog(
             onDismiss = { viewModel.toggleManagementDialog(false) },
-            viewModel = viewModel
+            viewModel = viewModel,
+            onUserClick = { id -> selectedProfileId = id }
         )
     }
 }
@@ -175,8 +193,10 @@ fun FriendListDialog(
 fun FriendSearchTab(
     uiState: FriendUiState,
     profileBitmaps: Map<String, Bitmap>,
+    myUid: String?,
     onSearch: (String) -> Unit,
-    onAdd: (String) -> Unit
+    onAdd: (String) -> Unit,
+    onUserClick: (String) -> Unit
 ) {
     val context = LocalContext.current
     var searchText by remember { mutableStateOf("") }
@@ -216,19 +236,22 @@ fun FriendSearchTab(
         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.05f))
 
         uiState.searchResult?.let { user ->
+            val isMe = user.userId == myUid
             val isAlreadyFriend = uiState.friends.any { it.userId == user.userId }
             val isAlreadySent = uiState.sentRequests.any { it.userId == user.userId }
-            val isActionDisabled = isAlreadyFriend || isAlreadySent
+
+            val isActionDisabled = isAlreadyFriend || isAlreadySent || isMe
 
             FriendItem(
                 user = user,
                 profileBitmaps,
+                onClick = { onUserClick(user.userId) },
                 trailingContent = {
                     IconButton(
                         onClick = {
                             if (!isActionDisabled) {
                                 onAdd(user.userId)
-                                Toast.makeText(context, "친구가 추가되었습니다.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "친구 요청을 보냈습니다", Toast.LENGTH_SHORT).show()
                             }
                         },
                         enabled = !isActionDisabled,
@@ -241,7 +264,7 @@ fun FriendSearchTab(
                         Icon(
                             imageVector = if (isAlreadyFriend) Icons.Default.Check else Icons.Default.PersonAdd,
                             contentDescription = null,
-                            tint = if (isAlreadyFriend) Color.Green else if (isActionDisabled) Color.Gray else PointColor
+                            tint = if (isAlreadyFriend) PointColor else if (isActionDisabled) Color.Gray else PointColor
                         )
                     }
                 }
@@ -253,6 +276,7 @@ fun FriendSearchTab(
 @Composable
 fun FriendManagementDialog(
     onDismiss: () -> Unit,
+    onUserClick: (String) -> Unit,
     viewModel: FriendViewModel
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -295,19 +319,19 @@ fun FriendManagementDialog(
                     }
                 } else {
                     items(list) { user ->
-                        FriendItem(user = user,profileBitmaps) {
+                        FriendItem(user = user,profileBitmaps, onClick = { onUserClick(user.userId) }) {
                             if (managementTab == 0) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     IconButton(onClick = { viewModel.declineRequest(user.userId) }) {
                                         Icon(Icons.Default.Close, null, tint = Color(0xFFE57373), modifier = Modifier.size(20.dp))
                                     }
                                     IconButton(onClick = { viewModel.acceptRequest(user.userId) }) {
-                                        Icon(Icons.Default.Check, null, tint = Color(0xFF81C784), modifier = Modifier.size(20.dp))
+                                        Icon(Icons.Default.Check, null, tint = PointColor, modifier = Modifier.size(20.dp))
                                     }
                                 }
                             } else {
                                 IconButton(onClick = { viewModel.declineRequest(user.userId) }) {
-                                    Icon(Icons.Default.Close, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                                    Icon(Icons.Default.Close, null, tint = Color(0xFFE57373), modifier = Modifier.size(20.dp))
                                 }
                             }
                         }
@@ -461,6 +485,50 @@ fun FriendListTab(
     onFriendClick: (String) -> Unit,
     viewModel: FriendViewModel
 ) {
+    // ── 🔹 삭제 확인을 위한 임시 상태 ──
+    var friendToDelete by remember { mutableStateOf<FriendSummary?>(null) }
+
+    // ── 🔹 삭제 확인 다이얼로그 ──
+    if (friendToDelete != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { friendToDelete = null },
+            containerColor = Color(0xFF1E1E1E), // 배경과 통일감 유지
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "친구를 삭제할까요?",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "${friendToDelete?.userName}님이 친구 목록에서 삭제됩니다.",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        friendToDelete?.let { viewModel.deleteFriend(it.userId) }
+                        friendToDelete = null // 다이얼로그 닫기
+                    }
+                ) {
+                    Text("삭제", color = Color(0xFFE57373), fontWeight = FontWeight.Bold) // 삭제는 레드 계열 유지
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { friendToDelete = null }
+                ) {
+                    Text("취소", color = Color.Gray)
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 친구 수 표시 (예: 30 / 30)
         Text(
@@ -501,14 +569,14 @@ fun FriendListTab(
                             if (isDeleteMode) {
                                 // 🔹 배경 없이 담백하게 아이콘만 배치
                                 IconButton(
-                                    onClick = { viewModel.deleteFriend(friend.userId) },
+                                    onClick = { friendToDelete = friend },
                                     modifier = Modifier.size(32.dp) // 배경(background) 제거 🔹
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
-                                        contentDescription = "삭제",
-                                        tint = PointColor, // 🔹 빨간색 대신 앱의 포인트 컬러 적용
-                                        modifier = Modifier.size(20.dp) // 아이콘 크기는 적당히 유지
+                                        contentDescription = "삭제 요청",
+                                        tint = Color(0xFFE57373), // 👈 너무 튀지 않으면서 '경고'의 의미가 확실한 레드
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }

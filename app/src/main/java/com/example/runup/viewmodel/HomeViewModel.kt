@@ -1,5 +1,7 @@
 package com.example.runup.viewmodel
 
+import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,22 +9,28 @@ import com.example.runup.BuildConfig
 import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.CourseRecommendation
+import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
+import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.RecordRunningUseCase
-import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
+import com.example.runup.service.LocationService
 import com.example.runup.service.NaverMapApiService
 import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TMapApiService
 import com.example.runup.service.TMapRouteRequest
 import com.example.runup.service.TtsManager
+import com.example.runup.ui.navigation.HomeUi
 import com.naver.maps.geometry.LatLng
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,9 +53,11 @@ data class HomeUiState(
     val isLoading:Boolean = false,
     val showDistanceDialog: Boolean = false,
     val showPaceDialog: Boolean = false,
-    val isRunning:Boolean = false,
+    val homeUi: HomeUi = HomeUi.HOME,
     val selectedTab: HomeTab = HomeTab.RUNNING,
     val isInitialLoading: Boolean = true,
+    val selectedPath: Path? = null, // ── 🔹 추천/커뮤니티에서 확정된 경로 정보 📍
+    val selectedCourseName: String = "", // ── 🔹 카드나 바텀시트에 띄울 이름만 따로 보관 📍
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
@@ -71,11 +81,27 @@ data class RunningUiState(
     val isTracking: Boolean = false //현재 달리는 중인지 running -> true, stop -> false
 )
 
-enum class HomeTab { RUNNING, RECOMMEND, COURSE }
+data class CourseRecommendationUiState(
+    val goalDistance: Int = 0,
+    val cameraLocation: LatLng? = null,
+    val currentSort: SortType = SortType.DISTANCE,
+    val isLoop: Boolean = true,
+    val showLoop: Boolean = false,
+    val showDistanceDialog: Boolean = false,
+    val showSortDialog: Boolean = false,
+    val isRecommendClick: Boolean = false,
+    val recommendedCourses: List<CourseRecommendation> = emptyList(),
+    val courseIndex: Int = 0,
+    val isLoading:Boolean = false,
+    val isAiMode: Boolean = false,
+    val isFailSearchCourse: String = ""
+)
+
+
+enum class HomeTab { RUNNING, RECOMMEND }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val saveCourseUseCase: SaveCourseUseCase,
     private val recordRunningUseCase: RecordRunningUseCase,
 
     private val goalsettingUseCase: GoalSettingUseCase,
@@ -88,13 +114,18 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
-    private val userPreferenceDataSource: UserPreferenceDataSource
+    private val userPreferenceDataSource: UserPreferenceDataSource,
+    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
+
+    @ApplicationContext private val context: Context,
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
 
+    private val _courseRecommendationUiState = MutableStateFlow(CourseRecommendationUiState())
+    val courseRecommendationUiState: StateFlow<CourseRecommendationUiState> = _courseRecommendationUiState
+
     private val _isTracking = MutableStateFlow(false)
-    private val _totalTime = MutableStateFlow(0)
 
     private val _GuideUiState = MutableStateFlow(GuideUiState())
     val GuideUiState: StateFlow<GuideUiState> = _GuideUiState
@@ -115,7 +146,7 @@ class HomeViewModel @Inject constructor(
         locationRepository.recordedNodes,
         locationRepository.totalDistance,
         _isTracking,
-        _totalTime
+        locationRepository.totalTime
     ) { nodes, totalDistance, isTracking, totalTime ->
         RunningUiState(
             latLngList = nodes.map {
@@ -321,7 +352,7 @@ class HomeViewModel @Inject constructor(
                 _homeUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
-        _homeUiState.update { it.copy(isRunning = false) }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
 
@@ -331,16 +362,25 @@ class HomeViewModel @Inject constructor(
 
     fun onRunClick() {
         viewModelScope.launch {
-            _homeUiState.update { it.copy(isLoading = true, isRunning = true) }
+            _homeUiState.update { it.copy(isLoading = true, homeUi = HomeUi.RUN) }
             for (i in 3 downTo 1) {
                 _loadingTimer.value = i
                 delay(1000)
             }
             _homeUiState.update { it.copy(isLoading = false) }
-            startCurrentLocationTracking()
+
+            // 2. 추적 및 타이머 시작 (중복 호출 제거) 🔹
+            locationRepository.startTracking()
+            locationRepository.startTimer()
             startRunningTracking()
         }
-
+    }
+    // 러닝 최종 저장 혹은 취소 시 서비스 종료 📍
+    private fun stopForegroundService() {
+        val intent = Intent(context, LocationService::class.java).apply {
+            action = "STOP_TRACKING" // 📍 LocationService에 정의한 액션과 맞춰야 함
+        }
+        context.startService(intent) // 또는 stopService(intent)
     }
 
     fun startCurrentLocationTracking() {
@@ -365,8 +405,6 @@ class HomeViewModel @Inject constructor(
                 // 1초마다 레포지토리의 현재 위치를 노드로 변환하여 저장
                 if(_isTracking.value){
                     locationRepository.addNodeFromCurrentLocation()
-                    // 2. 시간 1초 증가 (초 단위)
-                    _totalTime.value += 1
                     delay(1000L)
                 } else {
                     delay(500L) // false일 때도 잠깐 쉬기
@@ -380,26 +418,15 @@ class HomeViewModel @Inject constructor(
     fun stopRunningTracking() {
         if(_isTracking.value){
             locationRepository.markLastNodeAsStopped()
+            locationRepository.stopTimer()
             _isTracking.value = false
         }
-        else _isTracking.value = true
-        //recordingJob?.cancel()
-        /*
-        viewModelScope.launch {
-            val nodes = locationRepository.recordedNodes.value
-            val distance = locationRepository.totalDistance.value.toInt()
-            val timeInMillis = _totalTime.value * 1000
-
-            if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis)
-                if (result is AuthResult.Success) {
-                    // 저장 성공 후 경로 데이터만 초기화
-                    locationRepository.clearData()
-                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
-                }
-            }
+        else {
+            locationRepository.startTimer()
+            _isTracking.value = true
         }
-         */
+        //recordingJob?.cancel()
+
     }
 
     fun recordRunningCourse(scores: Scores) {
@@ -408,18 +435,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val nodes = locationRepository.recordedNodes.value
             val distance = locationRepository.totalDistance.value.toInt()
-            val timeInMillis = _totalTime.value * 1000
+            val timeInMillis = locationRepository.totalTime.value * 1000L
 
             if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis, scores)
+                val result = recordRunningUseCase(nodes, distance, timeInMillis.toInt(), scores)
                 if (result is AuthResult.Success) {
                     // 저장 성공 후 경로 데이터만 초기화
                     locationRepository.clearData()
-                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
                 }
             }
         }
-        _homeUiState.update { it.copy(isRunning = false) }
+        stopForegroundService()
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun cancelRunningCourse() {
@@ -428,14 +455,26 @@ class HomeViewModel @Inject constructor(
 
         // 2. 저장 없이 데이터만 초기화
         locationRepository.clearData()
-        _totalTime.value = 0
 
         // 3. UI 상태를 러닝 종료로 변경
-        _homeUiState.update { it.copy(isRunning = false) }
+        stopForegroundService()
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
     fun selectTab(tab: HomeTab) {
+        // 1. 일단 탭 선택 상태 업데이트
         _homeUiState.update { it.copy(selectedTab = tab) }
+
+        // 2. ── 🔹 [핵심] 러닝 중 탭 복구 로직 📍 ──
+        if (tab == HomeTab.RUNNING) {
+            // 현재 러닝 데이터가 있거나 트래킹 중이라면 UI 모드를 RUN으로 강제 전환
+            if (runningUiState.value.isTracking || runningUiState.value.totalDistance > 0) {
+                _homeUiState.update { it.copy(homeUi = HomeUi.RUN) }
+            } else {
+                // 러닝 중이 아니라면 일반 HOME 모드로
+                _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
+            }
+        }
     }
 
     // HomeViewModel.kt 내부
@@ -492,7 +531,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun toggleTrackingMode() {
-        _GuideUiState.update { it.copy(isTrackingMode = !it.copy().isTrackingMode) }
+        _GuideUiState.update { it.copy(isTrackingMode = !it.isTrackingMode) }
     }
 
     fun clearNavigation() {
@@ -504,5 +543,279 @@ class HomeViewModel @Inject constructor(
                 isTrackingMode = false
             )
         }
+    }
+
+    // =====================================
+    // 코스추천 로직
+    // =====================================
+
+    fun onSearchClick() {
+        if(_courseRecommendationUiState.value.isRecommendClick){
+
+        }
+        else{
+            updateRecommendState {
+                it.copy(
+                    isLoading = true
+                )
+            }
+
+            val location = _homeUiState.value.currentLocation ?: run {
+                Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
+                return
+            }
+            viewModelScope.launch {
+                val result = getRecommendedCourseUseCase.invoke(
+                    _courseRecommendationUiState.value.goalDistance,
+                    // GeoPoint(35.88544455378175, 128.61535052161116),
+                    location,
+                    _courseRecommendationUiState.value.isLoop,
+                    _courseRecommendationUiState.value.currentSort,
+                    3
+                )
+
+                when (result) {
+                    is AuthResult.Success -> {
+                        Log.d("RUNUP_TEST", "총 추천 개수: ${result.data.size}")
+
+                        updateRecommendState {
+                            it.copy(
+                                recommendedCourses = result.data,
+                                courseIndex = 0
+                            )
+                        }
+                        // ── 🔹 [추가] 검색 성공 시 메인 화면 모드를 RECOMMEND로 전환 ── 📍
+                        _homeUiState.update { it.copy(homeUi = HomeUi.RECOMMEND) }
+
+                        Log.d("RUNUP_TEST", "추천 코스 목록: ${_courseRecommendationUiState.value.recommendedCourses}")
+
+                        result.data.forEachIndexed { i, item ->
+                            Log.d("RUNUP_TEST", "[$i] 코스: ${item.originCourse.id} | 사유: ${item.reason}")
+                            Log.d(
+                                "RUNUP_TEST",
+                                "    -> 거리: ${item.path.distance}m | 좌표수: ${item.path.points.size} | 중심: ${item.path.centerPoint}"
+                            )
+
+                            item.path.points.firstOrNull()?.let {
+                                Log.d("RUNUP_TEST", "    -> 시작점 체크: ${it.latitude}, ${it.longitude}")
+                            }
+                        }
+
+                        delay(1500)
+                        updateRecommendState {
+                            it.copy(
+                                isRecommendClick = true,
+                                isLoading = false
+                            )
+                        }
+                    }
+
+                    is AuthResult.Fail -> {
+                        updateRecommendState {
+                            it.copy(
+                                isLoading = false,
+                                isRecommendClick = false, // ── 🔹 상황 2로 가지 않고 상황 1 유지 📍 ──
+                                isFailSearchCourse = result.message
+                            )
+                        }
+
+                        viewModelScope.launch {
+                            delay(5000) // 5초 대기
+                            clearFailMessage()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun onAiSearchClick(userPrompt: String) {
+        if (userPrompt.isBlank()) return // 빈 값 방어
+
+        // 로딩 시작
+        updateRecommendState { it.copy(isLoading = true, isRecommendClick = false) }
+
+        val location = _homeUiState.value.currentLocation ?: run {
+            Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
+            return
+        }
+
+        viewModelScope.launch {
+            // AI 전용 UseCase 호출 (두 번째 invoke 함수 사용)
+            val result = getRecommendedCourseUseCase.invoke(
+                courseDistance = _courseRecommendationUiState.value.goalDistance,
+                currentLocation = location,
+                isLoop = _courseRecommendationUiState.value.isLoop,
+                userPrompt = userPrompt, // 👈 채팅창에서 받은 텍스트
+                count = 3
+            )
+
+            when (result) {
+                is AuthResult.Success -> {
+                    updateRecommendState {
+                        it.copy(
+                            recommendedCourses = result.data,
+                            courseIndex = 0,
+                            isLoading = false,
+                            isRecommendClick = true // 결과 모드로 전환
+                        )
+                    }
+                    Log.d("RUNUP_GEMINI_SEARCH", "${result.data}")
+                    // 지도를 RECOMMEND 모드로 바꿔서 카드와 경로가 뜨게 함
+                    _homeUiState.update { it.copy(homeUi = HomeUi.RECOMMEND) }
+                }
+                is AuthResult.Fail -> {
+                    updateRecommendState {
+                        it.copy(
+                            isLoading = false,
+                            isRecommendClick = false, // ── 🔹 상황 2로 가지 않고 상황 1 유지 📍 ──
+                            isFailSearchCourse = result.message
+                        )
+                    }
+                    viewModelScope.launch {
+                        delay(5000) // 5초 대기
+                        clearFailMessage()
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 메시지 삭제 함수 추가
+    fun clearFailMessage() {
+        updateRecommendState { it.copy(isFailSearchCourse = "") }
+    }
+
+    fun selectRecommendCourse(course: CourseRecommendation) {
+        _homeUiState.update { it.copy(
+            selectedPath = course.path, // 👈 딱 path만 저장!
+            selectedCourseName = course.originCourse.id,
+            homeUi = HomeUi.HOME
+        ) }
+        clearRecommendation()
+    }
+
+    // ── 🔹 [추가] 만약 선택한 코스를 취소하고 싶을 때를 대비 📍
+    fun clearSelectedCourse() {
+        _homeUiState.update { it.copy(selectedPath = null,
+            selectedCourseName = "")}
+        clearNavigation() // 코스를 안 볼 거면 길 안내도 당연히 종료
+    }
+
+    private fun updateRecommendState(
+        transform: (CourseRecommendationUiState) -> CourseRecommendationUiState
+    ) {
+        _courseRecommendationUiState.update { state ->
+            val newState = transform(state)
+            newState.copy(
+                cameraLocation = resolveRecommendCameraLocation(newState)
+            )
+        }
+    }
+
+    private fun resolveRecommendCameraLocation(state: CourseRecommendationUiState): LatLng? {
+        return if (state.isRecommendClick) {
+            // 코스를 선택(클릭)한 상태라면 해당 코스의 중심점을 반환
+            state.recommendedCourses.getOrNull(state.courseIndex)?.path?.centerPoint?.let {
+                LatLng(it.latitude, it.longitude)
+            }
+        } else {
+            // 그 외에는 현재 내 위치를 반환
+            _homeUiState.value.currentLocation?.let { LatLng(it.latitude, it.longitude) }
+        }
+    }
+
+    // 추천 코스 인덱스 조절 (이전/다음)
+    fun addRecommendCourseIndex() {
+        val size = _courseRecommendationUiState.value.recommendedCourses.size
+        if (size == 0) return
+        updateRecommendState {
+            it.copy(courseIndex = (it.courseIndex + 1) % size)
+        }
+    }
+
+    fun subtractRecommendCourseIndex() {
+        val size = _courseRecommendationUiState.value.recommendedCourses.size
+        if (size == 0) return
+        updateRecommendState {
+            val newIdx = if (it.courseIndex - 1 < 0) size - 1 else it.courseIndex - 1
+            it.copy(courseIndex = newIdx)
+        }
+    }
+
+    fun clearRecommendation() {
+        updateRecommendState {
+            it.copy(
+                isRecommendClick = false,
+                recommendedCourses = emptyList(),
+                courseIndex = 0
+            )
+        }
+        _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
+    }
+
+    fun openRecommendLoopDialog() {
+        updateRecommendState { it.copy(showLoop = true) }
+    }
+
+    fun closeRecommendLoopDialog() {
+        updateRecommendState { it.copy(showLoop = false) }
+    }
+
+    fun selectRecommendLoop(isLoop: Boolean) {
+        updateRecommendState {
+            it.copy(
+                isLoop = isLoop,
+                showLoop = false // 다이얼로그 닫기
+            )
+        }
+    }
+    fun openRecommendSortDialog() {
+        updateRecommendState { it.copy(showSortDialog = true) }
+    }
+
+    fun closeRecommendSortDialog() {
+        updateRecommendState { it.copy(showSortDialog = false) }
+    }
+
+    fun openRecommendDistanceDialog() {
+        updateRecommendState { it.copy(showDistanceDialog = true) }
+    }
+
+    fun closeRecommendDistanceDialog() {
+        updateRecommendState { it.copy(showDistanceDialog = false) }
+    }
+
+    fun confirmRecommendDistance(distanceKm: Int) {
+        val distanceMeter = distanceKm * 100
+        updateRecommendState {
+            it.copy(showDistanceDialog = false, goalDistance = distanceMeter)
+        }
+    }
+
+    fun confirmRecommendSort(sortType: SortType) {
+        updateRecommendState {
+            it.copy(showSortDialog = false, currentSort = sortType)
+        }
+    }
+
+    fun setCourseFromCommunity(path: Path, authorName: String) {
+        _homeUiState.update { it.copy(
+            selectedPath = path, // 👈 여기서도 path만!
+            selectedCourseName = "$authorName 님의 코스",
+            homeUi = HomeUi.HOME,
+            selectedTab = HomeTab.RECOMMEND
+        ) }
+    }
+
+    fun toggleAiRecommendMode() {
+        updateRecommendState {
+            it.copy(
+                isAiMode = !it.isAiMode // 현재 상태를 반전시킴 🔄
+            )
+        }
+
+        // 💡 팁: 모드를 전환할 때 기존 검색 결과가 방해된다면
+        // 여기서 clearRecommendation()을 같이 호출해줘도 좋습니다.
     }
 }

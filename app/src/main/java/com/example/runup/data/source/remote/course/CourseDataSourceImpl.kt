@@ -1,5 +1,6 @@
 package com.example.runup.data.source.remote.course
 
+import android.util.Log
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.AuthResult
@@ -19,11 +20,8 @@ import io.objectbox.Box
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import kotlin.math.acos
-import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 class CourseDataSourceImpl @Inject constructor(
@@ -274,7 +272,7 @@ class CourseDataSourceImpl @Inject constructor(
             val recommendedResult = generatePathsFromSources(currentLocation, sourcesWithReason, targetDist)
 
             if (recommendedResult.isEmpty()) {
-                AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
+                AuthResult.Fail("근처에 조건에 맞는 코스가 없습니다... ㅠㅠ")
             } else {
                 AuthResult.Success(recommendedResult)
             }
@@ -299,6 +297,7 @@ class CourseDataSourceImpl @Inject constructor(
                     Triple(course, startPoint.second, reason)
                 } else null
             }
+            Log.d("getcoursefromai", "${sources}")
 
             if (sources.isEmpty()) {
                 return AuthResult.Fail("추천된 코스의 시작점을 찾을 수 없습니다.")
@@ -309,8 +308,10 @@ class CourseDataSourceImpl @Inject constructor(
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴
             val recommendedResult = generatePathsFromSources(currentLocation, sources, targetDist)
 
+            Log.d("getcoursefromai", "${recommendedResult}")
+
             if (recommendedResult.isEmpty()) {
-                AuthResult.Fail("조건에 맞는 코스를 생성할 수 없습니다.")
+                AuthResult.Fail("근처에 조건에 맞는 코스가 없습니다... ㅠㅠ")
             } else {
                 AuthResult.Success(recommendedResult)
             }
@@ -428,17 +429,28 @@ class CourseDataSourceImpl @Inject constructor(
     // 공통 모듈: 여러 소스(Course)로부터 목표 거리에 맞는 경로들을 "그룹별로" 생성
     private suspend fun generatePathsFromSources(
         currentLocation: GeoPoint,
-        sources: List<Triple<Course, GeoPoint, String>>, // List[코스, 해당 코스의 시작점, 이유]
+        sources: List<Triple<Course, GeoPoint, String>>,
         targetDist: Double
-    ): List<CoursePathGroup> { //[A_course[1,2,3],B_course[1,2],C_course[1,2,3]]
+    ): List<CoursePathGroup> {
         val allGroupsResult = mutableListOf<CoursePathGroup>()
 
-        sources.forEachIndexed { _, (course, startPoint, reason) ->
+        Log.d("RUNUP_DFS", "─── 🔍 경로 생성 시작 ───")
+        Log.d("RUNUP_DFS", "목표 거리: ${targetDist}m | 소스(코스) 개수: ${sources.size}")
+
+        sources.forEachIndexed { index, (course, startPoint, reason) ->
+            Log.d("RUNUP_DFS", "[소스 $index] 코스ID: ${course.id} | 시작점: ${startPoint.latitude}, ${startPoint.longitude}")
+            Log.d("RUNUP_DFS", "   -> 보유한 좌표(pointsPool) 개수: ${course.locationPoints.size}")
+
             val courseResults = mutableListOf<Pair<Double, List<GeoPoint>>>()
             val visited = mutableSetOf<Pair<Double, Double>>()
             visited.add(startPoint.latitude to startPoint.longitude)
 
-            // 각 코스(소스)마다 DFS 탐색 수행 (최대 3개)
+            // ── 🔹 탐색 전 체크 📍
+            if (course.locationPoints.isEmpty()) {
+                Log.e("RUNUP_DFS", "   ⚠️ 에러: 코스에 좌표 데이터가 없어 탐색을 건너뜁니다.")
+            }
+
+            // 각 코스(소스)마다 DFS 탐색 수행
             searchRecursive(
                 currentPath = mutableListOf(startPoint),
                 currentDist = 0.0,
@@ -449,19 +461,21 @@ class CourseDataSourceImpl @Inject constructor(
                 maxPerSource = 3
             )
 
-            // 탐색된 결과가 있다면 해당 코스의 그룹(SubGroup)으로 묶음
+            // ── 🔹 탐색 결과 분석 📍
+            Log.d("RUNUP_DFS", "   -> 탐색 종료: 발견된 경로 ${courseResults.size}개")
+
             if (courseResults.isNotEmpty()) {
                 val subGroup = courseResults.mapIndexed { pathIndex, (dist, path) ->
                     val distanceInt = dist.toInt()
-
                     val centerPoint = calculateCenterPoint(path, currentLocation)
 
-                    // 저장 로직을 여기서 처리하여 그룹/경로 인덱스를 정확히 기록
+                    Log.d("RUNUP_DFS", "      [$pathIndex] 생성된 거리: ${distanceInt}m | 좌표수: ${path.size}")
+
                     saveToTestCollection(
                         distance = distanceInt,
                         path = path,
                         originId = course.id,
-                        subIndex = pathIndex + 1  // 1, 2, 3
+                        subIndex = pathIndex + 1
                     )
 
                     Path(
@@ -470,9 +484,13 @@ class CourseDataSourceImpl @Inject constructor(
                         centerPoint = centerPoint
                     )
                 }
-                allGroupsResult.add(CoursePathGroup(course, reason,subGroup))
+                allGroupsResult.add(CoursePathGroup(course, reason, subGroup))
+            } else {
+                Log.w("RUNUP_DFS", "   ❌ 해당 소스에서는 조건을 만족하는 경로를 찾지 못함 (거리 미달 혹은 끊김)")
             }
         }
+
+        Log.d("RUNUP_DFS", "─── ✅ 최종 생성된 그룹 수: ${allGroupsResult.size} ───")
         return allGroupsResult
     }
 
@@ -490,6 +508,8 @@ class CourseDataSourceImpl @Inject constructor(
         // 해당 코스에서 이미 충분한 갈래(예: 3개)를 찾았다면 중단
         if (results.size >= maxPerSource) return
 
+        Log.v("DFS_STEP", "현재거리: ${currentDist.roundToInt()}m | 경로수: ${currentPath.size}")
+
         if (currentDist >= targetDist) {
             // 도달 시점의 누적 거리(currentDist)를 경로와 함께 저장
             results.add(currentDist to currentPath.toList())
@@ -504,7 +524,7 @@ class CourseDataSourceImpl @Inject constructor(
             val key = pt.locationPoint.latitude to pt.locationPoint.longitude
             if (key in visited) return@filter false
             val d = calculateDistance(lastPt, pt.locationPoint)
-            d in 1.0..7.9 // 1미터에서 7.9미터 사이의 이웃 좌표들 탐색
+            d in 1.0..10.0// 1미터에서 7.9미터 사이의 이웃 좌표들 탐색
         }.map { it to calculateDistance(lastPt, it.locationPoint) }
 
         if (allNeighbors.isEmpty()) {
@@ -565,9 +585,9 @@ class CourseDataSourceImpl @Inject constructor(
         candidates.sortBy { it.distance } // 일단 거리순 정렬
 
         for (candidate in candidates) {
-            // 이미 결과 리스트에 비슷한 각도(±5도)를 가진 더 짧은 거리의 점이 있는지 확인
+            // 이미 결과 리스트에 비슷한 각도(±10도)를 가진 더 짧은 거리의 점이 있는지 확인
             val isDuplicateDirection = filteredNeighbors.any { existing ->
-                Math.abs(existing.angle - candidate.angle) <= 5.0
+                Math.abs(existing.angle - candidate.angle) <= 10.0
             }
 
             if (!isDuplicateDirection) {

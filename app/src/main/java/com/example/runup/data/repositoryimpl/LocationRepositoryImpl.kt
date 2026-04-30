@@ -20,8 +20,17 @@ import com.example.runup.service.NaverMapApiService
 import com.example.runup.ui.util.calculateDistance
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.firebase.firestore.GeoPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.pow
@@ -38,6 +47,13 @@ class LocationRepositoryImpl @Inject constructor(
 
     private val _totalDistance = MutableStateFlow(0.0)
     override val totalDistance: StateFlow<Double> = _totalDistance
+
+    // ── 🔹 [NEW] 시간 데이터 관리 ── 📍
+    private val _totalTime = MutableStateFlow(0)
+    override val totalTime: StateFlow<Int> = _totalTime.asStateFlow()
+
+    private var timerJob: Job? = null
+    private val repositoryScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val _currentLocation = MutableStateFlow<GeoPoint?>(null)
     override val currentLocation: StateFlow<GeoPoint?> = _currentLocation
@@ -94,10 +110,15 @@ class LocationRepositoryImpl @Inject constructor(
     override fun clearData() {
         _recordedNodes.value = emptyList()
         _totalDistance.value = 0.0
+        stopTimer()
+        _totalTime.value = 0
     }
 
     override fun startTracking() {
-        val intent = Intent(application, LocationService::class.java)
+        // ── 🔹 Intent에 "START" 액션을 반드시 추가 ── 📍
+        val intent = Intent(application, LocationService::class.java).apply {
+            action = "START"
+        }
         application.startForegroundService(intent)
 
         accelerometer?.let {
@@ -106,7 +127,6 @@ class LocationRepositoryImpl @Inject constructor(
         magnetometer?.let {
             sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
         }
-
     }
 
     override fun stopTracking() {
@@ -227,6 +247,23 @@ class LocationRepositoryImpl @Inject constructor(
                 Log.d("LocationAPI", "주소 갱신 성공: ${result.fullAddress}")
             }
         }
+    }
+
+    // ── 🔹 [NEW] 타이머 제어 로직 ── 📍
+    override fun startTimer() {
+        if (timerJob?.isActive == true) return // 이미 실행 중이면 무시
+
+        timerJob = repositoryScope.launch {
+            while (isActive) {
+                delay(1000L)
+                _totalTime.value += 1
+            }
+        }
+    }
+
+    override fun stopTimer() {
+        timerJob?.cancel()
+        timerJob = null
     }
 
 }

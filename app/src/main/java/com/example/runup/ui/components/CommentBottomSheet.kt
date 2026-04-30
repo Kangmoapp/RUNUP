@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.runup.ui.theme.BackGroudColor
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -47,129 +48,158 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.runup.domain.model.Comment
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CommentBottomSheet(
     postId: String,
-    comments: List<com.example.runup.domain.model.Comment>, // 댓글 리스트를 직접 받음
+    comments: List<Comment>, // 댓글 리스트를 직접 받음
     onAddComment: (String) -> Unit,             // 댓글 달기 로직
     onDeleteComment: (String, String) -> Unit,  // 댓글 삭제 로직
     bitmapCache: Map<String, Bitmap>,
+    onPostClick: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var commentText by remember { mutableStateOf("") }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
-    val isKeyboardOpen = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+    // ── 🔹 [추가] 선택된 프로필 ID 상태 ── 📍
+    var selectedProfileId by remember { mutableStateOf<String?>(null) }
 
-    androidx.activity.compose.BackHandler(enabled = true) {
-        if (isKeyboardOpen) {
-            // 키보드가 떠 있으면 포커스를 해제해 키보드만 내림 🔹
-            focusManager.clearFocus()
-        } else {
-            // 키보드가 없으면 부모에게 시트를 닫으라고 신호 보냄
-            onDismiss()
+    val imeVisible = WindowInsets.isImeVisible
+
+
+
+    BackHandler {
+        when {
+            selectedProfileId != null -> {
+                selectedProfileId = null
+            }
+            imeVisible -> {
+                focusManager.clearFocus()
+            }
+            else -> {
+                onDismiss()
+            }
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxHeight(0.85f) // 화면의 85% 정도 높이
-            .fillMaxWidth()
-            .background(BackGroudColor)
-            .navigationBarsPadding()
-            .imePadding()
-    ) {
-        // ── [1] 헤더 영역 ──
-        Box(
+    Box(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) { // 팝업 배치를 위해 Box로 감쌈
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .background(BackGroudColor)
         ) {
-            Text("댓글", color = WhiteTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        }
-        Divider(color = Color.DarkGray, thickness = 0.5.dp)
+            // ── [1] 헤더 영역 ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("댓글", color = WhiteTextColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+            Divider(color = Color.DarkGray, thickness = 0.5.dp)
 
-        // ── [2] 댓글 리스트 영역 ──
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            if (comments.isEmpty()) {
-                item {
-                    Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("아직 댓글이 없습니다. 첫 댓글을 남겨보세요!", color = Color.Gray, fontSize = 14.sp)
+            // ── [2] 댓글 리스트 영역 ──
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                if (comments.isEmpty()) {
+                    item {
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("아직 댓글이 없습니다. 첫 댓글을 남겨보세요!", color = Color.Gray, fontSize = 14.sp)
+                        }
+                    }
+                } else {
+                    items(comments) { comment ->
+                        CommentItem(
+                            comment = comment,
+                            bitmapCache = bitmapCache,
+                            onDelete = { onDeleteComment(postId, comment.commentId) },
+                            onProfileClick = { userId -> selectedProfileId = userId }
+                        )
                     }
                 }
-            } else {
-                items(comments) { comment ->
-                    CommentItem(comment, bitmapCache,onDelete = {
-                        // 꾹 눌러서 삭제 확인 시 호출 🔹
-                        onDeleteComment(postId, comment.commentId)
-                    }) // 별도 분리된 댓글 아이템 컴포저블
+            }
+
+            // ── [3] 댓글 입력 영역 ──
+            Surface(
+                color = Color(0xFF1A1A1A),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding() // 휴대폰 하단 물리/소프트 버튼 영역만큼만 딱 띄워줌
+                    .imePadding()           // 키보드가 올라오면 그 위로 즉시 밀려 올라감
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = commentText,
+                        onValueChange = { commentText = it },
+                        placeholder = { Text("댓글 달기...", color = Color.Gray, fontSize = 14.sp) },
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Send,
+                            keyboardType = KeyboardType.Text
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (commentText.isNotBlank()) {
+                                    onAddComment(commentText)
+                                    commentText = ""
+                                    focusManager.clearFocus() // 전송 후 키보드 내리고 싶다면 추가
+                                }
+                            }
+                        ),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = WhiteTextColor,
+                            unfocusedTextColor = WhiteTextColor,
+                            cursorColor = WhiteTextColor
+                        )
+                    )
+                    TextButton(
+                        onClick = {
+                            onAddComment(commentText) // 🔹 주입받은 함수 실행
+                            commentText = ""
+                            focusManager.clearFocus() // 전송 후 키보드 내리고 싶다면 추가
+                        },
+                        enabled = commentText.isNotBlank()
+                    ) {
+                        Text("게시", color = if (commentText.isNotBlank()) PointColor else Color.Gray)
+                    }
                 }
             }
         }
 
-        // ── [3] 댓글 입력 영역 ──
-        Surface(
-            color = Color(0xFF1A1A1A),
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding() // 키보드 위로 자동으로 밀려 올라감
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextField(
-                    value = commentText,
-                    onValueChange = { commentText = it },
-                    placeholder = { Text("댓글 달기...", color = Color.Gray, fontSize = 14.sp) },
-                    modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Send,
-                        keyboardType = KeyboardType.Text
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (commentText.isNotBlank()) {
-                                onAddComment(commentText)
-                                commentText = ""
-                                focusManager.clearFocus() // 전송 후 키보드 내리고 싶다면 추가
-                            }
-                        }
-                    ),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedTextColor = WhiteTextColor,
-                        unfocusedTextColor = WhiteTextColor,
-                        cursorColor = WhiteTextColor
-                    )
-                )
-                TextButton(
-                    onClick = {
-                        onAddComment(commentText) // 🔹 주입받은 함수 실행
-                        commentText = ""
-                        focusManager.clearFocus() // 전송 후 키보드 내리고 싶다면 추가
-                    },
-                    enabled = commentText.isNotBlank()
-                ) {
-                    Text("게시", color = if (commentText.isNotBlank()) PointColor else Color.Gray)
+        // ── 🔹 [추가] 미니 프로필 팝업 배치 ── 📍
+        if (selectedProfileId != null) {
+            ProfileMiniPopup(
+                userId = selectedProfileId!!,
+                onDismiss = { selectedProfileId = null },
+                onViewPosts = { uid ->
+                    onPostClick(uid) // 해당 유저 활동 페이지로 이동
+                    selectedProfileId = null
+                    onDismiss() // 페이지 이동 시 댓글창도 닫아주는 게 깔끔합니다. 🔹
                 }
-            }
+            )
         }
     }
+
+
 }
 
 @Composable
 fun CommentItem(
-    comment: com.example.runup.domain.model.Comment, // 윤석님의 댓글 모델
+    comment: Comment, // 윤석님의 댓글 모델
     bitmapCache: Map<String, Bitmap>,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onProfileClick: (String) -> Unit // 🔹 콜백 파라미터 추가
 ) {
     // 🔹 캐시에서 프로필 비트맵 확인
     val authorProfileBitmap = bitmapCache[comment.authorProfileUrlMini]
@@ -293,7 +323,8 @@ fun CommentItem(
             modifier = Modifier
                 .size(34.dp) // 댓글용으로 적당히 작은 사이즈
                 .clip(CircleShape)
-                .background(Color.Gray.copy(alpha = 0.2f)),
+                .background(Color.Gray.copy(alpha = 0.2f))
+                .clickable { onProfileClick(comment.authorId) },
             contentAlignment = Alignment.Center
         ) {
             if (authorProfileBitmap != null) {
@@ -325,7 +356,8 @@ fun CommentItem(
                     text = comment.authorName,
                     color = WhiteTextColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { onProfileClick(comment.authorId) }
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))

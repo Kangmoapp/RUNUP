@@ -17,14 +17,34 @@ import androidx.compose.ui.unit.sp
 
 
 @Composable
-fun ControlButton(text: String, color: Color, onClick: () -> Unit) {
+fun ControlButton(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    contentColor: Color = Color.White, // ── 🔹 기본값은 화이트로 설정 📍 ──
+    isLoading: Boolean = false,
+    onClick: () -> Unit
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(width = 85.dp, height = 50.dp)
             .background(color = color, shape = RoundedCornerShape(12.dp))
-            .clickable { onClick() },
+            .clickable(enabled = !isLoading) { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Text(text = text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        if (isLoading) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = contentColor, // ── 🔹 인디케이터도 텍스트 색상을 따라갑니다 📍 ──
+                strokeWidth = 2.dp
+            )
+        } else {
+            Text(
+                text = text,
+                color = contentColor, // ── 🔹 넘겨받은 색상 적용 📍 ──
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }

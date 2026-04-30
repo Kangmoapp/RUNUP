@@ -2,7 +2,6 @@ package com.example.runup.viewmodel
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -11,28 +10,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import coil.imageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.AuthResult
-import com.example.runup.domain.model.Comment // 추가됨
+import com.example.runup.domain.model.Comment
 import com.example.runup.domain.model.FilterState
 import com.example.runup.domain.model.FilterType
 import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.PostImage
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
-import com.example.runup.domain.model.UserData
 import com.example.runup.domain.model.ViewScope
+import com.example.runup.domain.repository.CourseRepository
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
-import com.example.runup.domain.usecase.GetUserRunningRecordUseCase
 import com.example.runup.ui.util.CommunityRefreshManager
 import com.example.runup.ui.util.ImagePreloader
-import com.example.runup.ui.util.UserStateManager
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -71,8 +65,11 @@ data class PostUploadUiState(
 )
 
 data class MapSnapshot(
-    val staticMapUrl: String,
-    val markerPositions: Map<String, Offset>, // 실제 좌표(점)
+    val staticMapUrl: String, // 네이버 API 요청한 지도 StaticImage Url
+    val pathPoints: List<Pair<Offset, Boolean>>,
+    val startPoint: Offset?,             // 🔹 시작점 픽셀
+    val endPoint: Offset?,               // 🔹 종료점 픽셀
+    val markerPositions: Map<String, Offset>, // 마커 처음 위치
     val closerOffsets: Map<String, Offset>,   // 마커의 최종 위치
     val courseBounds: androidx.compose.ui.geometry.Rect // 코스 경계 픽셀
 )
@@ -85,11 +82,11 @@ private var isLastPage = false
 class CommunityViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val dataSource: CommunityDataSourceImpl,
-    private val getUserRunningRecordUseCase: GetUserRunningRecordUseCase,
     private val locationRepository: LocationRepository,
     private val userRepository: UserRepository,
     private val refreshManager: CommunityRefreshManager,
     private val imagePreloader: ImagePreloader,
+    private val courseRepository: CourseRepository, // 🔹 추가
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -186,15 +183,9 @@ class CommunityViewModel @Inject constructor(
                 val targetIds = when (currentFilter.scope) {
                     ViewScope.MINE -> listOf(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "")
                     ViewScope.FRIENDS -> {
-                        // 1. Repository에서 친구 UID 리스트를 가져옵니다.
                         val result = userRepository.getFriendUids()
                         if (result is AuthResult.Success) {
-                            // 친구가 한 명도 없을 경우를 대비해 처리
-                            if (result.data.isEmpty()) {
-                                emptyList()
-                            } else {
-                                result.data
-                            }
+                            result.data.ifEmpty { emptyList() }
                         } else {
                             emptyList()
                         }
@@ -238,17 +229,12 @@ class CommunityViewModel @Inject constructor(
         viewModelScope.launch {
             // SharedFlow를 통해 전역적으로 발생하는 리프레시 신호를 수집합니다 👂
             refreshManager.refreshEvent.collectLatest {
-                Log.d("CommunityViewModel", "외부 데이터 변경(좋아요/댓글/삭제 등) 감지 -> 피드 새로고침")
-
-                // 🔹 기존에 만들어두신 fetchPosts를 호출하여 서버 데이터를 최신화합니다.
                 // isInitial = true -> 페이징 초기화
                 // forceRefresh = true -> 로딩 바 활성화 및 캐시 무시
                 fetchPosts(isInitial = true, forceRefresh = true)
             }
         }
     }
-
-    // ViewModel 내부
 
     private fun preloadBitmaps(posts: List<Post>, onComplete: () -> Unit = {}) {
         if (posts.isEmpty()) { onComplete(); return }
@@ -308,7 +294,7 @@ class CommunityViewModel @Inject constructor(
         fullUrls.forEach { url ->
             viewModelScope.launch(Dispatchers.IO) {
                 val bitmap = imagePreloader.loadBitmap(url, 800)
-                bitmap?.let { b -> _fullImageCache.update { it + (url + "_full" to b) } }
+                bitmap?.let { b -> _fullImageCache.update { it + (url to b) } }
             }
         }
     }
@@ -616,28 +602,42 @@ class CommunityViewModel @Inject constructor(
             val result = dataSource.followRunning(postId)
             if (result is AuthResult.Success) {
                 val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                var targetPost: Post? = null // 🔹 저장을 위한 임시 변수
 
-                // 1. 리스트 상태만 즉시 업데이트 🔹
+                // 1. 리스트 상태 즉시 업데이트
                 _communityUiState.update { state ->
                     val updatedPosts = state.posts.map { post ->
                         if (post.postId == postId) {
                             val alreadyFollowed = post.followedBy.contains(myUid)
                             val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
                             val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
-                            post.copy(followCount = newCount, followedBy = newFollowedBy)
+
+                            val updatedPost = post.copy(followCount = newCount, followedBy = newFollowedBy)
+                            targetPost = updatedPost // 🔹 업데이트된 데이터를 밖으로 빼냄
+                            updatedPost
                         } else post
                     }
                     state.copy(posts = updatedPosts)
                 }
 
-                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
-                _communityUiState.value.posts.find { it.postId == postId }?.let {
-                    onCourseReady(it)
+                // ── 🔹 2. [핵심] 따라뛰기 5회 달성 시 공식 코스로 등록 ── 📍
+                targetPost?.let { post ->
+                    // followCount가 딱 5가 된 순간 + 코스 데이터가 실재할 때 실행
+                    if (post.followCount == 5 && post.runRecord != null) {
+                        val saveResult = courseRepository.saveCourse(post.runRecord.course)
+
+                        if (saveResult is AuthResult.Success) {
+                            Log.d("CoursePromotion", "축하합니다! 인기가 많아 공식 코스로 등록되었습니다: ${post.postId}")
+                        } else {
+                            Log.e("CoursePromotion", "공식 코스 등록 실패")
+                        }
+                    }
                 }
+
+                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
+                targetPost?.let { onCourseReady(it) }
             }
         }
     }
-
-
 }
 

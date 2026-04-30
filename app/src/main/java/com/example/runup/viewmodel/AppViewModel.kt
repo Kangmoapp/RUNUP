@@ -25,6 +25,22 @@ class AppViewModel @Inject constructor(
     private val _currentScreen = MutableStateFlow(Screen.LOADING)
     val currentScreen: StateFlow<Screen> = _currentScreen
 
+    private val _isMenuVisible = MutableStateFlow(false)
+    val isMenuVisible: StateFlow<Boolean> = _isMenuVisible
+
+    fun openMenu() {
+        _isMenuVisible.value = true
+    }
+
+    fun closeMenu() {
+        _isMenuVisible.value = false
+    }
+
+    fun navigateFromMenu(screen: Screen) {
+        _isMenuVisible.value = false
+        navigateTo(screen)
+    }
+
     private val _isSplashLoading = MutableStateFlow(true)
     val isSplashLoading: StateFlow<Boolean> = _isSplashLoading
 

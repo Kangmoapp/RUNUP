@@ -10,7 +10,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,14 +28,13 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.DirectionsRun
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -76,7 +74,9 @@ import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.ui.util.assignSlots
 import com.example.runup.ui.util.calculateCloserOffset
+import com.example.runup.ui.util.calculatePace
 import com.example.runup.ui.util.latLngToPixel
+import com.example.runup.ui.util.mapper.TimeMapper.formatDurationMmSs
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.MapSnapshot
 import com.naver.maps.map.compose.ExperimentalNaverMapApi
@@ -87,20 +87,23 @@ import kotlin.collections.component2
 @Composable
 fun PostItem(
     post: Post,
-    cachedSnapshot: MapSnapshot?,         // 👈 추가
-    authorBitmap: Bitmap?,                // 👈 추가
-    thumbnailCache: Map<String, Bitmap>,   // 👈 추가
-    fullBitmapCache: Map<String, Bitmap>,  // 👈 추가
+    maxWidthPx: Float,
+    mapSnapShots : MapSnapshot?,         // 👈 추가
+    authorProfileBitmap: Bitmap?,                // 👈 추가
+    locationBitmaps: Map<String, Bitmap>,
+    commonImageBitmaps: Map<String, Bitmap>,
     onLikeClick: () -> Unit,
     onFollowClick: () -> Unit,
-    onPostClick: () -> Unit,              // 👈 onClick을 더 명확하게
+    onCommentClick: () -> Unit,              // 👈 onClick을 더 명확하게
     onDeletePost: () -> Unit,             // 👈 삭제 콜백
     onImageClick: (String) -> Unit,
-    onSaveSnapshot: (MapSnapshot) -> Unit, // 👈 계산된 지도 저장 콜백
+    onSaveMapSnapshot: (MapSnapshot) -> Unit, // 👈 계산된 지도 저장 콜백
     onProfileClick: (String) -> Unit
 ) {
     // 삭제 메뉴 상태 및 본인 확인
     var showMenu by remember { mutableStateOf(false) }
+    var showFollowDialog by remember { mutableStateOf(false) } //따라 뛰기 다이얼로그
+
     val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
     val isMyPost = post.authorId == myUid
 
@@ -108,8 +111,45 @@ fun PostItem(
     val totalPages = 1 + post.commonImages.size
     val pagerState = rememberPagerState(pageCount = { totalPages })
 
-    val density = LocalDensity.current
-    val context = LocalContext.current
+    // 따라뛰기 확인 다이얼로그
+    if (showFollowDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showFollowDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "함께 달릴까요? 🏃‍♂️",
+                    color = WhiteTextColor,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "이 코스를 불러와서 러닝을 시작합니다.",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        onFollowClick() // 👈 확인 시 실행
+                        showFollowDialog = false
+                    }
+                ) {
+                    // 강조하고 싶은 버튼에 PointColor 적용
+                    Text("시작", color = PointColor, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showFollowDialog = false }) {
+                    Text("취소", color = Color.Gray)
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -131,8 +171,8 @@ fun PostItem(
                     .background(Color.Gray),
                 contentAlignment = Alignment.Center
             ) {
-                if (authorBitmap != null) {
-                    Image(bitmap = authorBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (authorProfileBitmap != null) {
+                    Image(bitmap = authorProfileBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
                     Text("👤", fontSize = 18.sp)
                 }
@@ -213,196 +253,31 @@ fun PostItem(
         }
 
         // --- [2] 메인 콘텐츠 (페이저) ---
-        Box(modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
 
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val actualWidthPx = with(LocalDensity.current) { maxWidth.toPx() } // 👈 실제 너비!
-                val markerSizePx = with(LocalDensity.current) { 64.dp.toPx() }
-
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                    // HorizontalPager의 page == 0 내부
-                    if (page == 0) {
-                        var isMapLoaded by remember(post.postId) { mutableStateOf(false) }
-                        post.runRecord?.let { record ->
-                            // 🔹 1. BoxWithConstraints 대신 화면의 가로 픽셀을 직접 가져옵니다.
-                            val context = LocalContext.current
-                            val density = LocalDensity.current
-                            val screenWidthPx = remember { context.resources.displayMetrics.widthPixels.toFloat() }
-                            val markerSizePx = with(density) { 64.dp.toPx() }
-
-                            // 🔹 2. 일반 Box 사용 (성능 최적화)
-                            Box(modifier = Modifier.fillMaxSize()) {
-
-                                LaunchedEffect(post.postId, actualWidthPx) {
-                                    if (cachedSnapshot == null) {
-                                        val centerLat = (record.course.minLat + record.course.maxLat) / 2
-                                        val centerLng = (record.course.minLng + record.course.maxLng) / 2
-
-                                        val latDiff = record.course.maxLat - record.course.minLat
-                                        val lngDiff = record.course.maxLng - record.course.minLng
-                                        val maxDiff = maxOf(latDiff, lngDiff)
-                                        val dynamicZoom = when {
-                                            maxDiff > 0.04 -> 14.0
-                                            maxDiff > 0.015 -> 15.0
-                                            maxDiff > 0.005 -> 16.0
-                                            maxDiff > 0.002 -> 17.0
-                                            else -> 18.0
-                                        }
-
-                                        // 윤석님이 성공하신 'apiW = 화면폭' 로직 그대로 유지
-                                        val apiW = screenWidthPx.toInt().coerceAtMost(1024)
-                                        val apiH = apiW
-
-                                        val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), actualWidthPx.toInt().coerceAtMost(1024), actualWidthPx.toInt().coerceAtMost(1024))
-
-                                        // 좌표 계산도 screenWidthPx(이전의 mapWidthPx) 기준으로 1:1 유지
-                                        val pMin = latLngToPixel(record.course.minLat, record.course.minLng, centerLat, centerLng, dynamicZoom, actualWidthPx, actualWidthPx)
-                                        val pMax = latLngToPixel(record.course.maxLat, record.course.maxLng, centerLat, centerLng, dynamicZoom, actualWidthPx, actualWidthPx)
-                                        val newBounds = Rect(minOf(pMin.x, pMax.x), minOf(pMin.y, pMax.y), maxOf(pMin.x, pMax.x), maxOf(pMin.y, pMax.y))
-
-                                        val newPositions = post.locationImages.filter { it.location != null }.associate { img ->
-                                            img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, actualWidthPx, actualWidthPx)
-                                        }
-
-                                        val slots = assignSlots(post.locationImages.filter { it.location != null }, centerLat, centerLng)
-                                        val newCloserOffsets = slots.entries.associate { (postImage, slot) ->
-                                            val orig = newPositions[postImage.url]!!
-                                            postImage.url to calculateCloserOffset(orig.x, orig.y, slot, actualWidthPx, actualWidthPx, newBounds.left, newBounds.right, newBounds.top, newBounds.bottom, markerSizePx)
-                                        }
-
-                                        onSaveSnapshot(MapSnapshot(url, newPositions, newCloserOffsets, newBounds))
-                                    }
-                                }
-
-                                // --- 지도 및 오버레이 그리기 영역 (동일) ---
-                                Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data(cachedSnapshot?.staticMapUrl ?: "")
-                                            .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
-                                            .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.FillBounds,
-                                        onSuccess = { isMapLoaded = true }
-                                    )
-
-                                    if (isMapLoaded && cachedSnapshot != null) {
-                                        Canvas(modifier = Modifier.fillMaxSize()) {
-                                            // 🔹 4. 그리기 로직에서도 mapWidthPx(화면 실제 크기)를 사용합니다.
-                                            val centerLat =
-                                                (record.course.minLat + record.course.maxLat) / 2
-                                            val centerLng =
-                                                (record.course.minLng + record.course.maxLng) / 2
-                                            val latDiff = record.course.maxLat - record.course.minLat
-                                            val lngDiff = record.course.maxLng - record.course.minLng
-                                            val maxDiff = maxOf(latDiff, lngDiff)
-                                            val dynamicZoom = when {
-                                                maxDiff > 0.04 -> 14.0
-                                                maxDiff > 0.015 -> 15.0
-                                                maxDiff > 0.005 -> 16.0
-                                                maxDiff > 0.002 -> 17.0
-                                                else -> 18.0
-                                            }
-                                            val points = record.course.locationPoints.map {
-                                                latLngToPixel(
-                                                    it.locationPoint.latitude,
-                                                    it.locationPoint.longitude,
-                                                    centerLat,
-                                                    centerLng,
-                                                    dynamicZoom,
-                                                    actualWidthPx,
-                                                    actualWidthPx
-                                                )
-                                            }
-
-                                            val path = Path().apply {
-                                                points.forEachIndexed { i, p ->
-                                                    if (i == 0) moveTo(p.x, p.y)
-                                                    else if (!record.course.locationPoints[i - 1].stop) lineTo(
-                                                        p.x,
-                                                        p.y
-                                                    )
-                                                    else moveTo(p.x, p.y)
-                                                }
-                                            }
-                                            drawPath(
-                                                path,
-                                                Color.Black,
-                                                style = Stroke(
-                                                    14f,
-                                                    cap = StrokeCap.Round,
-                                                    join = StrokeJoin.Round
-                                                )
-                                            )
-                                            drawPath(
-                                                path,
-                                                PointColor,
-                                                style = Stroke(
-                                                    8f,
-                                                    cap = StrokeCap.Round,
-                                                    join = StrokeJoin.Round
-                                                )
-                                            )
-
-                                            if (points.isNotEmpty()) {
-                                                drawMarker(points.first(), Color(0xFF4CAF50), "START")
-                                                drawMarker(points.last(), Color(0xFFF44336), "END")
-                                            }
-
-                                            cachedSnapshot.closerOffsets.forEach { (url, closerPos) ->
-                                                val origPos = cachedSnapshot.markerPositions[url]
-                                                    ?: return@forEach
-                                                drawLine(Color.Black.copy(0.8f), origPos, closerPos, 2f)
-                                                drawCircle(Color.Black, 5f, origPos)
-                                            }
-                                        }
-
-                                        cachedSnapshot.closerOffsets.forEach { (url, closerPos) ->
-                                            val bitmap = thumbnailCache[url] ?: return@forEach
-                                            Box(modifier = Modifier
-                                                .offset {
-                                                    IntOffset(
-                                                        (closerPos.x - markerSizePx / 2).toInt(),
-                                                        (closerPos.y - markerSizePx / 2).toInt()
-                                                    )
-                                                }
-                                                .clickable { onImageClick(url) }) {
-                                                PhotoMarkerFromBitmap(bitmap)
-                                            }
-                                        }
-                                    } else {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            CircularProgressIndicator(
-                                                color = PointColor,
-                                                strokeWidth = 2.dp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                if (page == 0) {
+                    MapSection(
+                        post = post,
+                        maxWidthPx = maxWidthPx, // 주입받은 너비 사용
+                        mapSnapShots = mapSnapShots,
+                        locationMarkerCache = locationBitmaps,
+                        onSaveMapSnapshot = onSaveMapSnapshot,
+                        onImageClick = onImageClick
+                    )
+                } else {
+                    val imageUrl = post.commonImages[page - 1].url
+                    val bitmap = commonImageBitmaps[imageUrl]
+                    if (bitmap != null) {
+                        Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     } else {
-                        // --- 일반 이미지 페이지 ---
-                        val imageUrl = post.commonImages[page - 1].url
-                        val bitmap = fullBitmapCache[imageUrl]
-                        if (bitmap != null) {
-                            Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        } else {
-                            AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier
-                                .fillMaxSize()
-                                .clickable { onImageClick(imageUrl) }, contentScale = ContentScale.Crop)
-                        }
+                        AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { onImageClick(imageUrl) }, contentScale = ContentScale.Crop)
                     }
                 }
             }
+
 
             // 페이지 인디케이터 (1/3)
             if (totalPages > 1) {
@@ -479,10 +354,15 @@ fun PostItem(
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = 32.dp)
-                    .clickable { onPostClick() },
+                    .clickable { onCommentClick() },
                 contentAlignment = Alignment.CenterStart
             ) {
-                Text(text = "💬", fontSize = 18.sp)
+                Icon(
+                    imageVector = Icons.Default.ChatBubbleOutline,
+                    contentDescription = "댓글",
+                    tint = WhiteTextColor, // 좋아요의 기본 색상과 통일
+                    modifier = Modifier.size(24.dp) // 크기 24dp로 고정
+                )
                 if (post.commentCount > 0) {
                     Text(
                         text = "${post.commentCount}",
@@ -498,19 +378,21 @@ fun PostItem(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 3. 따라뛰기(Follow) 섹션 ── 👟 [좋아요/댓글과 100% 동일화] 📍
+            // ── 🔹 따라뛰기(Follow) 섹션 수정 ── 📍
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = 32.dp)
-                    .clickable { onFollowClick() },
+                    .clickable {
+                        // 📍 조건문(if)을 제거하여 무조건 다이얼로그를 띄웁니다.
+                        showFollowDialog = true
+                    },
                 contentAlignment = Alignment.CenterStart
             ) {
                 Icon(
-                    imageVector = Icons.Default.DirectionsRun,
+                    imageVector = Icons.Outlined.Route,
                     contentDescription = "따라뛰기",
-                    // 활성화 시 PointColor, 기본 시 WhiteTextColor (통일감)
                     tint = if (post.followedBy.contains(myUid)) PointColor else WhiteTextColor,
-                    modifier = Modifier.size(24.dp) // 크기 24dp로 통일 🔹
+                    modifier = Modifier.size(24.dp)
                 )
                 if (post.followCount > 0) {
                     Text(
@@ -518,9 +400,7 @@ fun PostItem(
                         color = WhiteTextColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = (-4).dp, y = 2.dp) // 숫자 위치 통일 🔹
+                        modifier = Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 2.dp)
                     )
                 }
             }
@@ -566,5 +446,215 @@ fun PostItem(
                 fontSize = 12.sp
             )
         }
+    }
+}
+
+@Composable
+private fun MapSection(
+    post: Post,
+    maxWidthPx: Float,
+    mapSnapShots: MapSnapshot?,
+    locationMarkerCache: Map<String, Bitmap>,
+    onSaveMapSnapshot: (MapSnapshot) -> Unit,
+    onImageClick: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val markerSizePx = with(density) { 64.dp.toPx() }
+    var isMapLoaded by remember(post.postId) { mutableStateOf(false) }
+
+    // ── 🔹 [계산 로직] Screen에서 받은 maxWidthPx를 기준으로 딱 한 번만 수행 ──
+    LaunchedEffect(post.postId, maxWidthPx) {
+        if (mapSnapShots == null && post.runRecord != null) {
+            val record = post.runRecord
+            val centerLat = (record.course.minLat + record.course.maxLat) / 2
+            val centerLng = (record.course.minLng + record.course.maxLng) / 2
+
+            val latDiff = record.course.maxLat - record.course.minLat
+            val lngDiff = record.course.maxLng - record.course.minLng
+            val maxDiff = maxOf(latDiff, lngDiff)
+            val dynamicZoom = when {
+                maxDiff > 0.04 -> 14.0
+                maxDiff > 0.015 -> 15.0
+                maxDiff > 0.005 -> 16.0
+                maxDiff > 0.002 -> 17.0
+                else -> 18.0
+            }
+
+            // 🔹 [핵심] 위치 정보와 중단 여부를 튜플로 묶어서 미리 계산 📍
+            val computedPathPoints = record.course.locationPoints.map {
+                val pixelPos = latLngToPixel(
+                    it.locationPoint.latitude, it.locationPoint.longitude,
+                    centerLat, centerLng, dynamicZoom, maxWidthPx, maxWidthPx
+                )
+                pixelPos to it.stop // Pair(Offset, Boolean)
+            }
+
+            val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), maxWidthPx.toInt().coerceAtMost(1024), maxWidthPx.toInt().coerceAtMost(1024))
+
+            // 좌표 계산도 actualWidthPx  기준으로 1:1 유지
+            val pMin = latLngToPixel(record.course.minLat, record.course.minLng, centerLat, centerLng, dynamicZoom, maxWidthPx, maxWidthPx)
+            val pMax = latLngToPixel(record.course.maxLat, record.course.maxLng, centerLat, centerLng, dynamicZoom, maxWidthPx, maxWidthPx)
+            val newBounds = Rect(minOf(pMin.x, pMax.x), minOf(pMin.y, pMax.y), maxOf(pMin.x, pMax.x), maxOf(pMin.y, pMax.y))
+
+            val newPositions = post.locationImages.filter { it.location != null }.associate { img ->
+                img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, maxWidthPx, maxWidthPx)
+            }
+
+            val slots = assignSlots(post.locationImages.filter { it.location != null }, centerLat, centerLng)
+            val newCloserOffsets = slots.entries.associate { (postImage, slot) ->
+                val orig = newPositions[postImage.url]!!
+                postImage.url to calculateCloserOffset(orig.x, orig.y, slot, maxWidthPx, maxWidthPx, newBounds.left, newBounds.right, newBounds.top, newBounds.bottom, markerSizePx)
+            }
+
+            onSaveMapSnapshot(MapSnapshot(
+                staticMapUrl = url,
+                pathPoints = computedPathPoints, // 미리 계산된 값!
+                startPoint = computedPathPoints.firstOrNull()?.first,
+                endPoint = computedPathPoints.lastOrNull()?.first,
+                markerPositions = newPositions,
+                closerOffsets = newCloserOffsets,
+                courseBounds = newBounds
+            ))
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
+        // Static Map 이미지
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(mapSnapShots?.staticMapUrl ?: "")
+                .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
+                .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+            onSuccess = { isMapLoaded = true }
+        )
+
+        if (isMapLoaded && mapSnapShots != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val snapshot = mapSnapShots ?: return@Canvas
+
+                // 코스 경로 그리기 (이미 계산된 pathPoints 사용) 📍
+                if (snapshot.pathPoints.isNotEmpty()) {
+                    val path = Path().apply {
+                        snapshot.pathPoints.forEachIndexed { i, (currentPos, isStop) ->
+                            if (i == 0) {
+                                moveTo(currentPos.x, currentPos.y)
+                            } else {
+                                // 🔹 이전 노드의 stop 여부를 확인합니다.
+                                val (prevPos, prevStop) = snapshot.pathPoints[i - 1]
+
+                                if (prevStop) {
+                                    // 이전 지점에서 끊겼다면 선을 긋지 않고 '점프' 📍
+                                    moveTo(currentPos.x, currentPos.y)
+                                } else {
+                                    // 정상 연결 상태라면 시원하게 긋기!
+                                    lineTo(currentPos.x, currentPos.y)
+                                }
+                            }
+                        }
+                    }
+                    // 테두리 + 선 그리기
+                    drawPath(path, Color.Black, style = Stroke(14f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                    drawPath(path, PointColor, style = Stroke(8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+
+                // 2. 시작/종료 마커 (이미 계산된 값 사용) 📍
+                snapshot.startPoint?.let { drawMarker(it, Color(0xFF4CAF50), "START") }
+                snapshot.endPoint?.let { drawMarker(it, Color(0xFFF44336), "END") }
+
+                // 3. 사진 마커 연결 선 그리기 📍
+                snapshot.closerOffsets.forEach { (url, closerPos) ->
+                    val origPos = snapshot.markerPositions[url] ?: return@forEach
+                    drawLine(Color.Black.copy(0.8f), origPos, closerPos, 2f)
+                    drawCircle(Color.Black, 5f, origPos)
+                }
+            }
+
+            mapSnapShots.closerOffsets.forEach { (url, closerPos) ->
+                val bitmap = locationMarkerCache[url] ?: return@forEach
+                Box(modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (closerPos.x - markerSizePx / 2).toInt(),
+                            (closerPos.y - markerSizePx / 2).toInt()
+                        )
+                    }
+                    .clickable { onImageClick(url) }) {
+                    PhotoMarkerFromBitmap(bitmap)
+                }
+            }
+
+            post.runRecord?.let { record ->
+                // 잔상 없는 블랙 대시보드
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp)
+                        .clip(RoundedCornerShape(16.dp)) // 1. 먼저 자르고
+                        .background(Color(0xFF000000).copy(alpha = 0.75f)) // 2. 순수 블랙 85% (색 변형 방지) 🔹
+                        .padding(horizontal = 18.dp, vertical = 10.dp), // 3. 내부 여백
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // [1] 대형 거리 표시
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            Text(
+                                text = String.format("%.2f", record.course.distance / 1000.0),
+                                color = PointColor,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = (-1).sp
+                            )
+                            Text(
+                                text = "km",
+                                color = PointColor.copy(alpha = 0.8f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(bottom = 4.dp, start = 2.dp)
+                            )
+                        }
+
+                        // [2] 하단 데이터 (페이스, 시간, 칼로리)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // 📍 SmallStatItem 내부에 혹시 background가 있다면 꼭 제거하세요! 🔹
+                            SmallStatItem("평균 페이스", calculatePace(record.time.toInt(), record.course.distance.toDouble()))
+                            SmallStatItem("시간", formatDurationMmSs(record.time.toLong() / 1000))
+
+                            val kcal = (record.course.distance / 1000.0 * 70).toInt()
+                            SmallStatItem("칼로리", "$kcal")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SmallStatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.4f),
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }

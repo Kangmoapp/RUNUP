@@ -9,59 +9,53 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.runup.ui.theme.Gray
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
 import com.google.firebase.firestore.GeoPoint
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
+import com.naver.maps.geometry.LatLng
+import com.naver.maps.map.CameraUpdate
+import com.naver.maps.map.compose.ExperimentalNaverMapApi
+import com.naver.maps.map.compose.NaverMap
+import com.naver.maps.map.compose.PathOverlay
+import com.naver.maps.map.compose.rememberCameraPositionState
 
+@OptIn(ExperimentalNaverMapApi::class)
 @Composable
-fun MyGoogleMap(
+fun MyNaverMap(
     cameraPosition: LatLng,
     modifier: Modifier = Modifier,
     isCourse: Boolean = false,
-    course: List<GeoPoint> =emptyList(),
-){
+    course: List<GeoPoint> = emptyList(),
+) {
     val defaultLocation = LatLng(35.8888, 128.6103)
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(defaultLocation, 17f)
+    val cameraPositionState = rememberCameraPositionState()
+
+    LaunchedEffect(Unit) {
+        cameraPositionState.move(
+            CameraUpdate.scrollAndZoomTo(defaultLocation, 17.0)
+        )
     }
-    val mapProperties = MapProperties(
-        isMyLocationEnabled = true
-    )
 
     LaunchedEffect(cameraPosition) {
-        cameraPosition.let { it ->
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(it, 17f)
-            )
-        }
+        cameraPositionState.animate(
+            CameraUpdate.scrollAndZoomTo(cameraPosition, 17.0)
+        )
     }
-    Box{
-        GoogleMap(
+
+    Box {
+        NaverMap(
             modifier = modifier
                 .background(color = Gray)
                 .fillMaxWidth()
                 .height(450.dp),
-            cameraPositionState = cameraPositionState,
-            properties = mapProperties,
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = true,
-                myLocationButtonEnabled = true
-            )
-        ){
-            if (isCourse && course.isNotEmpty()) {
+            cameraPositionState = cameraPositionState
+        ) {
+            if (isCourse && course.size >= 2) {
                 val pathPoints = course.map { point ->
                     LatLng(point.latitude, point.longitude)
                 }
 
-                Polyline(
-                    points = pathPoints
+                PathOverlay(
+                    coords = pathPoints
                 )
             }
         }

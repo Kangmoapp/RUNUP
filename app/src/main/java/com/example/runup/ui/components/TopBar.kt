@@ -49,6 +49,7 @@ fun TopBar(
     onMenuClick: ()->Unit = {},
     isBack: Boolean = true,
     isMenu: Boolean = true,
+    titleContent: @Composable () -> Unit = {},
     insteadMenuComponent: @Composable (() -> Unit)? = null
 ) {
     Box(
@@ -74,13 +75,19 @@ fun TopBar(
             contentAlignment = Alignment.Center,
             modifier = Modifier.fillMaxSize()
         ){
-            Text(
-                text = text,
-                color = WhiteTextColor,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 8.dp)
-            )
+            if (text.isNotBlank()) {
+                // 텍스트가 있으면 기존처럼 텍스트 표시
+                Text(
+                    text = text,
+                    color = WhiteTextColor,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            } else {
+                // 텍스트가 없으면 titleContent에 넘긴 이미지 등을 표시 🔹
+                titleContent()
+            }
         }
         Box(
             modifier = Modifier.wrapContentSize().align(Alignment.CenterEnd)

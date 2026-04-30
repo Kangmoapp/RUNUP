@@ -47,46 +47,27 @@ fun RunUpApp(
 ) {
     val currentScreen by viewModel.currentScreen.collectAsState()
     val isSplashLoading by viewModel.isSplashLoading.collectAsState()
+    val isMenuVisible by viewModel.isMenuVisible.collectAsState()
     Box(modifier = Modifier.fillMaxSize()){
         when (currentScreen) {
             Screen.START -> StartScreen (
                 onHomeClick = { viewModel.DelayToHome(Screen.HOME) },
             )
             Screen.HOME -> HomeScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
             )
             Screen.GOALSETTING -> GoalSettingScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
                 onBackClick = {viewModel.popBackStack()},
             )
-            Screen.MENU -> MenuScreen (
-                onBackClick = {viewModel.popBackStack()},
-                onCorseClick = {viewModel.navigateTo(Screen.RECOMMEND)},
-                onGoalClick= {viewModel.navigateTo(Screen.GOALSETTING)},
-                onOptionClick= {viewModel.navigateTo(Screen.SETTINGS)},
-                onHelpClick= { },
-                onCommunityClick= { viewModel.navigateTo(Screen.COMMUNITY) },
-                onMypageClick= {viewModel.navigateTo(Screen.MYPAGE)},
-                onLocalDBClick = { viewModel.navigateTo(Screen.LOCALDB)},
-                onLogoutClick = {viewModel.navigateTo(Screen.START)}
-            )
-            /*
-            Screen.RUNNING -> RunningScreen(
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
-            )
-
-             */
 
             Screen.COMMUNITY -> CommunityScreen(
                 onBackClick = { viewModel.popBackStack() },
-                onPostClick = { postId ->
-                    // 이제 "1"이 아니라 실제 클릭한 postId를 들고 갑니다.
-                    viewModel.navigateToDetail(postId)
-                },
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
                 },
-                onPopupPostClick = { uid ->
+                onFollowClick = {viewModel.navigateTo(Screen.HOME)},
+                onAuthorProfileClick = { uid ->
                     viewModel.navigateToUserPosts(uid)
                 }
             )
@@ -101,11 +82,13 @@ fun RunUpApp(
             )
 
             Screen.LOADING -> LoadingScreen ()
-
+/*
             Screen.RECOMMEND -> CourseRecommendationScreen (
                 onBackClick = {viewModel.popBackStack()},
-                onMenuClick = {viewModel.navigateTo(Screen.MENU)},
+                onMenuClick = {viewModel.openMenu()},
             )
+
+ */
             Screen.TEST -> TestScreen()
 
             Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
@@ -125,9 +108,9 @@ fun RunUpApp(
                     // 상황에 맞게 popBackStack 처럼 동작하게 하거나 특정 화면을 지정합니다.
                     viewModel.popBackStack()
                 },
-                onPostClick = { postId ->
-                    // 상세 게시물로 연결 (기존 로직 재활용)
-                    viewModel.navigateToDetail(postId)
+                onFollowClick = {viewModel.navigateTo(Screen.HOME)},
+                onNavigateToUser = { uid ->
+                    viewModel.navigateToUserPosts(uid)
                 }
             )
 
@@ -140,6 +123,20 @@ fun RunUpApp(
         }
         if(isSplashLoading){
             LoadingScreen()
+        }
+        if (isMenuVisible) {
+            MenuScreen(
+                onBackClick = { viewModel.closeMenu() },
+                onOptionClick = { },
+                onHelpClick = { },
+                onCommunityClick = { viewModel.navigateFromMenu(Screen.COMMUNITY) },
+                onMypageClick = { viewModel.navigateFromMenu(Screen.MYPAGE) },
+                onLocalDBClick = { viewModel.navigateFromMenu(Screen.LOCALDB) },
+                onLogoutClick = {
+                    viewModel.closeMenu()
+                    viewModel.logout()
+                }
+            )
         }
     }
 }

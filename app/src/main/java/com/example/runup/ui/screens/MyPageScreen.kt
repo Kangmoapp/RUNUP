@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -142,6 +143,10 @@ fun MyPageScreen(
     // 화면 진입 시 데이터 호출
     LaunchedEffect(Unit) {
         viewModel.initData()
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     if (showEditDialog) {
@@ -381,7 +386,7 @@ fun MyPageScreen(
                     ) {
                         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                             GoalItem("목표 거리", "${(userData?.goalDistance ?: 0) / 1000f}km")
-                            GoalItem("목표 시간", formatSeconds(userData?.goalTime ?: 0))
+                            GoalItem("목표 페이스", formatSeconds(userData?.goalTime ?: 0))
                         }
                     }
                 }
@@ -476,30 +481,6 @@ fun MyPageScreen(
                                         .clickable { viewModel.loadMoreRuns() }
                                         .padding(8.dp)
                                 )
-                            }
-                        }
-                    }
-
-                    // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
-                    if (viewModel.hasMore) {
-                        item {
-                            Box(
-                                modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (viewModel.isLoadingMore) {
-                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
-                                } else {
-                                    Text(
-                                        text = "더 보기 ▾",
-                                        color = PointColor,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier
-                                            .clickable { viewModel.loadMoreRuns() }
-                                            .padding(8.dp)
-                                    )
-                                }
                             }
                         }
                     }
