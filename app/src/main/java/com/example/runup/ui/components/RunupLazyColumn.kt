@@ -2,6 +2,7 @@ package com.example.runup.ui.components
 
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,7 +25,8 @@ fun RunupLazyColumn(
     ItemHeight:Int = 56,
     VisibleItemsCount:Int = 3,
     textMapper: (Int) -> String,
-    onSelectedNumberChange: (Int) -> Unit
+    onSelectedNumberChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val startNumber =
         if(startNumber == 0) 0
@@ -37,7 +39,7 @@ fun RunupLazyColumn(
     LazyColumn(
         state = listState,
         flingBehavior = snapFlingBehavior,
-        modifier = Modifier.height((ItemHeight * VisibleItemsCount).dp),
+        modifier = modifier.height((ItemHeight * VisibleItemsCount).dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         item{
@@ -70,9 +72,9 @@ private fun TextBox(
 ) {
     Box(
         modifier = Modifier
-            .wrapContentWidth()
+            .fillMaxWidth()
             .height(ItemHeight),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.CenterEnd
     ) {
         Text(
             text = text,

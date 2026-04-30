@@ -1,5 +1,6 @@
 package com.example.runup.ui.screens
 
+import android.graphics.PointF
 import android.os.Bundle
 import com.example.runup.ui.components.ControlButton
 import android.util.Log
@@ -627,7 +628,7 @@ private fun HomeContent(
         else if (homeUiState.showPaceDialog) {
             PaceGoalSettingDialog(
                 rangeMinutes = 0..20,
-                rangeSeconds = 0..60,
+                rangeSeconds = 0..59,
                 startMinute = (homeUiState.goalPace/60 + 1),
                 startSecond = (homeUiState.goalPace%60 + 1),
                 onConfirm = onPaceConfirm,
@@ -1225,6 +1226,16 @@ private fun MapViewContainer(
                         homeUi == HomeUi.HOME -> {
                             naverMap.moveCamera(
                                 CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
+                                    .animate(CameraAnimation.Easing, 1200)
+                            )
+                        }
+
+                        homeUi == HomeUi.RUN -> {
+                            naverMap.moveCamera(
+                                CameraUpdate.toCameraPosition(
+                                    CameraPosition(cameraPosition, 18.0, 0.0, bearing.toDouble())
+                                )
+                                    .pivot(PointF(0.5f, 0.65f))
                                     .animate(CameraAnimation.Easing, 1200)
                             )
                         }
