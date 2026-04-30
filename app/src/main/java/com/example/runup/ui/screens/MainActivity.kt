@@ -66,6 +66,7 @@ fun RunUpApp(
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
                 },
+                onFollowClick = {viewModel.navigateTo(Screen.HOME)},
                 onAuthorProfileClick = { uid ->
                     viewModel.navigateToUserPosts(uid)
                 }

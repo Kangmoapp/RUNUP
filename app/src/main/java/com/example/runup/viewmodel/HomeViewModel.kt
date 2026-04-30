@@ -2,7 +2,6 @@ package com.example.runup.viewmodel
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +10,7 @@ import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.CourseRecommendation
+import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
@@ -18,7 +18,6 @@ import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
 import com.example.runup.domain.usecase.GetUserGoalUseCase
 import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.RecordRunningUseCase
-import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
 import com.example.runup.service.LocationService
@@ -57,7 +56,8 @@ data class HomeUiState(
     val homeUi: HomeUi = HomeUi.HOME,
     val selectedTab: HomeTab = HomeTab.RUNNING,
     val isInitialLoading: Boolean = true,
-    val selectedRecommendCourse: CourseRecommendation? = null,
+    val selectedPath: Path? = null, // ── 🔹 추천/커뮤니티에서 확정된 경로 정보 📍
+    val selectedCourseName: String = "", // ── 🔹 카드나 바텀시트에 띄울 이름만 따로 보관 📍
 
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
@@ -92,11 +92,13 @@ data class CourseRecommendationUiState(
     val isRecommendClick: Boolean = false,
     val recommendedCourses: List<CourseRecommendation> = emptyList(),
     val courseIndex: Int = 0,
-    val isLoading:Boolean = false
+    val isLoading:Boolean = false,
+    val isAiMode: Boolean = false,
+    val isFailSearchCourse: String = ""
 )
 
 
-enum class HomeTab { RUNNING, RECOMMEND, COURSE }
+enum class HomeTab { RUNNING, RECOMMEND }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -419,24 +421,12 @@ class HomeViewModel @Inject constructor(
             locationRepository.stopTimer()
             _isTracking.value = false
         }
-        else _isTracking.value = true
-        //recordingJob?.cancel()
-        /*
-        viewModelScope.launch {
-            val nodes = locationRepository.recordedNodes.value
-            val distance = locationRepository.totalDistance.value.toInt()
-            val timeInMillis = _totalTime.value * 1000
-
-            if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis)
-                if (result is AuthResult.Success) {
-                    // 저장 성공 후 경로 데이터만 초기화
-                    locationRepository.clearData()
-                    _totalTime.value = 0 // 저장 성공 후 시간 초기화
-                }
-            }
+        else {
+            locationRepository.startTimer()
+            _isTracking.value = true
         }
-         */
+        //recordingJob?.cancel()
+
     }
 
     fun recordRunningCourse(scores: Scores) {
@@ -569,7 +559,7 @@ class HomeViewModel @Inject constructor(
             viewModelScope.launch {
                 val result = getRecommendedCourseUseCase.invoke(
                     _courseRecommendationUiState.value.goalDistance,
-                    // GeoPoint(location.latitude, location.longitude),
+                    // GeoPoint(35.88544455378175, 128.61535052161116),
                     location,
                     _courseRecommendationUiState.value.isLoop,
                     _courseRecommendationUiState.value.currentSort,
@@ -613,26 +603,94 @@ class HomeViewModel @Inject constructor(
                     }
 
                     is AuthResult.Fail -> {
-                        Log.e("RUNUP_TEST", "에러 발생: ${result.message}")
+                        updateRecommendState {
+                            it.copy(
+                                isLoading = false,
+                                isRecommendClick = false, // ── 🔹 상황 2로 가지 않고 상황 1 유지 📍 ──
+                                isFailSearchCourse = result.message
+                            )
+                        }
+
+                        viewModelScope.launch {
+                            delay(5000) // 5초 대기
+                            clearFailMessage()
+                        }
                     }
                 }
             }
         }
     }
 
+    fun onAiSearchClick(userPrompt: String) {
+        if (userPrompt.isBlank()) return // 빈 값 방어
+
+        // 로딩 시작
+        updateRecommendState { it.copy(isLoading = true, isRecommendClick = false) }
+
+        val location = _homeUiState.value.currentLocation ?: run {
+            Log.e("RUNUP_TEST", "현재 위치가 없습니다.")
+            return
+        }
+
+        viewModelScope.launch {
+            // AI 전용 UseCase 호출 (두 번째 invoke 함수 사용)
+            val result = getRecommendedCourseUseCase.invoke(
+                courseDistance = _courseRecommendationUiState.value.goalDistance,
+                currentLocation = location,
+                isLoop = _courseRecommendationUiState.value.isLoop,
+                userPrompt = userPrompt, // 👈 채팅창에서 받은 텍스트
+                count = 3
+            )
+
+            when (result) {
+                is AuthResult.Success -> {
+                    updateRecommendState {
+                        it.copy(
+                            recommendedCourses = result.data,
+                            courseIndex = 0,
+                            isLoading = false,
+                            isRecommendClick = true // 결과 모드로 전환
+                        )
+                    }
+                    Log.d("RUNUP_GEMINI_SEARCH", "${result.data}")
+                    // 지도를 RECOMMEND 모드로 바꿔서 카드와 경로가 뜨게 함
+                    _homeUiState.update { it.copy(homeUi = HomeUi.RECOMMEND) }
+                }
+                is AuthResult.Fail -> {
+                    updateRecommendState {
+                        it.copy(
+                            isLoading = false,
+                            isRecommendClick = false, // ── 🔹 상황 2로 가지 않고 상황 1 유지 📍 ──
+                            isFailSearchCourse = result.message
+                        )
+                    }
+                    viewModelScope.launch {
+                        delay(5000) // 5초 대기
+                        clearFailMessage()
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 메시지 삭제 함수 추가
+    fun clearFailMessage() {
+        updateRecommendState { it.copy(isFailSearchCourse = "") }
+    }
+
     fun selectRecommendCourse(course: CourseRecommendation) {
         _homeUiState.update { it.copy(
-            selectedRecommendCourse = course,
-            homeUi = HomeUi.HOME // 👈 선택 완료 후 메인 홈 화면으로 복귀
+            selectedPath = course.path, // 👈 딱 path만 저장!
+            selectedCourseName = course.originCourse.id,
+            homeUi = HomeUi.HOME
         ) }
-
-        // 추천 브라우징 상태(이전/다음 보던 것) 정리
         clearRecommendation()
     }
 
     // ── 🔹 [추가] 만약 선택한 코스를 취소하고 싶을 때를 대비 📍
     fun clearSelectedCourse() {
-        _homeUiState.update { it.copy(selectedRecommendCourse = null) }
+        _homeUiState.update { it.copy(selectedPath = null,
+            selectedCourseName = "")}
         clearNavigation() // 코스를 안 볼 거면 길 안내도 당연히 종료
     }
 
@@ -732,5 +790,25 @@ class HomeViewModel @Inject constructor(
         updateRecommendState {
             it.copy(showSortDialog = false, currentSort = sortType)
         }
+    }
+
+    fun setCourseFromCommunity(path: Path, authorName: String) {
+        _homeUiState.update { it.copy(
+            selectedPath = path, // 👈 여기서도 path만!
+            selectedCourseName = "$authorName 님의 코스",
+            homeUi = HomeUi.HOME,
+            selectedTab = HomeTab.RECOMMEND
+        ) }
+    }
+
+    fun toggleAiRecommendMode() {
+        updateRecommendState {
+            it.copy(
+                isAiMode = !it.isAiMode // 현재 상태를 반전시킴 🔄
+            )
+        }
+
+        // 💡 팁: 모드를 전환할 때 기존 검색 결과가 방해된다면
+        // 여기서 clearRecommendation()을 같이 호출해줘도 좋습니다.
     }
 }

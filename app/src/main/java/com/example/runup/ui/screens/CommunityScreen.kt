@@ -1,5 +1,7 @@
 package com.example.runup.ui.screens
 
+import android.util.Log
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +39,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import com.example.runup.ui.theme.PointColor
@@ -51,14 +54,19 @@ import com.example.runup.ui.components.ProfileMiniPopup
 import com.example.runup.ui.components.ScopeButton
 import com.example.runup.ui.components.getSelectedLocationText
 import com.example.runup.R
+import com.example.runup.domain.model.Path
+import com.example.runup.viewmodel.HomeViewModel
+import com.google.firebase.firestore.GeoPoint
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CommunityScreen(
     onBackClick: () -> Unit,
     onUploadClick: () -> Unit,
+    onFollowClick: () -> Unit,
     onAuthorProfileClick: (String) -> Unit,
-    viewModel: CommunityViewModel = hiltViewModel()
+    viewModel: CommunityViewModel = hiltViewModel(),
+    mainViewModel: HomeViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
 ) {
     val communityState by viewModel.communityUiState.collectAsState() // 커뮤니티 Ui 상태
     val addressUiState by viewModel.addressUiState.collectAsState() // 현재 주소 상태
@@ -355,11 +363,43 @@ fun CommunityScreen(
                             commonImageBitmaps = relevantCommonBitmaps,  // ✅ 페이저용 원본들
                             onLikeClick = { viewModel.onLikeClick(post.postId) },
                             onFollowClick = {
-                                // 🔹 여기서 ViewModel 함수를 호출하며 trailing lambda를 작성합니다.
                                 viewModel.onFollowClick(post.postId) { readyPost ->
-                                    // ── 🏃‍♂️ 여기가 바로 onCourseReady(it)가 실행되는 지점입니다! ──
-                                    // 예: 메인 화면으로 이동하면서 코스 데이터를 전달하는 로직
-                                    println("성공! 이제 ${readyPost.postId} 코스를 메인 지도에 그립니다.")
+                                    // 1. runRecord가 null이면 바로 종료 (Safe Call + Return) 📍
+                                    val runRecord = readyPost.runRecord ?: return@onFollowClick
+
+                                    // 2. 이제 runRecord는 non-null 상태입니다. course를 안전하게 가져옵니다.
+                                    val course = runRecord.course
+                                    val locationNodes = course.locationPoints
+
+                                    // 3. 좌표가 하나도 없으면 진행할 의미가 없으니 체크!
+                                    if (locationNodes.isEmpty()) {
+                                        Log.e("RUNUP_DEBUG", "코스 좌표 데이터가 비어있습니다.")
+                                        return@onFollowClick
+                                    }
+
+                                    // 4. 좌표 변환 (Node -> GeoPoint)
+                                    val pathPoints = locationNodes.map { it.locationPoint }
+
+                                    // 5. 중심점 계산 (Bounding Box 중앙값)
+                                    // min/max 값이 0.0이면 첫 좌표를 중심으로 사용
+                                    val centerLat = if (course.minLat != 0.0) (course.minLat + course.maxLat) / 2.0 else pathPoints.first().latitude
+                                    val centerLng = if (course.minLng != 0.0) (course.minLng + course.maxLng) / 2.0 else pathPoints.first().longitude
+
+                                    // 6. Path 객체 생성
+                                    val extractedPath = Path(
+                                        distance = course.distance,
+                                        points = pathPoints,
+                                        centerPoint = GeoPoint(centerLat, centerLng)
+                                    )
+
+                                    // 7. HomeViewModel로 전달 및 화면 이동
+                                    mainViewModel.setCourseFromCommunity(
+                                        path = extractedPath,
+                                        authorName = post.authorName
+                                    )
+
+                                    // communityscreen 의 onfollow click 메인(홈) 화면으로 복귀
+                                    onFollowClick()
                                 }
                             },
                             onCommentClick = {

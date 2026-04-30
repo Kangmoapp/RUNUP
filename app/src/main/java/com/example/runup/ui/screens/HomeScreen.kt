@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,8 +29,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -42,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -99,8 +106,11 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
+import com.example.runup.domain.model.SortType
+import com.example.runup.ui.components.AiReasonBubble
 import com.example.runup.ui.components.CategoryDialog
 import com.example.runup.ui.components.CourseInfoCard
+import com.example.runup.ui.components.FailMessageBubble
 import com.example.runup.ui.components.LoopSelectionDialog
 import com.example.runup.ui.navigation.HomeUi
 import com.example.runup.ui.theme.Gray
@@ -202,10 +212,14 @@ private fun HomeContent(
     viewModel: HomeViewModel = hiltViewModel()
 ){
     val isPreview = LocalInspectionMode.current
-
     val density = LocalDensity.current
+
+    val navBarHeightPx = with(density) { 80.dp.toPx() } // 네비게이션 바 높이 (px)
+
     val hiddenHeightPx = with(density) { 60.dp.toPx() }
     val collapsedHeightPx = with(density) { 100.dp.toPx() }
+    val selectedCourseTabHeightPx = with(density) { 135.dp.toPx() }
+    val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
     val expandedHeightPx = with(density) { 550.dp.toPx() }
 
     // 시트 높이 상태
@@ -214,6 +228,44 @@ private fun HomeContent(
     val addressUiState by viewModel.addressUiState.collectAsState()
     // 러닝 완료 후 결과창 뜬 상태
     var isResultLocked by remember { mutableStateOf(false) }
+
+    // ── 🔹 [추가] 실시간 키보드 높이(px) 상태 📍 ──
+    val imeHeightPx = WindowInsets.ime.getBottom(density)
+
+    LaunchedEffect(
+        homeUiState.selectedTab,
+        courseRecommendationUiState.isRecommendClick,
+        homeUiState.selectedPath,
+        imeHeightPx
+    ) {
+        val baseHeight = when (homeUiState.selectedTab) {
+            // ── 🔹 1. 러닝 탭일 때: 코스 선택 여부 무시하고 무조건 기본 높이 📍 ──
+            HomeTab.RUNNING -> collapsedHeightPx // 100dp
+
+            // ── 🔹 2. 코스 추천 탭일 때: 상황별로 높이 결정 📍 ──
+            HomeTab.RECOMMEND -> {
+                when {
+                    // 코스를 최종 선택했거나(상황 3), 브라우징 중일 때(상황 2) -> 135dp
+                    homeUiState.selectedPath != null || courseRecommendationUiState.isRecommendClick -> selectedCourseTabHeightPx
+                    // 아무것도 안 한 초기 설정 상태(상황 1) -> 200dp
+                    else -> recommendTabHeightPx
+                }
+            }
+
+            // 3. 기타 (MY 탭 등)
+            else -> collapsedHeightPx
+        }
+
+        // 키보드 대응 로직
+        val targetHeight = if (courseRecommendationUiState.isAiMode && imeHeightPx > 0) {
+            val pureKeyboardHeight = (imeHeightPx - navBarHeightPx).coerceAtLeast(0f)
+            baseHeight + pureKeyboardHeight
+        } else {
+            baseHeight
+        }
+
+        sheetHeightPx = targetHeight
+    }
 
 
     Surface(
@@ -240,8 +292,7 @@ private fun HomeContent(
                         recommendPath = courseRecommendationUiState.recommendedCourses
                             .getOrNull(courseRecommendationUiState.courseIndex)
                             ?.path?.points?.map { LatLng(it.latitude, it.longitude) } ?: emptyList(),
-                        selectedCoursePath = homeUiState.selectedRecommendCourse
-                            ?.path?.points?.map { LatLng(it.latitude, it.longitude) } ?: emptyList(),
+                        selectedCoursePath = homeUiState.selectedPath?.points?.map { LatLng(it.latitude, it.longitude) } ?: emptyList(),
                         destinationMarkerPos = guideUiState.destinationMarker,
                         guideDistance = guideUiState.guideDistance,
                         guideDuration = guideUiState.guideDuration,
@@ -309,7 +360,11 @@ private fun HomeContent(
                         .padding(top = 20.dp)
                 )
 
-                if (homeUiState.homeUi == HomeUi.RECOMMEND) {
+                if (homeUiState.homeUi == HomeUi.RECOMMEND &&
+                    !courseRecommendationUiState.isLoading &&      // 1. 로딩이 끝났을 때 📍
+                    courseRecommendationUiState.isRecommendClick && // 2. 검색 버튼을 눌러 결과가 나왔을 때
+                    courseRecommendationUiState.isFailSearchCourse.isBlank() // 3. 검색 실패가 아닐 때
+                ) {
                     val currentCourse = courseRecommendationUiState.recommendedCourses
                         .getOrNull(courseRecommendationUiState.courseIndex)
 
@@ -317,8 +372,8 @@ private fun HomeContent(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(start = 18.dp, top = 12.dp), // 👈 왼쪽 여백 18dp로 주소창과 라인 맞춤
-                            contentAlignment = Alignment.TopStart // 👈 왼쪽 정렬!
+                                .padding(start = 18.dp, top = 12.dp),
+                            contentAlignment = Alignment.TopStart
                         ) {
                             CourseInfoCard(
                                 uiState = courseRecommendationUiState,
@@ -328,28 +383,61 @@ private fun HomeContent(
                     }
                 }
             }
+
             Column(
                 verticalArrangement = Arrangement.Bottom,
-                modifier = Modifier
-                    .fillMaxSize()
+                modifier = Modifier.fillMaxSize()
             ){
+                val failMessage = courseRecommendationUiState.isFailSearchCourse // 코스 검색 실패 메세지
+                // ── 🔹 [추가] AI 추천 사유 말풍선 배치 📍 ──
+                val currentCourse = courseRecommendationUiState.recommendedCourses.getOrNull(courseRecommendationUiState.courseIndex)
+
+                if (failMessage.isNotBlank()) { // 에러 메세지
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        FailMessageBubble(
+                            message = failMessage,
+                            onClose = { viewModel.clearFailMessage() }
+                        )
+                    }
+                }
+                // AI 추천 사유
+                else if (courseRecommendationUiState.isAiMode && // AI 검색 모드일때
+                    courseRecommendationUiState.isRecommendClick && // 추천 클릭했을 때
+                    currentCourse != null && // 현재 코스가 없지 않을 때
+                    homeUiState.selectedPath == null // 추천 코스 중 선택된 코스는 없을 떄
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(end = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        AiReasonBubble(reason = currentCourse.reason)
+                    }
+                }
+
                 BottomSection(
                     selectedTab = homeUiState.selectedTab,
                     onTabSelect = { tab ->
-                        viewModel.selectTab(tab)
+                        val isCurrentlyRunning = homeUiState.homeUi == HomeUi.RUN
+                        val isRunningTabClicked = tab == HomeTab.RUNNING
 
-                        // 🔹 탭에 따른 초기 시트 높이 결정
-                        val targetHeight = when(tab) {
-                            HomeTab.RECOMMEND -> with(density) { 140.dp.toPx() } // 추천 탭 전용 높이
-                            else -> collapsedHeightPx // 나머지는 기본 높이
+                        if (isCurrentlyRunning && isRunningTabClicked) {
+                            // 러닝 중인데 러닝 탭을 또 누른 경우: 아무것도 하지 않고 리턴!
+                            return@BottomSection
                         }
-                        sheetHeightPx = targetHeight
+
+                        viewModel.selectTab(tab)
                     },
                     homeUi = homeUiState.homeUi,
                     runningUiState = runningUiState,
                     sheetHeightPx = sheetHeightPx,
                     onHeightChange = { sheetHeightPx = it },
-                    isResultLocked = isResultLocked
+                    isResultLocked = isResultLocked,
+                    imeHeightPx = imeHeightPx,
                 ) {
                     when (homeUiState.selectedTab) {
 
@@ -433,8 +521,10 @@ private fun HomeContent(
                             }
                         }
                         HomeTab.RECOMMEND -> {
-                            val selectedCourse = homeUiState.selectedRecommendCourse
-
+                            val selectedCourse = homeUiState.selectedPath
+                            val selectedCourseName = homeUiState.selectedCourseName
+                            val isAiMode = courseRecommendationUiState.isAiMode
+                            var aiChatInput by remember { mutableStateOf("") }
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -443,34 +533,163 @@ private fun HomeContent(
                                 // ── 🔹 상황 1: 아직 코스 추천을 받지 않은 상태 (설정 화면) ── 📍
                                 if (selectedCourse == null && !courseRecommendationUiState.isRecommendClick) {
                                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                        Text(
-                                            text = "나에게 맞는 코스 찾기",
-                                            color = WhiteTextColor,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-
+                                        // 1. 헤더 (제목 + AI 전환 아이콘)
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            // [왼쪽] 현재 타이틀
+                                            Text(
+                                                text = if (isAiMode) "AI 맞춤 코스 추천 ✨" else "나에게 맞는 코스 찾기",
+                                                color = WhiteTextColor,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+
+                                            // [오른쪽] 모드 전환 버튼 (캡슐형 디자인) 📍
+                                            Row(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(20.dp)) // 둥근 캡슐 모양
+                                                    .background(
+                                                        // AI 모드일 때는 필터로 돌아가는 버튼(어두운 회색), 필터 모드일 때는 AI 추천 버튼(보라색)
+                                                        if (isAiMode) Color.White.copy(alpha = 0.1f) else Color(0xFF311B92).copy(alpha = 0.8f)
+                                                    )
+                                                    .clickable { viewModel.toggleAiRecommendMode() }
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (isAiMode) Icons.Default.FilterList else Icons.Default.AutoAwesome,
+                                                    tint = PointColor, // 우리 앱의 시그니처 노란색
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = if (isAiMode) "정렬 추천" else "AI 추천",
+                                                    color = Color.White,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+
+                                        // 2. 공통 설정 영역 (AI 모드에서도 유지됨) 📍
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(20.dp), // 간격을 조금 더 줌
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // [공통] 목표 거리
                                             Column(modifier = Modifier.clickable { viewModel.openRecommendDistanceDialog() }) {
                                                 Text("목표 거리", color = Gray, fontSize = 11.sp)
                                                 Text("${courseRecommendationUiState.goalDistance / 1000.0}km", color = PointColor, fontWeight = FontWeight.Bold)
                                             }
+                                            // [공통] 계산 방법 (왕복/편도)
                                             Column(modifier = Modifier.clickable { viewModel.openRecommendLoopDialog() }) {
                                                 Text("계산 방법", color = Gray, fontSize = 11.sp)
                                                 Text(if(courseRecommendationUiState.isLoop) "왕복" else "편도", color = PointColor, fontWeight = FontWeight.Bold)
                                             }
-                                            Column(modifier = Modifier.clickable { viewModel.openRecommendSortDialog() }) {
-                                                Text("정렬 기준", color = Gray, fontSize = 11.sp)
-                                                Text(courseRecommendationUiState.currentSort.label, color = PointColor, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        // 3. 가변 영역 (AI 입력창 VS 정렬+버튼) 📍
+                                        if (isAiMode) {
+                                            // ── 🔹 [AI 모드] 채팅 입력창 (정렬 기준 대신 등장) ──
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(48.dp) // 높이 고정
+                                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                                    .padding(horizontal = 12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                androidx.compose.foundation.text.BasicTextField(
+                                                    value = aiChatInput,
+                                                    onValueChange = { aiChatInput = it },
+                                                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                                                    modifier = Modifier.weight(1f),
+                                                    decorationBox = { innerTextField ->
+                                                        if (aiChatInput.isEmpty()) {
+                                                            Text("어디를 달리고 싶나요? (예: 한강변)", color = Gray, fontSize = 14.sp)
+                                                        }
+                                                        innerTextField()
+                                                    }
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        viewModel.onAiSearchClick(aiChatInput)
+                                                        aiChatInput = ""
+                                                    },
+                                                    // 로딩 중이거나 입력값이 없으면 클릭 방지
+                                                    enabled = aiChatInput.isNotBlank() && !courseRecommendationUiState.isLoading
+                                                ) {
+                                                    if (courseRecommendationUiState.isLoading) {
+                                                        // ── 🔹 로딩 중일 때: 인디케이터 📍 ──
+                                                        androidx.compose.material3.CircularProgressIndicator(
+                                                            modifier = Modifier.size(20.dp), // 아이콘 크기와 동일하게 20dp
+                                                            color = PointColor, // 우리 앱의 시그니처 컬러(노란색) 적용!
+                                                            strokeWidth = 2.dp
+                                                        )
+                                                    } else {
+                                                        // ── 🔹 평소 상태: 전송(Send) 아이콘 📍 ──
+                                                        Icon(
+                                                            imageVector = Icons.Default.Send,
+                                                            contentDescription = "AI 검색",
+                                                            // 입력값이 있을 때만 노란색, 없을 때는 회색
+                                                            tint = if (aiChatInput.isNotBlank()) PointColor else Gray,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
-                                            Spacer(modifier = Modifier.weight(1f))
-                                            ControlButton(
-                                                text = if(courseRecommendationUiState.isLoading) "찾는 중.." else "코스 추천",
-                                                color = PointColor
-                                            ) { viewModel.onSearchClick() }
+                                        } else {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(56.dp), // 높이 살짝 확보
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                // 1. 가로 정렬 옵션 리스트 칩 (왼쪽 영역)
+                                                Row(
+                                                    modifier = Modifier.weight(1f), // 버튼을 제외한 남은 공간 모두 차지
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    SortType.entries.forEach { sortType ->
+                                                        val isSelected = courseRecommendationUiState.currentSort == sortType
+
+                                                        // 개별 정렬 칩
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(20.dp))
+                                                                .background(if (isSelected) PointColor else Color.White.copy(alpha = 0.05f))
+                                                                .clickable { viewModel.confirmRecommendSort(sortType) } // 다이얼로그 없이 바로 상태 변경! 🚀
+                                                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(
+                                                                text = sortType.label,
+                                                                color = if (isSelected) Color.Black else Gray,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.width(12.dp))
+
+                                                // 2. 코스 추천 버튼 (오른쪽 고정)
+                                                ControlButton(
+                                                    text = "코스 추천",
+                                                    color = PointColor,
+                                                    contentColor = Color.Black,
+                                                    isLoading = courseRecommendationUiState.isLoading,
+                                                    modifier = Modifier.wrapContentWidth()
+                                                ) { viewModel.onSearchClick() }
+                                            }
                                         }
                                     }
                                 }
@@ -478,8 +697,31 @@ private fun HomeContent(
                                 // ── 🔹 상황 2: 코스 추천 결과가 나온 상태 (브라우징/선택 대기) ── 📍
                                 else if (selectedCourse == null && courseRecommendationUiState.isRecommendClick) {
                                     val currentCourse = courseRecommendationUiState.recommendedCourses.getOrNull(courseRecommendationUiState.courseIndex)
+                                    val totalCourses = courseRecommendationUiState.recommendedCourses.size
 
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        // 페이지 인디케이터
+                                        Row(
+                                            modifier = Modifier.padding(bottom = 12.dp), // 버튼들과의 수직 간격
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            repeat(totalCourses) { index ->
+                                                val isSelected = index == courseRecommendationUiState.courseIndex
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(width = if (isSelected) 16.dp else 6.dp, height = 6.dp) // 현재 페이지는 길쭉하게!
+                                                        .clip(RoundedCornerShape(3.dp))
+                                                        .background(
+                                                            if (isSelected) PointColor else Gray.copy(alpha = 0.3f)
+                                                        )
+                                                )
+                                            }
+                                        }
+
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -507,7 +749,7 @@ private fun HomeContent(
                                 else if (selectedCourse != null) {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Text(
-                                            text = "준비된 코스: ${selectedCourse.originCourse.id}",
+                                            text = "준비된 코스: ${selectedCourseName}",
                                             color = PointColor,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.ExtraBold
@@ -519,24 +761,34 @@ private fun HomeContent(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                // ── 🔹 [핵심] 길 안내 중인지에 따라 버튼 이름과 기능 변경 ── 📍
+                                                // 1. [안내 시작/종료] 버튼 (항상 노출)
                                                 if (guideUiState.isGuiding) {
-                                                    ControlButton(text = "안내 종료", color = Color.Red) {
-                                                        // 파란색 안내선만 제거하고, 코스(노란색)는 그대로 유지!
+                                                    ControlButton(
+                                                        text = "안내 종료",
+                                                        color = Color.Red,
+                                                        contentColor = Color.White
+                                                    ) {
                                                         viewModel.clearNavigation()
                                                     }
+
+                                                    // ── 🔹 [핵심 추가] 안내 중일 때만 나타나는 버튼 📍 ──
+                                                    val trackingText = if (guideUiState.isTrackingMode) "추적 중" else "따라가기"
+                                                    ControlButton(
+                                                        text = trackingText,
+                                                        color = Color.DarkGray,
+                                                        contentColor = Color.White
+                                                    ) {
+                                                        viewModel.toggleTrackingMode()
+                                                    }
                                                 } else {
-                                                    ControlButton(text = "경로 안내", color = PointColor) {
-                                                        // 시작점까지의 파란색 안내선 생성
-                                                        val firstPoint = selectedCourse.path.points.first()
+                                                    ControlButton(
+                                                        text = "경로 안내",
+                                                        color = PointColor,
+                                                        contentColor = Color.Black // 노란 배경엔 검정 글씨 📍
+                                                    ) {
+                                                        val firstPoint = selectedCourse.points.first()
                                                         viewModel.startNavigation(LatLng(firstPoint.latitude, firstPoint.longitude))
                                                     }
-                                                }
-
-                                                // 따라가기 버튼
-                                                val trackingText = if (guideUiState.isTrackingMode) "추적 중" else "따라가기"
-                                                ControlButton(text = trackingText, color = Color.DarkGray) {
-                                                    viewModel.toggleTrackingMode()
                                                 }
                                             }
 
@@ -552,60 +804,6 @@ private fun HomeContent(
                                                     }
                                                     .padding(8.dp)
                                             )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        HomeTab.COURSE -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                // [왼쪽] 경로 정보 영역
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    if (!guideUiState.isGuiding) {
-                                        Text(text = "목적지", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
-                                        Text(
-                                            text = "course 14", // 예시 명칭
-                                            color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
-                                        )
-                                    } else {
-                                        // 경로 안내 중일 때 정보 표시 (거리, 시간)
-                                        val km = String.format("%.1f", guideUiState.guideDistance / 1000f)
-                                        val min = guideUiState.guideDuration / 1000 / 60
-
-                                        Text(text = "예상 경로 정보", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
-                                        Text(
-                                            text = "${km}km (${min}분 소요)",
-                                            color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                // [오른쪽 제어 버튼 영역]
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (!guideUiState.isGuiding) {
-                                        ControlButton(text = "경로 안내", color = PointColor) {
-                                            viewModel.startNavigation(LatLng(35.88790968249425, 128.61171841999786))
-                                        }
-                                    } else {
-                                        // 🔹 따라가기 버튼 추가
-                                        val trackingText = if (guideUiState.isTrackingMode) "추적 중" else "따라가기"
-                                        val trackingColor = if (guideUiState.isTrackingMode) PointColor else Color.Gray
-
-                                        ControlButton(text = trackingText, color = trackingColor) {
-                                            viewModel.toggleTrackingMode()
-                                        }
-
-                                        ControlButton(text = "안내 종료", color = Color.Red) {
-                                            viewModel.clearNavigation()
                                         }
                                     }
                                 }
@@ -645,14 +843,6 @@ private fun HomeContent(
             )
         }
 
-        if (courseRecommendationUiState.showSortDialog) {
-            CategoryDialog(
-                currentSort = courseRecommendationUiState.currentSort,
-                onConfirm = { viewModel.confirmRecommendSort(it) },
-                onDismiss = { viewModel.closeRecommendSortDialog() }
-            )
-        }
-
         if (courseRecommendationUiState.showLoop) {
             // 왕복/편도 선택 다이얼로그 (간단하게 AlertDialog 등으로 구현 가능)
             LoopSelectionDialog(
@@ -675,23 +865,24 @@ private fun BottomSection(
     sheetHeightPx: Float,
     onHeightChange: (Float) -> Unit,
     isResultLocked: Boolean,
+    imeHeightPx: Int = 0,
     content: @Composable () -> Unit // 탭에 따른 내용
 ) {
     val density = LocalDensity.current
     // 네이버 지도 스타일 높이 설정
     val navBarHeight = 80.dp // 하단 메뉴바 높이
+    val imeHeightPxFloat = imeHeightPx.toFloat()
 
     // 바텀 시트 높이
     val hiddenHeightPx = with(density) { 60.dp.toPx() } // 시트가 아예 내려가 있는 상태 (처음)
     val collapsedHeightPx = with(density) { 100.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
-    val recommendTabHeightPx = with(density) { 140.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
+    val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
     val expandedHeightPx = with(density) { 550.dp.toPx() }  // 최대로 올렸을 때 높이
 
     val animatedHeight by animateDpAsState(targetValue = with(density) { sheetHeightPx.toDp() })
     // 최대 바텀 시트 높이
     val maxAllowedHeight = when (selectedTab) {
-        HomeTab.RECOMMEND -> recommendTabHeightPx // 추천 탭은 설정/결과/안내 모두 이 높이 유지
-        HomeTab.COURSE -> expandedHeightPx
+        HomeTab.RECOMMEND -> recommendTabHeightPx + imeHeightPxFloat// 추천 탭은 설정/결과/안내 모두 이 높이 유지
         HomeTab.RUNNING -> if (homeUi == HomeUi.HOME && runningUiState.totalDistance > 0) expandedHeightPx else collapsedHeightPx
         else -> collapsedHeightPx
     }
@@ -757,28 +948,23 @@ private fun BottomSection(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        if (!isResultLocked) {  // 🔹 lock이면 무시
+                        if (!isResultLocked && selectedTab != HomeTab.RECOMMEND) {  // 🔹 lock이면 무시
                             onHeightChange((sheetHeightPx - delta).coerceIn(hiddenHeightPx, maxAllowedHeight))
                         }
                     },
-                    enabled = true,
+                    enabled = !isResultLocked && selectedTab != HomeTab.RECOMMEND,
                     onDragStopped = {
-                        if (!isResultLocked) {  // 🔹 lock이면 snap도 무시
+                        // ── 🔹 추천 탭이 아닐 때만 스냅 로직 실행 📍 ──
+                        if (!isResultLocked && selectedTab != HomeTab.RECOMMEND) {
                             val finalHeight = when {
-                                (selectedTab == HomeTab.COURSE || selectedTab == HomeTab.RECOMMEND) &&
+                                // 러닝(RUNNING) 탭: 기록이 있고 절반 이상 올리면 전체 확장
+                                selectedTab == HomeTab.RUNNING && homeUi == HomeUi.HOME && runningUiState.totalDistance > 0 &&
                                         sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
 
-                                // 2. 추천 탭에서 기본 높이 유지 (170dp 근처일 때) 🚀
-                                selectedTab == HomeTab.RECOMMEND &&
-                                        sheetHeightPx > (collapsedHeightPx + recommendTabHeightPx) / 2 -> recommendTabHeightPx
-
-                                selectedTab == HomeTab.RUNNING && (homeUi == HomeUi.HOME) && runningUiState.totalDistance > 0 &&
-                                        sheetHeightPx > (collapsedHeightPx + expandedHeightPx) / 2 -> expandedHeightPx
-
-                                // 일반 접힘 상태
+                                // 통: 어느 정도 올라와 있으면 중간 높이(collapsed)로 고정
                                 sheetHeightPx > (hiddenHeightPx + collapsedHeightPx) / 2 -> collapsedHeightPx
 
-                                // 아예 숨김 상태
+                                // 4. 그 외: 아예 아래로 숨김
                                 else -> hiddenHeightPx
                             }
                             onHeightChange(finalHeight)
@@ -830,7 +1016,6 @@ private fun BottomSection(
                 val menuItems = listOf(
                     HomeTab.RUNNING to "러닝",
                     HomeTab.RECOMMEND to "코스 추천",
-                    HomeTab.COURSE to "경로 표시"
                 )
 
                 menuItems.forEach { (tab, title) ->
@@ -1046,6 +1231,17 @@ private fun MapViewContainer(
         }
     }
 
+    val runningPathOverlay = remember {
+        PathOverlay().apply {
+            color = PointColor.toArgb()       // 내부 주황색
+            outlineColor = Color.Black.toArgb() // 테두리 검은색
+            width = with(density) { 8.dp.toPx() }.toInt()
+            outlineWidth = with(density) { 3.dp.toPx() }.toInt()
+
+            // 끝부분 둥글게 처리는 PathOverlay 기본 사양!
+        }
+    }
+
     // 🔹 목적지 마커
     val destMarker = remember {
         Marker().apply {
@@ -1182,7 +1378,6 @@ private fun MapViewContainer(
                             naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
                         }
 
-                        //
                         // 2순위: homeUi가 HOME이더라도 selectedRecommendCourse가 있으면 코스를 우선적으로 비춤
                         selectedCoursePath.size >= 2 -> { // ── 🔹 리스트가 비어있지 않은지 확인 📍
                             val boundsBuilder = LatLngBounds.Builder()
@@ -1199,7 +1394,7 @@ private fun MapViewContainer(
                                 val bounds = boundsBuilder.build()
                                 // 3. 모든 지점이 포함되도록 카메라 업데이트 생성
                                 // Padding 200: 왼쪽 상단 카드에 가려지지 않게 넉넉히 여백 부여
-                                val cameraUpdate = CameraUpdate.fitBounds(bounds, 200)
+                                val cameraUpdate = CameraUpdate.fitBounds(bounds, 350)
                                     .animate(CameraAnimation.Easing, 1000)
 
                                 naverMap.moveCamera(cameraUpdate)
@@ -1235,12 +1430,10 @@ private fun MapViewContainer(
                 // 코스 그리는 부분 (내 러닝 코스, 경로 코스, 추천 코스)
 
                 if (latLngList.size >= 2) {
-                    polyline.coords = latLngList
-                    polyline.width = 10
-                    polyline.color = PointColor.toArgb()
-                    polyline.map = naverMap
+                    runningPathOverlay.coords = latLngList
+                    runningPathOverlay.map = naverMap // 지도에 부착
                 } else {
-                    polyline.map = null
+                    runningPathOverlay.map = null    // 좌표 부족 시 제거
                 }
 
                 // 경로 가이드 모드

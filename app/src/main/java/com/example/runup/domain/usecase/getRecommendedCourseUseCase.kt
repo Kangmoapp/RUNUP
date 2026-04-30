@@ -1,6 +1,7 @@
 package com.example.runup.domain.usecase
 
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
@@ -10,69 +11,70 @@ import javax.inject.Inject
 class GetRecommendedCourseUseCase @Inject constructor(
     private val courseRepository: CourseRepository
 ) {
-    // sortType 별로 가져오기
+    // #1. 일반 추천 호출
     suspend operator fun invoke(
         courseDistance: Int,
         currentLocation: GeoPoint,
         isLoop: Boolean,
         sortType: SortType,
         count: Int
-    ): AuthResult<List<CourseRecommendation>> { // 반환 타입 변경
+    ): AuthResult<List<CourseRecommendation>> {
         val result = courseRepository.getCourse(courseDistance, currentLocation, isLoop, sortType)
 
         return when (result) {
-            is AuthResult.Success -> {
-                // 1. 모든 그룹의 경로들을 평평하게(Flatten) 펼침
-                val flattenedList = result.data.flatMap { group ->
-                    group.generatedPaths.map { path ->
-                        CourseRecommendation(
-                            originCourse = group.originCourse,
-                            reason = group.reason,
-                            path = path
-                        )
-                    }
-                }
-
-                // 2. 요청한 개수(count)만큼만 잘라서 반환
-                AuthResult.Success(flattenedList.take(count))
-            }
-            is AuthResult.Fail -> {
-                // AuthResult의 제네릭 타입이 바뀌었으므로 새로 생성해서 반환
-                AuthResult.Fail(result.message)
-            }
+            is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))
+            is AuthResult.Fail -> AuthResult.Fail(result.message)
         }
     }
 
-    //AI 추천으로 가져오기
+    // #2. AI 추천 호출
     suspend operator fun invoke(
         courseDistance: Int,
         currentLocation: GeoPoint,
         isLoop: Boolean,
-        userPrompt : String,
+        userPrompt: String,
         count: Int
-    ): AuthResult<List<CourseRecommendation>> { // 반환 타입 변경
+    ): AuthResult<List<CourseRecommendation>> {
         val result = courseRepository.getCourseFromAI(courseDistance, currentLocation, isLoop, userPrompt)
 
         return when (result) {
-            is AuthResult.Success -> {
-                // 1. 모든 그룹의 경로들을 평평하게(Flatten) 펼침
-                val flattenedList = result.data.flatMap { group ->
-                    group.generatedPaths.map { path ->
+            is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))
+            is AuthResult.Fail -> AuthResult.Fail(result.message)
+        }
+    }
+
+    /**
+     * ── 🔹 [핵심] 코스 분배 로직 (Round-Robin) ── 📍
+     * 여러 그룹에서 번갈아가며 코스를 추출합니다.
+     */
+    private fun distributeCourses(
+        groups: List<CoursePathGroup>,
+        targetCount: Int
+    ): List<CourseRecommendation> {
+        val resultList = mutableListOf<CourseRecommendation>()
+        if (groups.isEmpty()) return resultList
+
+        // 가장 많이 가진 그룹의 갈래 수만큼 반복 루프를 돌립니다.
+        val maxPaths = groups.maxOfOrNull { it.generatedPaths.size } ?: 0
+
+        for (pathIdx in 0 until maxPaths) {
+            for (group in groups) {
+                // 현재 인덱스(0번, 1번...)에 해당하는 갈래가 있다면 결과 리스트에 추가
+                if (pathIdx < group.generatedPaths.size) {
+                    resultList.add(
                         CourseRecommendation(
                             originCourse = group.originCourse,
                             reason = group.reason,
-                            path = path
+                            path = group.generatedPaths[pathIdx]
                         )
-                    }
+                    )
                 }
 
-                // 2. 요청한 개수(count)만큼만 잘라서 반환
-                AuthResult.Success(flattenedList.take(count))
-            }
-            is AuthResult.Fail -> {
-                // AuthResult의 제네릭 타입이 바뀌었으므로 새로 생성해서 반환
-                AuthResult.Fail(result.message)
+                // 목표 개수(count)를 다 채우면 즉시 반환
+                if (resultList.size == targetCount) return resultList
             }
         }
+
+        return resultList
     }
 }
