@@ -42,6 +42,7 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.room.util.TableInfo
@@ -137,7 +138,7 @@ private fun SimpleHorizontalPager() {
 @Preview
 @Composable
 private fun Previewpage0(){
-    page0()
+    page3()
 }
 
 @Composable
@@ -150,34 +151,65 @@ private fun page0(){
 @Composable
 private fun page1(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "튜토리얼 페이지 2")
+        StartText(text = "목표를 세우고\n러닝을 시작해요")
+        Column(
+            modifier = Modifier
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Bottom
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.tuto_goalset),
+                contentDescription = "목표를 세우고러닝을 시작해요"
+            )
+        }
     }
 }
 
 @Composable
 private fun page2(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "튜토리얼 페이지 3")
+        StartText(text = "새로운 코스를 찾아\n달려봐요")
+        Column(
+            modifier = Modifier
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Bottom
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.tuto_course),
+                contentDescription = "새로운 코스를 찾고 달려봐요"
+            )
+        }
     }
 }
 
 @Composable
 private fun page3(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "튜토리얼 페이지 4")
+        StartText(text = "함께 달리고\n러닝을 공유해요")
+        Column(
+            modifier = Modifier
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Bottom
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.tuto_community),
+                contentDescription = "함께 달리고\n러닝을 공유해요"
+            )
+        }
     }
 }
 
 @Composable
 private fun StartText(
     text:String,
-    modifier: Modifier = Modifier.fillMaxWidth()
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    fontSize: TextUnit = 48.sp
 ) {
     Text(
         text = text,
         textAlign = TextAlign.Center,
         fontWeight = FontWeight.Bold,
-        fontSize = 48.sp,
+        fontSize = fontSize,
         color = White,
         modifier = modifier
     )
