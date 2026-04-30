@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,7 +59,8 @@ fun DistanceGoalSettingDialog(
                     textMapper = { (it / 10.0).toString() },
                     onSelectedNumberChange = { number ->
                         selectedNumber = number
-                    }
+                    },
+                    modifier = Modifier.width(60.dp)
                 )
                 Text(
                     text = "km",
