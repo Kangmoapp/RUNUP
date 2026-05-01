@@ -1,5 +1,6 @@
 package com.example.runup.data.repository
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
+import android.os.Looper
 import android.util.Log
 import com.example.runup.BuildConfig
 import com.example.runup.domain.model.AddressModel
@@ -19,6 +22,10 @@ import com.example.runup.service.LocationService
 import com.example.runup.service.NaverMapApiService
 import com.example.runup.ui.util.calculateDistance
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.Priority
 import com.google.firebase.firestore.GeoPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,25 +46,26 @@ import kotlin.math.pow
 class LocationRepositoryImpl @Inject constructor(
     private val application: Application,
     private val naverMapApiService: NaverMapApiService,
-    private val govLocationApiService: GovLocationApiService
+    private val govLocationApiService: GovLocationApiService,
+    private val fusedLocationClient: FusedLocationProviderClient
 ) : LocationRepository, SensorEventListener {
 
+    // 저장되는 러닝 노드 (좌표)
     private val _recordedNodes = MutableStateFlow<List<Node>>(emptyList())
     override val recordedNodes: StateFlow<List<Node>> = _recordedNodes
-
+    // 총 달린 거리
     private val _totalDistance = MutableStateFlow(0.0)
     override val totalDistance: StateFlow<Double> = _totalDistance
-
-    // ── 🔹 [NEW] 시간 데이터 관리 ── 📍
+    // 총 달린 시간
     private val _totalTime = MutableStateFlow(0)
     override val totalTime: StateFlow<Int> = _totalTime.asStateFlow()
-
-    private var timerJob: Job? = null
-    private val repositoryScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
+    // 현재 위치
     private val _currentLocation = MutableStateFlow<GeoPoint?>(null)
     override val currentLocation: StateFlow<GeoPoint?> = _currentLocation
 
+    private var timerJob: Job? = null
+    private val repositoryScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    // 나침반 센서 방향 관련
     private val sensorManager = application.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
     private val magnetometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
@@ -67,6 +75,10 @@ class LocationRepositoryImpl @Inject constructor(
 
     private val _currentBearing = MutableStateFlow(0.0f)
     override val currentBearing: StateFlow<Float> = _currentBearing
+
+    // ── 🔹 필터링을 위한 변수 추가 📍 ──
+    private val ALPHA = 0.15f // 0.0 ~ 1.0 (낮을수록 더 부드럽지만 반응이 느려짐)
+    private var lastBearing = 0.0f
 
     // 🔹 마지막으로 API를 호출했던 좌표 저장 (메모리 내)
     private var lastFetchedLocation: GeoPoint? = null
@@ -79,6 +91,15 @@ class LocationRepositoryImpl @Inject constructor(
     // 🔹 전역 주소 상태
     private val _addressState = MutableStateFlow<AddressModel?>(null)
     override val addressState: StateFlow<AddressModel?> = _addressState
+
+    // 위치 콜백 (서비스에 있던 거 여기로 이동)
+    private val locationCallback = object : LocationCallback() {
+        override fun onLocationResult(result: LocationResult) {
+            result.lastLocation?.let { location ->
+                updateCurrentLocation(GeoPoint(location.latitude, location.longitude))
+            }
+        }
+    }
 
     override fun updateCurrentLocation(geoPoint: GeoPoint) {
         _currentLocation.value = geoPoint
@@ -114,32 +135,52 @@ class LocationRepositoryImpl @Inject constructor(
         _totalTime.value = 0
     }
 
+    @SuppressLint("MissingPermission")
     override fun startTracking() {
-        // ── 🔹 Intent에 "START" 액션을 반드시 추가 ── 📍
-        val intent = Intent(application, LocationService::class.java).apply {
-            action = "START"
-        }
-        application.startForegroundService(intent)
+        // 서비스 없이 직접 위치 업데이트 요청
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
 
-        accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-        }
-        magnetometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
-        }
+        // 센서 등록
+        accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
+        magnetometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
     }
 
     override fun stopTracking() {
+        // 위치 업데이트 중단
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        sensorManager.unregisterListener(this)
+
+        // 포그라운드 서비스 종료
         val intent = Intent(application, LocationService::class.java).apply {
             action = "STOP_TRACKING"
         }
         application.startService(intent)
-        sensorManager.unregisterListener(this)
     }
 
+    // 2. 러닝 기록 시작 (알림 띄움) 📍 추가
+    override fun startForegroundTracking() {
+        val intent = Intent(application, LocationService::class.java).apply {
+            action = "START_RUNNING" // 알림이 필요한 진짜 러닝 시작 액션
+        }
+        // 안드로이드 8.0 이상 대응
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            application.startForegroundService(intent)
+        } else {
+            application.startService(intent)
+        }
+    }
+
+    // ------------------------ 방향 관련 ------------------------------//
+
     override fun onSensorChanged(event: SensorEvent) {
-        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) gravity = event.values
-        if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) geomagnetic = event.values
+        // 센서 데이터에 Low-Pass Filter 적용
+        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            gravity = lowPass(event.values.clone(), gravity)
+        }
+        if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+            geomagnetic = lowPass(event.values.clone(), geomagnetic)
+        }
 
         val r = FloatArray(9)
         val i = FloatArray(9)
@@ -148,11 +189,34 @@ class LocationRepositoryImpl @Inject constructor(
             SensorManager.getOrientation(r, orientation)
             // orientation[0]이 Azimuth(방향)이며 라디안 단위입니다. 이를 도(degree)로 변환합니다.
             val degrees = Math.toDegrees(orientation[0].toDouble()).toFloat()
-            _currentBearing.value = (degrees + 360) % 360
+            val currentMeasured = (degrees + 360) % 360
+            // 359도에서 1도로 갈 때 180도를 회전하는 게 아니라 짧은 쪽으로 회전하게 함 (방위각 급변 방지)
+            _currentBearing.value = smoothBearing(lastBearing, currentMeasured)
+            lastBearing = _currentBearing.value
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    // 가속도 및 자기장 센서 값에 필터를 적용하는 함수
+    private fun lowPass(input: FloatArray, output: FloatArray): FloatArray {
+        for (i in input.indices) {
+            output[i] = output[i] + ALPHA * (input[i] - output[i])
+        }
+        return output
+    }
+
+    private fun smoothBearing(old: Float, new: Float): Float {
+        var diff = new - old
+
+        // 180도 이상의 차이가 나면 반대 방향으로 계산 (최단 경로)
+        while (diff < -180) diff += 360
+        while (diff > 180) diff -= 360
+
+        // 이전 값에 차이의 일부분만 더해서 부드럽게 이동
+        return (old + diff * ALPHA + 360) % 360
+    }
+
 
     override fun markLastNodeAsStopped() {
         val currentList = _recordedNodes.value.toMutableList()

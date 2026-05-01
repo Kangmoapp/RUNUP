@@ -13,50 +13,47 @@ import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.model.toSummary
 import com.example.runup.domain.repository.UserRepository
+import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.ui.util.ImagePreloader
 import com.example.runup.ui.util.UserStateManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import javax.inject.Inject
 
-
+data class MyPageRunState(
+    val pagedRuns: List<RunRecord> = emptyList(),
+    val selectedFilter: RunFilter = RunFilter.ALL,
+    val hasMore: Boolean = true,
+    val isLoadingMore: Boolean = false,
+    val lastDate: Long? = null
+)
 
 @HiltViewModel
 class MyPageViewModel @Inject constructor(
     private val userRepository: UserRepository,
+    private val saveCourseUseCase: SaveCourseUseCase,
     private val userStateManager: UserStateManager,
     private val imagePreloader: ImagePreloader
 ) : ViewModel() {
-
+    // 유저 데이터
     val userState: StateFlow<UserData?> = userStateManager.userData
 
     // 창고에 있는 비트맵을 UI가 관찰할 수 있게 노출
     val profileBitmaps = userStateManager.profileBitmaps
 
-    // 필터링된 러닝 기록 리스트 (누적용)
-    private val _pagedRuns = MutableStateFlow<List<RunRecord>>(emptyList())
-    val pagedRuns: StateFlow<List<RunRecord>> = _pagedRuns
+    // 2. [통합] 러닝 기록 관련 UI 상태 📍
+    private val _runState = MutableStateFlow(MyPageRunState())
+    val runState: StateFlow<MyPageRunState> = _runState.asStateFlow()
 
-    // 🔹 2. 마지막으로 가져온 데이터의 참조 (다음 페이지 로드용)
-    private var lastVisibleRunDate: Long? = null
-
-    // 🔹 3. 더 가져올 데이터가 있는지 여부
-    var hasMore by mutableStateOf(true)
-        private set
-
-    var isLoadingMore by mutableStateOf(false)
-        private set
-
-    // 필터 상태 (기본값 ALL)
-    var selectedFilter by mutableStateOf(RunFilter.ALL)
-        private set
+    private val _courseSaveSuccess = MutableSharedFlow<Unit>()
+    val courseSaveSuccess = _courseSaveSuccess.asSharedFlow()
 
     // 초기 데이터 로드 (유저 정보 + 첫 5개 기록)
     fun initData() {
@@ -68,50 +65,51 @@ class MyPageViewModel @Inject constructor(
 
     // 1. 필터 업데이트 로직 수정
     fun updateFilter(filter: RunFilter) {
-        if (selectedFilter == filter) return // 이미 선택된 필터면 무시
-        selectedFilter = filter
+        if ((_runState.value.selectedFilter == filter)) return // 이미 선택된 필터면 무시
 
-        // 🔹 [수정] refreshRuns()의 emptyList() 로직을 지우고 바로 로드 시작
-        // 대신 "새로고침(isRefresh = true)"이라는 신호를 보냅니다.
+        _runState.update { it.copy(selectedFilter = filter) }
         loadMoreRuns(isRefresh = true)
     }
 
-    // 2. [기존 함수 수정] loadMoreRuns에 파라미터 추가
-    fun loadMoreRuns(isRefresh: Boolean = false) {
-        // 🔹 [수정] 새로고침일 때는 상태를 초기화하지만 리스트를 비우지는 않음
-        if (isRefresh) {
-            lastVisibleRunDate = null
-            hasMore = true
-        }
+    // loadMoreRuns에 파라미터 추가
+    // MyPageViewModel.kt
 
-        if (!hasMore || isLoadingMore) return
+    fun loadMoreRuns(isRefresh: Boolean = false) {
+        val currentState = _runState.value
+
+        if (!isRefresh && (!currentState.hasMore || currentState.isLoadingMore)) return
 
         viewModelScope.launch {
-            isLoadingMore = true
+            _runState.update { it.copy(isLoadingMore = true) }
 
+            val lastDate = if (isRefresh) null else currentState.lastDate
+
+            // 화면엔 5개를 보여줄 거지만 서버엔 6개를 요청
+            val PAGE_SIZE = 5
             val result = userRepository.getRunsPaged(
-                filter = selectedFilter,
-                lastDate = lastVisibleRunDate,
-                pageSize = 5
+                filter = _runState.value.selectedFilter,
+                lastDate = lastDate,
+                pageSize = (PAGE_SIZE + 1).toLong() // 6개 요청
             )
 
             if (result is AuthResult.Success) {
-                val newRuns = result.data
+                val fetchedRuns = result.data
 
-                // 🔹 [핵심 수정] 새로고침이면 덮어쓰고, 아니면 누적합니다.
-                if (isRefresh) {
-                    _pagedRuns.value = newRuns // 👈 여기서 기존 리스트가 한 번에 바뀜 (스크롤 유지)
-                } else {
-                    _pagedRuns.value += newRuns
-                }
+                // 1. 가져온 데이터가 6개(PAGE_SIZE + 1)라면 더 가져올 데이터가 있는 것
+                val hasMoreData = fetchedRuns.size > PAGE_SIZE
 
-                if (newRuns.size < 5) {
-                    hasMore = false
-                } else {
-                    lastVisibleRunDate = newRuns.last().recordDate
-                }
+                // 2. 실제 UI에 보여줄 데이터는 최대 5개까지만 자름
+                val displayRuns = if (hasMoreData) fetchedRuns.take(PAGE_SIZE) else fetchedRuns
+
+                _runState.update { it.copy(
+                    pagedRuns = if (isRefresh) displayRuns else it.pagedRuns + displayRuns,
+                    hasMore = hasMoreData, // 👈 6개가 왔을 때만 true
+                    lastDate = displayRuns.lastOrNull()?.recordDate ?: it.lastDate,
+                    isLoadingMore = false
+                ) }
+            } else {
+                _runState.update { it.copy(isLoadingMore = false) }
             }
-            isLoadingMore = false
         }
     }
 
@@ -161,9 +159,14 @@ class MyPageViewModel @Inject constructor(
         viewModelScope.launch {
             val result = userRepository.deleteRunRecord(courseId)
             if (result is AuthResult.Success) {
-                // 삭제 성공 시 최신 데이터를 다시 불러와 UI 갱신
+                // 1. UI 리스트에서 즉시 제거 (pagedRuns)
+                _runState.update { currentState ->
+                    currentState.copy(
+                        pagedRuns = currentState.pagedRuns.filterNot { it.course.id == courseId }
+                    )
+                }
+                // 전체 통계 데이터 갱신 (총 거리, 횟수 등)
                 fetchMyUserData()
-                Log.d("MyPage", "기록 삭제 성공: $courseId")
             } else {
                 Log.e("MyPage", "기록 삭제 실패")
             }
@@ -192,6 +195,26 @@ class MyPageViewModel @Inject constructor(
                 Log.d("MyPage", "프로필 이미지 업로드 성공: ${result.data}")
             } else if (result is AuthResult.Fail) {
                 Log.e("MyPage", "프로필 이미지 업로드 실패: ${result.message}")
+            }
+        }
+    }
+
+    fun addCourseFromRecord(runRecord: RunRecord) {
+        viewModelScope.launch {
+            // 1. RunRecord 안의 Course 객체 추출
+            val courseToSave = runRecord.course
+
+            // 2. UseCase 실행
+            val result = saveCourseUseCase(courseToSave)
+
+            // 3. 결과 처리
+            when (result) {
+                is AuthResult.Success -> {
+                    _courseSaveSuccess.emit(Unit)
+                }
+                is AuthResult.Fail -> {
+                    Log.e("MyPageViewModel", "코스 추가 실패: ${result.message}")
+                }
             }
         }
     }

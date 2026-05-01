@@ -32,4 +32,15 @@ class SaveCourseUseCase @Inject constructor(
 
         return courseRepository.saveCourse(newCourse)
     }
+
+    // ── 🔹 [새로 추가된 로직]: MyPage 등에서 이미 만들어진 Course를 저장할 때 사용 📍 ──
+    suspend operator fun invoke(course: Course): AuthResult<Boolean> {
+        // 이미 구성된 코스 데이터 검증
+        if (course.locationPoints.isEmpty()) {
+            return AuthResult.Fail("기록된 위치 정보가 없습니다.")
+        }
+
+        // Repository에 저장 요청
+        return courseRepository.saveCourse(course)
+    }
 }

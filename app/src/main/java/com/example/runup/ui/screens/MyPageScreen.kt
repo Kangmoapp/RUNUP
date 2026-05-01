@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.net.Uri
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +34,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddLocation
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.People
@@ -47,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -94,11 +99,18 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
 import com.example.runup.domain.model.RunFilter
+import com.example.runup.ui.components.DetailMetricItem
 import com.example.runup.ui.components.FriendListDialog
+import com.example.runup.ui.components.GoalItem
+import com.example.runup.ui.components.ScoreIndicator
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.util.calculatePace
 import com.example.runup.ui.util.latLngToPixel
 import com.example.runup.ui.util.mapper.DistanceMapper
+import com.example.runup.ui.util.mapper.TimeMapper.formatDuration
+import com.example.runup.ui.util.mapper.TimeMapper.formatSeconds
+import com.example.runup.viewmodel.CommunityViewModel
+import com.example.runup.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -107,11 +119,16 @@ import kotlinx.coroutines.launch
 fun MyPageScreen(
     onBackClick: () -> Unit,
     onPostClick: (String) -> Unit,
-    viewModel: MyPageViewModel = hiltViewModel()
+    onUploadClick: () -> Unit,
+    viewModel: MyPageViewModel = hiltViewModel(),
+    communityViewModel: CommunityViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
 ) {
-    val userData by viewModel.userState.collectAsState()
+    val context = LocalContext.current // 토스트를 위해 컨텍스트 가져오기
 
+    val userData by viewModel.userState.collectAsState()
     val profileBitmaps by viewModel.profileBitmaps.collectAsState()
+    val runState by viewModel.runState.collectAsState()
+
     // 내 프로필 URL 추출
     val myProfileUrl = userData?.userProfileUrl ?: ""
     // Map에서 내 URL에 해당하는 비트맵만 찾기
@@ -127,7 +144,7 @@ fun MyPageScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val pagedRuns by viewModel.pagedRuns.collectAsState()
+    var activeActionItemId by remember { mutableStateOf<Long?>(null) }
 
     // 갤러리 실행기 설정
     val profileGalleryLauncher = rememberLauncherForActivityResult(
@@ -147,6 +164,16 @@ fun MyPageScreen(
 
     BackHandler {
         onBackClick()
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.courseSaveSuccess.collect {
+            android.widget.Toast.makeText(
+                context,
+                "코스가 내 리스트에 추가되었습니다.",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     if (showEditDialog) {
@@ -423,7 +450,7 @@ fun MyPageScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RunFilter.entries.forEach { filter ->
                             FilterChip(
-                                selected = viewModel.selectedFilter == filter,
+                                selected = runState.selectedFilter  == filter,
                                 onClick = { viewModel.updateFilter(filter) },
                                 label = { Text(filter.label) },
                                 colors = FilterChipDefaults.filterChipColors(
@@ -437,14 +464,14 @@ fun MyPageScreen(
                 }
             }
 
-            if (userData == null && viewModel.isLoadingMore) {
+            if (userData == null && runState.isLoadingMore) {
                 // 초기 로딩
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PointColor)
                     }
                 }
-            } else if (pagedRuns.isEmpty() && !viewModel.isLoadingMore) {
+            } else if (runState.pagedRuns.isEmpty() && !runState.isLoadingMore) {
                 // 데이터 없음
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
@@ -453,35 +480,73 @@ fun MyPageScreen(
                 }
             } else {
                 // 리스트 표시
-                itemsIndexed(pagedRuns, key = { _, run -> run.recordDate }) { index, run ->
+                itemsIndexed(
+                    runState.pagedRuns,
+                    key = { _, run -> run.recordDate },
+                    contentType = { _, _ -> "run_record_item" }
+                ) { index, run ->
                     ExpandableRunItem(
                         index = index + runListStartIndex,          // 🔹 인덱스 추가
                         scrollState = scrollState, // 🔹 스크롤 상태 추가
                         run = run,
-                        onDeleteConfirm = { viewModel.deleteRun(it) }
+                        showQuickActions = activeActionItemId == run.recordDate,
+                        onToggleActions = {
+                            // 롱클릭 시: 현재 이거면 끄고, 아니면 이걸로 교체
+                            activeActionItemId = if (activeActionItemId == run.recordDate) null else run.recordDate
+                        },
+                        onExpandClick = {
+                            // 그냥 클릭 시: 메뉴가 떠 있으면 메뉴만 끄고, 아니면 확장 토글
+                            if (activeActionItemId != null) {
+                                activeActionItemId = null
+                            } else {
+                                // 이 내부 로직은 아래 컴포저블 안에서 처리하도록 위임
+                            }
+                        },
+                        onDeleteConfirm = { viewModel.deleteRun(it) },
+                        onUploadClick = { run: RunRecord ->
+                            communityViewModel.selectRunRecordFromMyPage(run)
+                            onUploadClick()
+                        },
+                        onAddCourseClick = { record ->
+                            viewModel.addCourseFromRecord(record)
+                        }
                     )
                 }
 
-                // 🔹 5. '더 보기' 버튼 섹션 (리스트가 있을 때 그 아래에 표시)
-                if (viewModel.hasMore) {
-                    item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().offset(y = (-8).dp).padding(top = 0.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (viewModel.isLoadingMore) {
-                                CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
-                            } else {
-                                Text(
-                                    text = "더 보기 ▾",
-                                    color = PointColor,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .clickable { viewModel.loadMoreRuns() }
-                                        .padding(8.dp)
-                                )
+                item(key = "list_footer") { // 👈 고정 키를 주면 리스트가 위치를 정확히 기억해!
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateContentSize(), // 👈 내용 변경 시 높이 변화를 부드럽게!
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (runState.hasMore) {
+                            // [1] 더 보기 버튼 모드
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(40.dp)
+                                    .offset(y = (-10).dp), // 이전 아이템과 살짝 밀착
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (runState.isLoadingMore) {
+                                    CircularProgressIndicator(color = PointColor, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text(
+                                        text = "더 보기 ▾",
+                                        color = PointColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clickable { viewModel.loadMoreRuns() }
+                                            .padding(8.dp)
+                                    )
+                                }
                             }
+                        } else {
+                            // [2] 모든 기록 로드 완료 모드 (8dp 여백만 남김)
+                            // spacedBy(20dp)가 이미 있으므로, 여기 Spacer 높이를 조절해서 간격을 맞춤
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
                 }
@@ -524,10 +589,16 @@ fun ExpandableRunItem(
     index: Int,                // 🔹 추가
     scrollState: LazyListState, // 🔹 추가
     run: RunRecord,
-    onDeleteConfirm: (String) -> Unit
+    showQuickActions: Boolean,    // 🔹 외부에서 주입
+    onToggleActions: () -> Unit, // 🔹 롱클릭 콜백
+    onExpandClick: () -> Unit,   // 🔹 클릭 시 부모 상태 체크용 콜백
+    onDeleteConfirm: (String) -> Unit,
+    onUploadClick: (RunRecord) -> Unit,
+    onAddCourseClick: (RunRecord) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) } // 삭제 다일로그
+
 
     LaunchedEffect(expanded) {
         if (expanded) {
@@ -548,7 +619,7 @@ fun ExpandableRunItem(
                 if (itemBottom > viewportBottom) {
                     val scrollDelta = itemBottom - viewportBottom
                     // 딱 잘린 만큼만 + 여유분(50px) 스크롤
-                    scrollState.animateScrollBy(scrollDelta.toFloat() + 50f)
+                    scrollState.animateScrollBy(scrollDelta.toFloat() + 125f)
                 }
             }
         }
@@ -580,154 +651,250 @@ fun ExpandableRunItem(
             textContentColor = Color.LightGray
         )
     }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { expanded = !expanded },
-                onLongClick = { showDeleteDialog = true } // 꾹 누르면 다이얼로그 활성화
-            )
-            .animateContentSize(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    Text(TimeMapper.formatTimestamp(run.recordDate), color = Color.Gray, fontSize = 12.sp)
-                    Text("코스: ${run.course.id}", color = WhiteTextColor, fontWeight = FontWeight.Bold)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("${run.course.distance}m", color = PointColor, fontWeight = FontWeight.Bold)
-                    Text(formatDuration(run.time), color = Color.LightGray, fontSize = 12.sp)
-                }
-            }
-
-            // --- [수정] 펼쳐졌을 때 나타나는 상세 영역 ---
-            if (expanded) {
-                var isMapLoaded by remember { mutableStateOf(false) }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = Color.DarkGray)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 1. 코스 지도 표시 영역
-                val centerLat = (run.course.minLat + run.course.maxLat) / 2
-                val centerLng = (run.course.minLng + run.course.maxLng) / 2
-
-                // 코스 크기에 따른 동적 줌 (CommunityScreen 로직 재사용)
-                val dynamicZoom = remember(run.course) {
-                    val latDiff = run.course.maxLat - run.course.minLat
-                    val lngDiff = run.course.maxLng - run.course.minLng
-                    val maxDiff = maxOf(latDiff, lngDiff)
-                    when {
-                        maxDiff > 0.04 -> 13
-                        maxDiff > 0.015 -> 14
-                        maxDiff > 0.005 -> 15
-                        else -> 16
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {
+                        onExpandClick()
+                        if (!showQuickActions) {
+                            expanded = !expanded
+                        }
+                    },
+                    onLongClick = {onToggleActions() } // 👈 꾹 누르면 퀵 버튼 등장
+                )
+                .animateContentSize(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
+                        Text(
+                            TimeMapper.formatTimestamp(run.recordDate),
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            run.course.id,
+                            color = WhiteTextColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "${run.course.distance}m",
+                            color = PointColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(formatDuration(run.time), color = Color.LightGray, fontSize = 12.sp)
                     }
                 }
 
-                val staticMapUrl = remember(run.recordDate) {
-                    buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom)
-                }
+                // --- [수정] 펼쳐졌을 때 나타나는 상세 영역 ---
+                if (expanded) {
+                    var isMapLoaded by remember { mutableStateOf(false) }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider(color = Color.DarkGray)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 1. 코스 지도 표시 영역
+                    val centerLat = (run.course.minLat + run.course.maxLat) / 2
+                    val centerLng = (run.course.minLng + run.course.maxLng) / 2
+
+                    // 코스 크기에 따른 동적 줌 (CommunityScreen 로직 재사용)
+                    val dynamicZoom = remember(run.course) {
+                        val latDiff = run.course.maxLat - run.course.minLat
+                        val lngDiff = run.course.maxLng - run.course.minLng
+                        val maxDiff = maxOf(latDiff, lngDiff)
+                        when {
+                            maxDiff > 0.04 -> 13
+                            maxDiff > 0.015 -> 14
+                            maxDiff > 0.005 -> 15
+                            else -> 16
+                        }
+                    }
+
+                    val staticMapUrl = remember(run.recordDate) {
+                        buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom)
+                    }
 
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(RoundedCornerShape(12.dp)) // 지도 모서리도 둥글게 하면 세련돼 보입니다
-                        .background(Color(0xFF2C2C2C))  // 지도 로드 전 배경색 (스켈레톤 느낌)
-                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                            .clip(RoundedCornerShape(12.dp)) // 지도 모서리도 둥글게 하면 세련돼 보입니다
+                            .background(Color(0xFF2C2C2C))  // 지도 로드 전 배경색 (스켈레톤 느낌)
+                    ) {
 
-                    // 1. Static Map
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(staticMapUrl)
-                            .crossfade(true) // 부드러운 전환 효과
-                            .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
-                            .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
-                            .build(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        onSuccess = { isMapLoaded = true }
-                    )
+                        // 1. Static Map
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(staticMapUrl)
+                                .crossfade(true) // 부드러운 전환 효과
+                                .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
+                                .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                                .build(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            onSuccess = { isMapLoaded = true }
+                        )
 
-                    if (isMapLoaded) {
-                        // 2. 경로 그리기 (시작/종료 마커 포함)
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            // 🔹 핵심: 모든 드로잉 로직은 이 Canvas { ... } 블록 안에 있어야 합니다! 📍
-                            val points = run.course.locationPoints.map {
-                                val (x, y) = latLngToPixel(
-                                    it.locationPoint.latitude,
-                                    it.locationPoint.longitude,
-                                    centerLat,
-                                    centerLng,
-                                    dynamicZoom.toDouble(),
-                                    size.width,
-                                    size.height
-                                )
-                                Offset(x, y)
-                            }
-
-                            if (points.isNotEmpty()) {
-                                val path = Path().apply {
-                                    points.forEachIndexed { i, p ->
-                                        if (i == 0) moveTo(p.x, p.y)
-                                        else {
-                                            if (!run.course.locationPoints[i - 1].stop) lineTo(p.x, p.y)
-                                            else moveTo(p.x, p.y)
-                                        }
-                                    }
+                        if (isMapLoaded) {
+                            // 2. 경로 그리기 (시작/종료 마커 포함)
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                // 🔹 핵심: 모든 드로잉 로직은 이 Canvas { ... } 블록 안에 있어야 합니다! 📍
+                                val points = run.course.locationPoints.map {
+                                    val (x, y) = latLngToPixel(
+                                        it.locationPoint.latitude,
+                                        it.locationPoint.longitude,
+                                        centerLat,
+                                        centerLng,
+                                        dynamicZoom.toDouble(),
+                                        size.width,
+                                        size.height
+                                    )
+                                    Offset(x, y)
                                 }
 
-                                // 경로 선 그리기
-                                drawPath(path, Color.Black, style = Stroke(14f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                                drawPath(path, PointColor, style = Stroke(8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                                if (points.isNotEmpty()) {
+                                    val path = Path().apply {
+                                        points.forEachIndexed { i, p ->
+                                            if (i == 0) moveTo(p.x, p.y)
+                                            else {
+                                                if (!run.course.locationPoints[i - 1].stop) lineTo(
+                                                    p.x,
+                                                    p.y
+                                                )
+                                                else moveTo(p.x, p.y)
+                                            }
+                                        }
+                                    }
 
-                                // 시작/종료 마커
-                                drawMarker(points.first(), Color(0xFF4CAF50), "START")
-                                drawMarker(points.last(), Color(0xFFF44336), "END")
+                                    // 경로 선 그리기
+                                    drawPath(
+                                        path,
+                                        Color.Black,
+                                        style = Stroke(
+                                            14f,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+                                    drawPath(
+                                        path,
+                                        PointColor,
+                                        style = Stroke(
+                                            8f,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+
+                                    // 시작/종료 마커
+                                    drawMarker(points.first(), Color(0xFF4CAF50), "START")
+                                    drawMarker(points.last(), Color(0xFFF44336), "END")
+                                }
                             }
+                            // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart) // 좌측 상단 정렬
+                                    .padding(10.dp)
+                                    .background(
+                                        Color.Black.copy(alpha = 0.6f),
+                                        RoundedCornerShape(8.dp)
+                                    ) // 반투명 검정 배경
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
+                                ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
+                                ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
+                            }
+                        } else {
+                            // 🔹 로딩 중일 때 보여줄 인디케이터 (선택 사항)
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center).size(24.dp),
+                                color = PointColor,
+                                strokeWidth = 2.dp
+                            )
                         }
-                        // 🔹 3. [추가] 지도 좌측 상단 점수 정보 패널
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.TopStart) // 좌측 상단 정렬
-                                .padding(10.dp)
-                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)) // 반투명 검정 배경
-                                .padding(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
-                            ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
-                            ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
-                        }
-                    } else {
-                        // 🔹 로딩 중일 때 보여줄 인디케이터 (선택 사항)
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center).size(24.dp),
-                            color = PointColor,
-                            strokeWidth = 2.dp
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // 2. 상세 지표 영역 (평균 페이스 등)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DetailMetricItem(
+                            "평균 페이스",
+                            calculatePace(run.time, run.course.distance.toDouble())
+                        )
+                        DetailMetricItem(
+                            "평균 속도",
+                            String.format(
+                                "%.1f km/h",
+                                (run.course.distance / 1000.0) / (run.time / 3600000.0)
+                            )
                         )
                     }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 2. 상세 지표 영역 (평균 페이스 등)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    DetailMetricItem("평균 페이스", calculatePace(run.time, run.course.distance.toDouble()))
-                    DetailMetricItem("평균 속도", String.format("%.1f km/h", (run.course.distance / 1000.0) / (run.time / 3600000.0)))
+        // ── 🔹 [핵심] 우측 하단 퀵 액션 버튼 영역 📍 ──
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showQuickActions,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 12.dp, end = 12.dp) // 카드 내부 위치 조정
+        ) {
+            Row(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. 업로드 버튼
+                QuickActionButton(Icons.Default.CloudUpload, PointColor) {
+                    onUploadClick(run)
+                    onToggleActions() // 작업 후 닫기
+                }
+                // 2. 코스 추가 버튼
+                QuickActionButton(Icons.Default.AddLocation, PointColor) {
+                    onAddCourseClick(run)
+                    onToggleActions() // 작업 후 닫기
+                }
+                // 3. 삭제 버튼
+                QuickActionButton(Icons.Default.Delete, Color.Red) {
+                    showDeleteDialog = true
+                    onToggleActions() // 작업 후 닫기
                 }
             }
         }
+    }
+}
+
+@Composable
+fun QuickActionButton(icon: ImageVector, color: Color, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -745,54 +912,5 @@ fun buildNaverStaticMapUrl(
             "&scale=2"
 }
 
-@Composable
-fun GoalItem(title: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, color = Color.Gray, fontSize = 12.sp)
-        Text(value, color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-    }
-}
 
-@Composable
-fun DetailMetricItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = Color.Gray, fontSize = 11.sp)
-        Text(value, color = WhiteTextColor, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-// 🔹 별점 표시용 소형 컴포넌트
-@Composable
-private fun ScoreIndicator(label: String, score: Double) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "$label ",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 10.sp
-        )
-        // 별 아이콘 대신 텍스트와 주황색 수치로 깔끔하게 표시
-        Text(
-            text = "★ ${String.format("%.1f", score)}",
-            color = Color(0xFFFF9800), // PointColor와 유사한 오렌지색
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-// 시간 포맷팅 헬퍼 (ms -> 00:00:00)
-fun formatDuration(ms: Int): String {
-    val seconds = (ms / 1000) % 60
-    val minutes = (ms / (1000 * 60)) % 60
-    val hours = ms / (1000 * 60 * 60)
-    return String.format("%02d:%02d:%02d", hours, minutes, seconds)
-}
-
-// 목표 시간용 (seconds -> 00:00:00)
-fun formatSeconds(totalSeconds: Int): String {
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return String.format("%02d:%02d:%02d", hours, minutes, seconds)
-}
 

@@ -1,1 +1,2 @@
 *.tflite filter=lfs diff=lfs merge=lfs -text
+functions/my_model_st/model.safetensors filter=lfs diff=lfs merge=lfs -text

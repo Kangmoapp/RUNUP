@@ -18,6 +18,7 @@ interface LocationRepository {
     fun clearData()
 
     fun startTracking()
+    fun startForegroundTracking()
     fun stopTracking()
     fun markLastNodeAsStopped()
 

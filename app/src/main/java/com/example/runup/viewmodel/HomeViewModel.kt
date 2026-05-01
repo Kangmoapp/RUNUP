@@ -58,11 +58,6 @@ data class HomeUiState(
     val isInitialLoading: Boolean = true,
     val selectedPath: Path? = null, // ── 🔹 추천/커뮤니티에서 확정된 경로 정보 📍
     val selectedCourseName: String = "", // ── 🔹 카드나 바텀시트에 띄울 이름만 따로 보관 📍
-
-    val isAiEnabled: Boolean = false,
-    val currentPostureLabel: String = "AI 꺼짐",
-    val leftBleState: String = "L: 대기 중",
-    val rightBleState: String = "R: 대기 중",
 )
 
 data class GuideUiState(
@@ -97,6 +92,13 @@ data class CourseRecommendationUiState(
     val isFailSearchCourse: String = ""
 )
 
+data class AiPostureUiState(
+    val isAiEnabled: Boolean = false,
+    val currentPostureLabel: String = "AI 꺼짐",
+    val leftBleState: String = "L: 대기 중",
+    val rightBleState: String = "R: 대기 중",
+)
+
 
 enum class HomeTab { RUNNING, RECOMMEND }
 
@@ -114,7 +116,6 @@ class HomeViewModel @Inject constructor(
     private val bleConnectionManager: BleConnectionManager,
     private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
-    private val userPreferenceDataSource: UserPreferenceDataSource,
     private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
 
     @ApplicationContext private val context: Context,
@@ -129,6 +130,9 @@ class HomeViewModel @Inject constructor(
 
     private val _GuideUiState = MutableStateFlow(GuideUiState())
     val GuideUiState: StateFlow<GuideUiState> = _GuideUiState
+
+    private val _AiPostureUiState = MutableStateFlow(AiPostureUiState())
+    val AiPostureUiState: StateFlow<AiPostureUiState> = _AiPostureUiState
 
     private val _loadingTimer = MutableStateFlow(0)
     val loadingTimer: StateFlow<Int> = _loadingTimer
@@ -269,7 +273,7 @@ class HomeViewModel @Inject constructor(
     // AI 추론 및 음성 제어 로직
     // =====================================
     fun toggleAi() {
-        _homeUiState.update { currentState ->
+        _AiPostureUiState.update { currentState ->
             val newState = !currentState.isAiEnabled
             if (!newState) {
                 inferenceBuffer.clear()
@@ -285,7 +289,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.Default) {
             bleSensorManager.sensorDataFlow.collectLatest { snapshot ->
                 // AI가 활성화 상태일 때만 데이터 수집
-                if (!_homeUiState.value.isAiEnabled) return@collectLatest
+                if (!_AiPostureUiState.value.isAiEnabled) return@collectLatest
 
                 inferenceBuffer.add(snapshot)
 
@@ -304,7 +308,7 @@ class HomeViewModel @Inject constructor(
             val (posture, probability) = result
 
             // UI 업데이트
-            _homeUiState.update { it.copy(currentPostureLabel = posture) }
+            _AiPostureUiState.update { it.copy(currentPostureLabel = posture) }
 
             // 자세가 바뀌었고, 확률이 70% 이상일 때 음성 알림
             if (posture != lastInferenceResult && probability > 0.7f) {
@@ -343,13 +347,13 @@ class HomeViewModel @Inject constructor(
         // 왼쪽 신발 상태 관찰
         viewModelScope.launch {
             bleConnectionManager.leftConnectionState.collectLatest { state ->
-                _homeUiState.update { it.copy(leftBleState = "L: $state") }
+                _AiPostureUiState.update { it.copy(leftBleState = "L: $state") }
             }
         }
         // 오른쪽 신발 상태 관찰
         viewModelScope.launch {
             bleConnectionManager.rightConnectionState.collectLatest { state ->
-                _homeUiState.update { it.copy(rightBleState = "R: $state") }
+                _AiPostureUiState.update { it.copy(rightBleState = "R: $state") }
             }
         }
         _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
@@ -370,7 +374,6 @@ class HomeViewModel @Inject constructor(
             _homeUiState.update { it.copy(isLoading = false) }
 
             // 2. 추적 및 타이머 시작 (중복 호출 제거) 🔹
-            locationRepository.startTracking()
             locationRepository.startTimer()
             startRunningTracking()
         }
@@ -399,6 +402,8 @@ class HomeViewModel @Inject constructor(
         if (_isTracking.value) return // 이미 기록 중이면 무시
 
         _isTracking.value = true
+
+        locationRepository.startForegroundTracking()
 
         recordingJob = viewModelScope.launch {
             while (true) {
@@ -462,7 +467,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun selectTab(tab: HomeTab) {
-        // 1. 일단 탭 선택 상태 업데이트
+        // 탭 선택 상태 업데이트
         _homeUiState.update { it.copy(selectedTab = tab) }
 
         // 2. ── 🔹 [핵심] 러닝 중 탭 복구 로직 📍 ──
@@ -567,7 +572,7 @@ class HomeViewModel @Inject constructor(
             viewModelScope.launch {
                 val result = getRecommendedCourseUseCase.invoke(
                     _courseRecommendationUiState.value.goalDistance,
-                    // GeoPoint(35.88544455378175, 128.61535052161116),
+                     //GeoPoint(35.88544455378175, 128.61535052161116),
                     location,
                     _courseRecommendationUiState.value.isLoop,
                     _courseRecommendationUiState.value.currentSort,
@@ -770,13 +775,6 @@ class HomeViewModel @Inject constructor(
             )
         }
     }
-    fun openRecommendSortDialog() {
-        updateRecommendState { it.copy(showSortDialog = true) }
-    }
-
-    fun closeRecommendSortDialog() {
-        updateRecommendState { it.copy(showSortDialog = false) }
-    }
 
     fun openRecommendDistanceDialog() {
         updateRecommendState { it.copy(showDistanceDialog = true) }
@@ -814,8 +812,5 @@ class HomeViewModel @Inject constructor(
                 isAiMode = !it.isAiMode // 현재 상태를 반전시킴 🔄
             )
         }
-
-        // 💡 팁: 모드를 전환할 때 기존 검색 결과가 방해된다면
-        // 여기서 clearRecommendation()을 같이 호출해줘도 좋습니다.
     }
 }

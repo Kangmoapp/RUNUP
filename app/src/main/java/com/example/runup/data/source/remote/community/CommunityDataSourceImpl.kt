@@ -268,7 +268,7 @@ class CommunityDataSourceImpl @Inject constructor(
                     .collection("PostStats").document("info")
 
                 val updateAction = if (isAlreadyLiked) FieldValue.arrayRemove(postId) else FieldValue.arrayUnion(postId)
-                transaction.set(myStatsRef, mapOf("likedPostIds" to updateAction), SetOptions.merge())
+                transaction.set(myStatsRef, mapOf("likePostIds" to updateAction), SetOptions.merge())
 
                 !isAlreadyLiked
             }.await().let { AuthResult.Success(it) }
@@ -304,7 +304,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 // 🔹 [UserData] -> 내 PostStats/info 에 기록
                 val myStatsRef = firestore.collection("UserData").document(myUid)
                     .collection("PostStats").document("info")
-                transaction.set(myStatsRef, mapOf("commentedPostIds" to FieldValue.arrayUnion(postId)), SetOptions.merge())
+                transaction.set(myStatsRef, mapOf("commentPostIds" to FieldValue.arrayUnion(postId)), SetOptions.merge())
 
                 true
             }.await()
@@ -349,7 +349,7 @@ class CommunityDataSourceImpl @Inject constructor(
                     // 내 통계 리스트에서 해당 포스트 ID 제거
                     val myStatsRef = firestore.collection("UserData").document(myUid)
                         .collection("PostStats").document("info")
-                    batch.set(myStatsRef, mapOf("commentedPostIds" to FieldValue.arrayRemove(postId)), SetOptions.merge())
+                    batch.set(myStatsRef, mapOf("commentPostIds" to FieldValue.arrayRemove(postId)), SetOptions.merge())
                 }.await()
 
                 // 💡 ViewModel에게 "통계에서 이 포스트를 지워야 함"을 알리기 위해 true 반환
@@ -682,7 +682,7 @@ class CommunityDataSourceImpl @Inject constructor(
 
                 // ── [내 통계 업데이트] 중복되어도 arrayUnion이 알아서 처리 ──
                 transaction.set(myStatsRef, mapOf(
-                    "followedPostIds" to FieldValue.arrayUnion(postId)
+                    "followPostIds" to FieldValue.arrayUnion(postId)
                 ), SetOptions.merge())
 
                 true
