@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.runup.ui.components.SelectableExpandableRunItem
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
@@ -50,6 +51,7 @@ import com.example.runup.viewmodel.CommunityViewModel
 @Composable
 fun PostUploadScreen(
     onBackClick: () -> Unit,
+    onBackHandlerClick: () -> Unit,
     onUploadSuccess: () -> Unit,
     viewModel: CommunityViewModel = hiltViewModel<CommunityViewModel>()
 ) {
@@ -59,6 +61,11 @@ fun PostUploadScreen(
 
     // 추가된 상태 관찰
     val uiState by viewModel.postUploadUiState.collectAsState()
+    // 시트 상태 정의 (맨 위 확장 상태로 고정하기 위함)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { newValue ->
+        // 여기서는 기본적으로 true를 반환하되, 스와이프 시 너무 민감하게 반응하지 않도록 skipPartiallyExpanded가 이미 돕고 있습니다.
+        true
+    })
 
     // 미디어 위치 권한 요청 런처 추가
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -105,21 +112,22 @@ fun PostUploadScreen(
 
     BackHandler { // 안드로이드 뒤로가기 버튼
         viewModel.clearSelectedImages()
-        onBackClick()
+        onBackHandlerClick()
     }
 
     // --- 러닝 기록 선택 바텀 시트 ---
     if (uiState.isSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.setSheetOpen(false) },
+            sheetState = sheetState,
             containerColor = Color(0xFF1C1C1C)
         ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp)
-                    .heightIn(max = 500.dp)
+                    .heightIn(min = 500.dp, max = 600.dp)
             ) {
                 item {
                     Text("내 러닝 기록", color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -134,17 +142,13 @@ fun PostUploadScreen(
                     }
                 } else {
                     items(uiState.runRecords) { record ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectRunRecord(record) }
-                                .padding(vertical = 12.dp)
-                        ) {
-                            // 🔹 날짜 포맷팅 적용 (TimeMapper 사용 추천)
-                            Text(formatTimestamp(record.recordDate), color = Color.Gray, fontSize = 12.sp)
-                            Text("${String.format("%.2f", record.course.distance / 1000.0)}km 러닝", color = WhiteTextColor, fontWeight = FontWeight.Bold)
-                        }
-                        HorizontalDivider(color = Color.DarkGray)
+                        SelectableExpandableRunItem(
+                            run = record,
+                            onSelect = {
+                                viewModel.selectRunRecord(record)
+                                viewModel.setSheetOpen(false) // 선택 후 시트 닫기
+                            }
+                        )
                     }
 
                     // 🔹 [추가] 더 보기 버튼 섹션
@@ -153,6 +157,7 @@ fun PostUploadScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .height(80.dp)
                                     .padding(vertical = 16.dp),
                                 contentAlignment = Alignment.Center
                             ) {

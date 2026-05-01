@@ -466,9 +466,9 @@ class UserDataSourceImpl @Inject constructor(
                 AuthResult.Success(UserActivityStats(
                     userName = userName, // 🔹 가져온 이름 꽂아주기
                     uploadPostIds = statsSnapshot.get("uploadPostIds") as? List<String> ?: emptyList(),
-                    likePostIds = statsSnapshot.get("likedPostIds") as? List<String> ?: emptyList(),
-                    commentPostIds = statsSnapshot.get("commentedPostIds") as? List<String> ?: emptyList(),
-                    followPostIds = statsSnapshot.get("followedPostIds") as? List<String> ?: emptyList(),
+                    likePostIds = statsSnapshot.get("likePostIds") as? List<String> ?: emptyList(),
+                    commentPostIds = statsSnapshot.get("commentPostIds") as? List<String> ?: emptyList(),
+                    followPostIds = statsSnapshot.get("followPostIds") as? List<String> ?: emptyList(),
                 ))
             } else {
                 // 통계 문서가 아직 생성되지 않았더라도 이름은 전달해야 함

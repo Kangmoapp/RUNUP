@@ -61,30 +61,34 @@ class LocationService : LifecycleService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "STOP_TRACKING") {
-            stopLocationUpdates()
-            stopSelf()
-            return super.onStartCommand(intent, flags, startId)
-        }
+        when (intent?.action) {
+            "START_RUNNING" -> {
+                Log.d("ServiceDebug", "START_RUNNING 수신됨")
+                val notification = buildNotification("0.00km", "00:00", "0'00\"", "0")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
 
-        // 초기 알림 띄우기
-        val notification = buildNotification("0.00km", "00:00", "0'00\"", "0")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+                if (!isObserving) {
+                    isObserving = true
+                    observeRunningData()
+                }
+            }
 
-        requestLocationUpdates()
-        if (!isObserving) {  // ← 중복 방지
-            isObserving = true
-            observeRunningData()
+            "STOP_TRACKING" -> {
+                isObserving = false
+                stopForeground(true)
+                stopSelf()
+            }
         }
 
         return super.onStartCommand(intent, flags, startId)
     }
 
     private fun observeRunningData() {
+        Log.d("ServiceDebug", "observeRunningData 시작됨") // ← 추가
         lifecycleScope.launch {
             combine(
                 repository.totalDistance,
@@ -93,7 +97,7 @@ class LocationService : LifecycleService() {
                 // 데이터 가공 🔹
                 val pace = calculatePace(time, distance)
                 val kcal = calculateCalories(distance)
-                Log.d("NotiDebug", "알림 업데이트: time=${time}, distance=$distance") // ← 이거 찍히나요?
+                Log.d("ServiceDebug", "combine 실행: time=$time, distance=$distance") // ← 추가
 
                 // 알림 객체 빌드 (여기선 빌드만 함) 📍
                 buildNotification(
@@ -102,8 +106,7 @@ class LocationService : LifecycleService() {
                     pace = pace,
                     kcal = kcal
                 )
-            }.collect { updatedNotification ->
-                Log.d("NotiDebug", "notify 호출됨") // ← 이게 찍히나요?
+            }.collect { updatedNotification -> Log.d("ServiceDebug", "collect 실행됨")
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, updatedNotification)
         }
@@ -148,19 +151,5 @@ class LocationService : LifecycleService() {
             .build()
     }
 
-    @SuppressLint("MissingPermission")
-    private fun requestLocationUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).build()
-        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-    }
-
-    private fun stopLocationUpdates() {
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-    }
-
-    override fun onDestroy() {
-        stopLocationUpdates()
-        super.onDestroy()
-    }
 }
 

@@ -58,10 +58,9 @@ data class PostUploadUiState(
     val selectedRunRecord: RunRecord? = null,
     val isSheetOpen: Boolean = false,
     val isLoading: Boolean = false,
-    // 🔹 페이지네이션 상태
-    val hasMore: Boolean = true,
-    val lastDate: Long? = null,
-    val isPaging: Boolean = false
+    val hasMore: Boolean = true, // 더 가져올 러닝 기록 남아있는지
+    val lastDate: Long? = null, // 더 가져올때 참조할 러닝 날짜
+    val isPaging: Boolean = false //
 )
 
 data class MapSnapshot(
@@ -416,7 +415,7 @@ class CommunityViewModel @Inject constructor(
                 // 2. 게시글 작성 상태(업로드용 uiState) 초기화
                 _postUploadUiState.update { it.copy(selectedRunRecord = null) }
                 onSuccess()
-                fetchPosts() // 업로드 성공 후 목록 새로고침
+                fetchPosts(isInitial = true, forceRefresh = true)
             }
             // 3. 로딩 종료
             _postUploadUiState.update { it.copy(isLoading = false) }
@@ -637,6 +636,15 @@ class CommunityViewModel @Inject constructor(
                 // 3. 메인으로 코스 데이터 전달 🏃‍♂️
                 targetPost?.let { onCourseReady(it) }
             }
+        }
+    }
+
+    fun selectRunRecordFromMyPage(record: RunRecord) { // 마이페이지 -> 포스트 업로드 스크린으로 가져온 기록을 selectRunRecord 에 업데이트
+        _postUploadUiState.update {
+            it.copy(
+                selectedRunRecord = record,
+                isSheetOpen = false // 이미 선택했으니 시트는 닫힘 상태로
+            )
         }
     }
 }

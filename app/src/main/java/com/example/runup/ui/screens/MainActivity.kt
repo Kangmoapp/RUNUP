@@ -56,13 +56,9 @@ fun RunUpApp(
             Screen.HOME -> HomeScreen(
                 onMenuClick = {viewModel.openMenu()},
             )
-            Screen.GOALSETTING -> GoalSettingScreen(
-                onMenuClick = {viewModel.openMenu()},
-                onBackClick = {viewModel.popBackStack()},
-            )
 
             Screen.COMMUNITY -> CommunityScreen(
-                onBackClick = { viewModel.popBackStack() },
+                onBackClick = { viewModel.navigateTo(Screen.HOME)},
                 onUploadClick = {
                     viewModel.navigateTo(Screen.POST_UPLOAD)
                 },
@@ -74,29 +70,29 @@ fun RunUpApp(
 
             Screen.POST_UPLOAD -> PostUploadScreen(
                 onBackClick = {
+                    viewModel.navigateTo(Screen.COMMUNITY)
+                },
+                onBackHandlerClick = {
                     viewModel.popBackStack()
                 },
                 onUploadSuccess = {
-                    viewModel.popBackStack()
+                    viewModel.navigateTo(Screen.COMMUNITY)
                 }
             )
 
             Screen.LOADING -> LoadingScreen ()
-/*
-            Screen.RECOMMEND -> CourseRecommendationScreen (
-                onBackClick = {viewModel.popBackStack()},
-                onMenuClick = {viewModel.openMenu()},
-            )
 
- */
             Screen.TEST -> TestScreen()
 
-            Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.MENU)})
+            Screen.LOCALDB -> CourseDebugScreen({viewModel.navigateTo(Screen.HOME)})
 
             Screen.MYPAGE -> MyPageScreen(
-                onBackClick = {viewModel.popBackStack()},
+                onBackClick = {viewModel.navigateTo(Screen.HOME)},
                 onPostClick = { uid ->
                     viewModel.navigateToUserPosts(uid)
+                },
+                onUploadClick = {
+                    viewModel.navigateTo(Screen.POST_UPLOAD)
                 }
             )
 
@@ -115,7 +111,7 @@ fun RunUpApp(
             )
 
             Screen.SETTINGS -> SettingsScreen(
-                onBackClick = { viewModel.navigateTo(Screen.MENU) },
+                onBackClick = { viewModel.navigateTo(Screen.HOME) },
                 onLogoutClick = { viewModel.navigateTo(Screen.START) }
             )
 
@@ -127,7 +123,7 @@ fun RunUpApp(
         if (isMenuVisible) {
             MenuScreen(
                 onBackClick = { viewModel.closeMenu() },
-                onOptionClick = { },
+                onOptionClick = { viewModel.navigateFromMenu(Screen.SETTINGS)},
                 onHelpClick = { },
                 onCommunityClick = { viewModel.navigateFromMenu(Screen.COMMUNITY) },
                 onMypageClick = { viewModel.navigateFromMenu(Screen.MYPAGE) },

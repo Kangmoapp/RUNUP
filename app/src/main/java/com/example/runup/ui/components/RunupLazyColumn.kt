@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,6 +21,8 @@ import androidx.compose.ui.unit.sp
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.TextGray
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun RunupLazyColumn(
@@ -31,8 +34,8 @@ fun RunupLazyColumn(
     onSelectedNumberChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val startNumber =
-        if(startNumber == 0) 0
+    val adjustedStart =
+        if (startNumber == 0) 0
         else startNumber - 1
 
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = startNumber)
@@ -41,8 +44,11 @@ fun RunupLazyColumn(
 
     // ── 🔹 [핵심 추가] 초기 진입 시 위치 강제 고정 📍 ──
     LaunchedEffect(Unit) {
-        // 첫 화면이 그려진 직후, 지정된 인덱스로 소수점 오차 없이 딱 맞춰 이동합니다.
-        listState.scrollToItem(startNumber)
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .filter { it > 0 }
+            .first()
+
+        listState.scrollToItem(adjustedStart)
     }
 
     LazyColumn(
