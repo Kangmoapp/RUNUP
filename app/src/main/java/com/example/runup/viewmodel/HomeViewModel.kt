@@ -645,11 +645,15 @@ class HomeViewModel @Inject constructor(
             return
         }
 
+        val address = addressUiState.value
+        val currentAddressString = address?.let { "${it.city} ${it.district}".trim() } ?: ""
+
         viewModelScope.launch {
             // AI 전용 UseCase 호출 (두 번째 invoke 함수 사용)
             val result = getRecommendedCourseUseCase.invoke(
                 courseDistance = _courseRecommendationUiState.value.goalDistance,
                 currentLocation = location,
+                currentAddress = currentAddressString,
                 isLoop = _courseRecommendationUiState.value.isLoop,
                 userPrompt = userPrompt, // 👈 채팅창에서 받은 텍스트
                 count = 3

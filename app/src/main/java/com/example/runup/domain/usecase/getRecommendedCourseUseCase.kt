@@ -6,6 +6,7 @@ import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
 import com.google.firebase.firestore.GeoPoint
+import okhttp3.Address
 import javax.inject.Inject
 
 class GetRecommendedCourseUseCase @Inject constructor(
@@ -31,11 +32,12 @@ class GetRecommendedCourseUseCase @Inject constructor(
     suspend operator fun invoke(
         courseDistance: Int,
         currentLocation: GeoPoint,
+        currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
         count: Int
     ): AuthResult<List<CourseRecommendation>> {
-        val result = courseRepository.getCourseFromAI(courseDistance, currentLocation, isLoop, userPrompt)
+        val result = courseRepository.getCourseFromAI(courseDistance, currentLocation, currentAddress, isLoop, userPrompt)
 
         return when (result) {
             is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))

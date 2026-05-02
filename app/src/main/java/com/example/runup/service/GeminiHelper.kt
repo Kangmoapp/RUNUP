@@ -57,12 +57,12 @@ class GeminiHelper(
     /**
      * 최종 AI 검색 통합 함수
      */
-    suspend fun performAiSearch(userPrompt: String): List<Pair<Course, String>> {
+    suspend fun performAiSearch(userPrompt: String, userCity : String): List<Pair<Course, String>> {
         Log.d(TAG, "🚀 Gemini AI 검색 시작 | 입력: '$userPrompt'")
 
         return try {
             // 1. 벡터 검색으로 후보군 가져오기
-            val topEntities = getSearchResult(userPrompt, "대구")
+            val topEntities = getSearchResult(userPrompt, userCity)
             if (topEntities.isEmpty()) return emptyList()
 
             val contextText = topEntities.mapIndexed { index, entity ->

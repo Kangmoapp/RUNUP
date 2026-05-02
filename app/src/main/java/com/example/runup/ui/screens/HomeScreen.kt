@@ -806,7 +806,7 @@ private fun HomeContent(
                                 else if (selectedCourse != null) {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Text(
-                                            text = "준비된 코스: ${selectedCourseName}",
+                                            text = "선택된 코스: ${selectedCourseName}",
                                             color = PointColor,
                                             fontSize = 15.sp,
                                             fontWeight = FontWeight.ExtraBold
@@ -817,6 +817,19 @@ private fun HomeContent(
                                             horizontalArrangement = Arrangement.SpaceBetween, // 공간을 더 넓게 활용
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            // [코스 취소]: 코스(노란색) 자체를 아예 지도에서 지우고 초기화
+                                            Text(
+                                                text = "코스 취소",
+                                                color = Gray,
+                                                fontSize = 13.sp,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        viewModel.clearSelectedCourse()
+                                                        sheetHeightPx = collapsedHeightPx
+                                                    }
+                                                    .padding(8.dp)
+                                            )
+
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 // 1. [안내 시작/종료] 버튼 (항상 노출)
                                                 if (guideUiState.isGuiding) {
@@ -848,19 +861,6 @@ private fun HomeContent(
                                                     }
                                                 }
                                             }
-
-                                            // [코스 취소]: 코스(노란색) 자체를 아예 지도에서 지우고 초기화
-                                            Text(
-                                                text = "코스 취소",
-                                                color = Gray,
-                                                fontSize = 13.sp,
-                                                modifier = Modifier
-                                                    .clickable {
-                                                        viewModel.clearSelectedCourse()
-                                                        sheetHeightPx = collapsedHeightPx
-                                                    }
-                                                    .padding(8.dp)
-                                            )
                                         }
                                     }
                                 }

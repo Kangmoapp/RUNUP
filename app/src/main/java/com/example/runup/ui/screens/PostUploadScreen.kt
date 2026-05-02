@@ -44,6 +44,7 @@ import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.ui.util.mapper.TimeMapper.formatDuration
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.CommunityViewModel
 
@@ -81,7 +82,7 @@ fun PostUploadScreen(
     // 화면 진입 시 권한 체크 및 요청
     LaunchedEffect(Unit) {
         Log.d("Exif", "LaunchedEffect 시작")
-        viewModel.clearSelectedImages()
+        viewModel.resetUploadState()
         viewModel.fetchMyRunRecords()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -226,31 +227,64 @@ fun PostUploadScreen(
                     onClick = { viewModel.setSheetOpen(true) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)) // MyPage와 통일
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        // ── 🔹 [상단] 강조 라벨 (노란 점 + 선택된 기록) ──
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(PointColor)
+                                    .background(PointColor) // RUNUP 포인트 컬러
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("선택된 기록", color = PointColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "선택된 기록",
+                                color = PointColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${formatTimestamp(selected.recordDate)} 러닝",
-                            color = WhiteTextColor,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "${String.format("%.2f", selected.course.distance / 1000.0)}km | ${selected.time}",
-                            color = Color.Gray,
-                            fontSize = 14.sp
-                        )
+
+                        Spacer(modifier = Modifier.height(12.dp)) // 라벨과 데이터 사이 간격
+
+                        // ── 🔹 [하단] 상세 데이터 영역 (좌우 정렬) ──
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom // 날짜와 시간이 바닥 선에 맞게 정렬
+                        ) {
+                            // [왼쪽] 날짜 및 코스 ID
+                            Column {
+                                Text(
+                                    text = formatTimestamp(selected.recordDate),
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = selected.course.id,
+                                    color = WhiteTextColor,
+                                    fontWeight = FontWeight.ExtraBold, // 조금 더 강조
+                                    fontSize = 18.sp
+                                )
+                            }
+
+                            // [오른쪽] 거리 및 시간 (우측 정렬)
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "${selected.course.distance}m",
+                                    color = PointColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                                Text(
+                                    text = formatDuration(selected.time),
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                     }
                 }
             }

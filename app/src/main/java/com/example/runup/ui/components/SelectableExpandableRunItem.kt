@@ -93,7 +93,7 @@ fun SelectableExpandableRunItem(
                         fontSize = 12.sp
                     )
                     Text(
-                        text = "코스: ${run.course.id}",
+                        text = run.course.id,
                         color = WhiteTextColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
