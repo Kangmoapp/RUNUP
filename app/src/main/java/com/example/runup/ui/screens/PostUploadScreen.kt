@@ -79,10 +79,15 @@ fun PostUploadScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.resetUploadState()
+        }
+    }
+
     // 화면 진입 시 권한 체크 및 요청
     LaunchedEffect(Unit) {
         Log.d("Exif", "LaunchedEffect 시작")
-        viewModel.resetUploadState()
         viewModel.fetchMyRunRecords()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -90,8 +95,6 @@ fun PostUploadScreen(
             Log.d("Exif", "권한 요청 시도: $permission")
             permissionLauncher.launch(permission)
         }
-
-
     }
 
     // PickMultipleVisualMedia 대신 GetMultipleContents 사용
@@ -121,11 +124,14 @@ fun PostUploadScreen(
         ModalBottomSheet(
             onDismissRequest = { viewModel.setSheetOpen(false) },
             sheetState = sheetState,
-            containerColor = Color(0xFF1C1C1C)
+            containerColor = Color(0xFF1C1C1C),
+            // ── 🔹 [추가] 시트가 화면의 일정 비율을 항상 차지하도록 설정 📍 ──
+            dragHandle = { BottomSheetDefaults.DragHandle() },
         ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.8f)
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp)
                     .heightIn(min = 500.dp, max = 600.dp)
@@ -191,6 +197,8 @@ fun PostUploadScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                // ── 🔹 키보드가 올라오면 하단에 여백을 자동으로 추가 📍 ──
+                .imePadding()
                 .padding(horizontal = 20.dp) // 여백을 살짝 넓혀서 고급스럽게 🔹
                 .verticalScroll(rememberScrollState())
         ) {

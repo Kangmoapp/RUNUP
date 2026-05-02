@@ -278,6 +278,15 @@ class LocationRepositoryImpl @Inject constructor(
             // 🔹 직계 자식만 필터
             val filtered = rows.filter { it.locathighCd == targetParent }
 
+            Log.d("LocationAPI", "=== 전체 500개 중 앞 10개 raw ===")
+            rows.take(30).forEach {
+                Log.d("LocationAPI", "name: ${it.lowestAdmName}, locathighCd: [${it.locathighCd}], admCode: [${it.admCode}]")
+            }
+            Log.d("LocationAPI", "=== 직계자식 5개 ===")
+            filtered.forEach {
+                Log.d("LocationAPI", "name: ${it.lowestAdmName}, locathighCd: [${it.locathighCd}], admCode: [${it.admCode}]")
+            }
+
             Log.d("LocationAPI", "요청코드: $targetParent, 검색어: ${locationName}, 전체: ${rows.size}개, 직계자식: ${filtered.size}개")
 
             filtered.sortedBy { it.lowestAdmName }

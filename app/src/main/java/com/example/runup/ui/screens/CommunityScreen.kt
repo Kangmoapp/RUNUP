@@ -304,8 +304,14 @@ fun CommunityScreen(
                                         dongList = dongList,
                                         isLoadingDistrict = isLoadingDistrict,
                                         isLoadingDong = isLoadingDong,
-                                        onLoadDistricts = { code, name -> viewModel.loadDistricts(code, name) },
-                                        onLoadDongs = { code, city, district -> viewModel.loadDongs(code, city, district) },
+                                        onLoadDistricts = { code, name -> viewModel.loadDistricts(code) },
+                                        onLoadDongs = { code, city, district -> viewModel.loadDongs(code, district) },
+                                        initialCity = if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                            communityState.filterState.city else "",
+                                        initialDistrict = if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                            communityState.filterState.district else "",
+                                        initialDong = if (communityState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                            communityState.filterState.dong else "",
                                         onApply = { c, d, dg ->
                                             viewModel.setFilter(FilterType.CUSTOM_LOCATION, c, d, dg)
                                             showFilterMenu = false
