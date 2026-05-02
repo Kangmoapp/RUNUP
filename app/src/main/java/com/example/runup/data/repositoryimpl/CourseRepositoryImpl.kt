@@ -28,9 +28,10 @@ class CourseRepositoryImpl @Inject constructor (
     override suspend fun getCourseFromAI(
         courseDistance: Int, // 몇 m 뛸껀지
         currentLocation: GeoPoint, //
+        currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>{
-        return courseDataSource.getCourseFromAI(courseDistance, currentLocation, isLoop, userPrompt)
+        return courseDataSource.getCourseFromAI(courseDistance, currentLocation, currentAddress, isLoop, userPrompt)
     }
 }

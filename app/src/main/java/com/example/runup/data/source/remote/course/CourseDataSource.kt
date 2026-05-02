@@ -17,8 +17,9 @@ interface CourseDataSource {
     ): AuthResult<List<CoursePathGroup>>
 
     suspend fun getCourseFromAI(
-        courseDistance: Int,
-        currentLocation: GeoPoint,
+        courseDistance: Int, // 몇 m 뛸껀지
+        currentLocation: GeoPoint, //
+        currentAddress : String,
         isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>

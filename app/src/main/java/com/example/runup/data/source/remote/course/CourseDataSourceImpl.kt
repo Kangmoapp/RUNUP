@@ -284,11 +284,12 @@ class CourseDataSourceImpl @Inject constructor(
     override suspend fun getCourseFromAI(
         courseDistance: Int, // 몇 m 뛸껀지
         currentLocation: GeoPoint, //
+        currentAddress : String,
         isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>{
         return try {
-            val aiRecommendations = geminiHelper.performAiSearch(userPrompt)
+            val aiRecommendations = geminiHelper.performAiSearch(userPrompt, currentAddress)
 
             val sources = aiRecommendations.mapNotNull { (course, reason) ->
                 val startPoint = findStartPointForAI(currentLocation, course)
@@ -311,7 +312,7 @@ class CourseDataSourceImpl @Inject constructor(
             Log.d("getcoursefromai", "${recommendedResult}")
 
             if (recommendedResult.isEmpty()) {
-                AuthResult.Fail("근처에 조건에 맞는 코스가 없습니다... ㅠㅠ")
+                AuthResult.Fail("근처에 조건에 맞는 코스가 없습니다...")
             } else {
                 AuthResult.Success(recommendedResult)
             }

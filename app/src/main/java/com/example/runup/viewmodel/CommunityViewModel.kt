@@ -422,6 +422,17 @@ class CommunityViewModel @Inject constructor(
         }
     }
 
+    fun resetUploadState() {
+        // 1. 이미지 리스트 초기화
+        selectedLocationImageUris = emptyList()
+        selectedCommonImageUris = emptyList()
+
+        // 2. 업로드 UI 상태 초기화 (선택된 기록, 로딩 상태 등 모두 초기값으로)
+        _postUploadUiState.update {
+            PostUploadUiState() // 데이터 클래스를 초기 생성자로 덮어씌움
+        }
+    }
+
     // 게시글 삭제 함수
     fun deletePost(post: Post) {
         viewModelScope.launch {

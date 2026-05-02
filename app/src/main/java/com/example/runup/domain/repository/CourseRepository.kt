@@ -19,6 +19,7 @@ interface CourseRepository {
     suspend fun getCourseFromAI(
         courseDistance: Int, // 몇 m 뛸껀지
         currentLocation: GeoPoint, //
+        currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
     ): AuthResult<List<CoursePathGroup>>
