@@ -281,8 +281,14 @@ fun UserPostScreen(
                                     dongList = dongList,
                                     isLoadingDistrict = isLoadingDistrict,
                                     isLoadingDong = isLoadingDong,
-                                    onLoadDistricts = { code, name -> viewModel.loadDistricts(code, name) },
-                                    onLoadDongs = { code, city, district -> viewModel.loadDongs(code, city, district) },
+                                    onLoadDistricts = { code, name -> viewModel.loadDistricts(code) },
+                                    onLoadDongs = { code, city, district -> viewModel.loadDongs(code,  district) },
+                                    initialCity = if (uiState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                        uiState.filterState.city else "",
+                                    initialDistrict = if (uiState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                        uiState.filterState.district else "",
+                                    initialDong = if (uiState.filterState.type == FilterType.CUSTOM_LOCATION)
+                                        uiState.filterState.dong else "",
                                     onApply = { c, d, dg ->
                                         viewModel.setFilter(FilterType.CUSTOM_LOCATION, c, d, dg)
                                         showFilterMenu = false

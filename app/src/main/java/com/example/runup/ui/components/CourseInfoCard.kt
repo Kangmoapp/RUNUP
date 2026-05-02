@@ -136,7 +136,7 @@ fun CourseInfoCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CompactTextScore("밝음", course.originCourse.scores.brightScore)
-                CompactTextScore("붐빔", course.originCourse.scores.crowdedScore)
+                CompactTextScore("유동인구", course.originCourse.scores.crowdedScore)
                 CompactTextScore("난이도", course.originCourse.scores.hardScore)
             }
         }

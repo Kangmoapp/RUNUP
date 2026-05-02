@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.runup.data.districtMap
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
@@ -481,25 +482,37 @@ class CommunityViewModel @Inject constructor(
         }
 
         val currentState = _postUploadUiState.value
+        // 이미 로딩 중이거나 더 이상 데이터가 없으면 리턴
         if (!currentState.hasMore || currentState.isPaging) return
 
         viewModelScope.launch {
             if (!isInitial) _postUploadUiState.update { it.copy(isPaging = true) }
 
-            // 🔹 Repository의 페이지네이션 함수 호출 (전체 필터, 5개씩)
+            // ── 🔹 [수정] 6개를 보여주기 위해 7개를 요청합니다 📍 ──
+            val requestSize = 7
+            val displaySize = 6
+
             val result = userRepository.getRunsPaged(
                 filter = RunFilter.ALL,
                 lastDate = currentState.lastDate,
-                pageSize = 5
+                pageSize = requestSize.toLong() // 7개 요청
             )
 
             if (result is AuthResult.Success) {
-                val newRecords = result.data
+                val fetchedRecords = result.data
+
+                // ── 🔹 [핵심] 7번째 데이터 존재 여부로 다음 페이지 유무 판단 📍 ──
+                val hasMoreData = fetchedRecords.size > displaySize
+
+                // 실제로 사용자에게 보여줄 데이터 (최대 6개)
+                val recordsToDisplay = fetchedRecords.take(displaySize)
+
                 _postUploadUiState.update { state ->
                     state.copy(
-                        runRecords = state.runRecords + newRecords,
-                        lastDate = newRecords.lastOrNull()?.recordDate ?: state.lastDate,
-                        hasMore = newRecords.size == 5,
+                        runRecords = state.runRecords + recordsToDisplay,
+                        // 다음 요청의 기준점은 항상 '실제로 추가된 마지막 데이터'의 날짜여야 합니다.
+                        lastDate = recordsToDisplay.lastOrNull()?.recordDate ?: state.lastDate,
+                        hasMore = hasMoreData,
                         isLoading = false,
                         isPaging = false
                     )
@@ -560,34 +573,23 @@ class CommunityViewModel @Inject constructor(
     }
 
     // ViewModel
-    fun loadDistricts(cityCode: String, cityName: String) {  // 🔹 이름 추가
-        viewModelScope.launch {
-            _isLoadingDistrict.value = true
-            _districtLocations.value = emptyList()
-            _dongLocations.value = emptyList()
-            try {
-                val result = locationRepository.fetchLocations(
-                    parentCode = cityCode,
-                    locationName = cityName  // 🔹 "서울특별시" 넘김
-                )
-                _districtLocations.value = result
-            } catch (e: Exception) {
-                Log.e("LocationAPI", "구/군 로드 실패: ${e.localizedMessage}")
-            } finally {
-                _isLoadingDistrict.value = false
-            }
-        }
+    fun loadDistricts(cityCode: String) {
+        // 🔹 API 호출 없이 하드코딩 데이터에서 바로 가져옴
+        val list = districtMap[cityCode]?.map { (name, code) ->
+            AdmVO(admCode = code, lowestAdmName = name, locathighCd = cityCode, fullAddress = "")
+        } ?: emptyList()
+
+        _districtLocations.value = list
     }
 
-    fun loadDongs(districtCode: String, cityName: String, districtName: String) {  // 🔹 이름 추가
+    fun loadDongs(districtCode: String, districtName: String) {  // 🔹 cityName 제거
         viewModelScope.launch {
             _isLoadingDong.value = true
             _dongLocations.value = emptyList()
             try {
-                val combinedName = "$cityName $districtName"
                 val result = locationRepository.fetchLocations(
                     parentCode = districtCode,
-                    locationName = combinedName  // 🔹 "수성구" 이렇게 넘김
+                    locationName = districtName  // 🔹 "강남구", "수성구" 등 구/군 이름만
                 )
                 _dongLocations.value = result
             } catch (e: Exception) {

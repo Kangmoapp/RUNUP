@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.runup.data.cityList
+import com.example.runup.data.districtMap
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
 import com.example.runup.ui.theme.PointColor
@@ -61,6 +63,9 @@ fun CustomLocationPicker(
     isLoadingDong: Boolean,
     onLoadDistricts: (String, String) -> Unit, // 🔹 함수 직접 받기
     onLoadDongs: (String, String, String) -> Unit,
+    initialCity: String = "",       // 🔹 추가
+    initialDistrict: String = "",   // 🔹 추가
+    initialDong: String = "",       // 🔹 추가
     onApply: (String, String, String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -69,9 +74,34 @@ fun CustomLocationPicker(
     var district by remember { mutableStateOf("") }
     var dong by remember { mutableStateOf("") }
     var currentParentCode by remember { mutableStateOf("") }
+    var activeStep by remember { mutableIntStateOf(0) } // 🔹 현재 보여줄 탭 단계 (0=시도, 1=구군, 2=동)
 
-    // 🔹 현재 보여줄 탭 단계 (0=시도, 1=구군, 2=동)
-    var activeStep by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        if (initialCity.isNotEmpty()) {
+            val cityCode = cityList.find { it.first == initialCity }?.second ?: ""
+            city = initialCity
+            currentParentCode = cityCode
+            onLoadDistricts(cityCode, initialCity)
+
+            if (initialDistrict.isNotEmpty()) {
+                district = initialDistrict
+                val districtCode = districtMap[cityCode]
+                    ?.find { it.first == initialDistrict }?.second ?: ""
+                currentParentCode = districtCode
+
+                if (districtCode.isNotEmpty()) {
+                    onLoadDongs(districtCode, initialCity, initialDistrict)
+                    dong = initialDong
+
+                    // 🔹 어느 탭에서 열릴지 결정
+                    activeStep = when {
+                        initialDong.isNotEmpty() -> 2
+                        else -> 1
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -107,26 +137,51 @@ fun CustomLocationPicker(
 
             Spacer(Modifier.weight(1f))
 
-            // 🔹 내 위치 버튼
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(PointColor.copy(alpha = 0.1f))
                     .clickable {
-                        city = currentAddress?.city ?: ""
-                        district = currentAddress?.district ?: ""
-                        dong = currentAddress?.dong ?: ""
+                        val myCity = currentAddress?.city ?: ""
+                        val myDistrict = currentAddress?.district ?: ""
+                        val myDong = currentAddress?.dong ?: ""
+
+                        if (myCity.isNotEmpty()) {
+                            // 🔹 1. 시/도 설정
+                            val cityCode = cityList.find { it.first == myCity }?.second ?: ""
+                            city = myCity
+                            currentParentCode = cityCode
+
+                            // 🔹 2. 구/군 로드 (하드코딩에서 바로)
+                            onLoadDistricts(cityCode, myCity)
+                            district = myDistrict
+                            dong = ""
+
+                            if (myDistrict.isNotEmpty()) {
+                                // 🔹 3. 구/군 코드 찾기
+                                val districtCode = districtMap[cityCode]
+                                    ?.find { it.first == myDistrict }?.second ?: ""
+                                currentParentCode = districtCode
+
+                                // 🔹 4. 동/읍/면 로드
+                                if (districtCode.isNotEmpty()) {
+                                    onLoadDongs(districtCode, myCity, myDistrict)
+                                    dong = myDong
+                                    activeStep = 2  // 동 탭으로 이동
+                                } else {
+                                    activeStep = 1  // 구/군 탭으로
+                                }
+                            } else {
+                                activeStep = 1
+                            }
+                        }
                     }
                     .padding(horizontal = 8.dp, vertical = 3.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text("📍", fontSize = 9.sp)
-                Text(
-                    "내 위치",
-                    color = PointColor,
-                    fontSize = 11.sp
-                )
+                Text("내 위치", color = PointColor, fontSize = 11.sp)
             }
         }
 
