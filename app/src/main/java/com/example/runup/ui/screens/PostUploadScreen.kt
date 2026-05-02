@@ -79,10 +79,15 @@ fun PostUploadScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.resetUploadState()
+        }
+    }
+
     // 화면 진입 시 권한 체크 및 요청
     LaunchedEffect(Unit) {
         Log.d("Exif", "LaunchedEffect 시작")
-        viewModel.resetUploadState()
         viewModel.fetchMyRunRecords()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
