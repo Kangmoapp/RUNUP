@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterList
@@ -440,6 +441,37 @@ private fun HomeContent(
                 verticalArrangement = Arrangement.Bottom,
                 modifier = Modifier.fillMaxSize()
             ){
+                val failMessage = courseRecommendationUiState.isFailSearchCourse // 코스 검색 실패 메세지
+                // ── 🔹 [추가] AI 추천 사유 말풍선 배치 📍 ──
+                val currentCourse = courseRecommendationUiState.recommendedCourses.getOrNull(courseRecommendationUiState.courseIndex)
+
+                if (failMessage.isNotBlank()) { // 에러 메세지
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp, bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        FailMessageBubble(
+                            message = failMessage,
+                            onClose = { viewModel.clearFailMessage() }
+                        )
+                    }
+                }
+                // AI 추천 사유
+                else if (courseRecommendationUiState.isAiMode && // AI 검색 모드일때
+                    courseRecommendationUiState.isRecommendClick && // 추천 클릭했을 때
+                    currentCourse != null && // 현재 코스가 없지 않을 때
+                    homeUiState.selectedPath == null // 추천 코스 중 선택된 코스는 없을 떄
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(end = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        AiReasonBubble(reason = currentCourse.reason)
+                    }
+                }
+
                 BottomSection(
                     selectedTab = homeUiState.selectedTab,
                     onTabSelect = { tab ->
