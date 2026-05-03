@@ -44,6 +44,7 @@ import com.example.runup.ui.theme.WhiteTextColor
 
 @Composable
 fun DistanceGoalSettingDialog(
+    titleName: String = "",
     range: IntRange,
     startNumber: Int = 0,
     onConfirm: (Int) -> Unit,
@@ -65,7 +66,7 @@ fun DistanceGoalSettingDialog(
             ) {
                 // 1. 타이틀
                 Text(
-                    text = "목표 거리 설정",
+                    text = titleName,
                     color = WhiteTextColor,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,

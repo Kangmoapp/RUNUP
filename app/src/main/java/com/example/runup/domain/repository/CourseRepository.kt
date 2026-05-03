@@ -3,6 +3,7 @@ package com.example.runup.domain.repository
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.CoursePathGroup
+import com.example.runup.domain.model.SortDirection
 import com.example.runup.domain.model.SortType
 import com.google.firebase.firestore.GeoPoint
 
@@ -13,7 +14,9 @@ interface CourseRepository {
         courseDistance: Int,
         currentLocation: GeoPoint,
         isLoop: Boolean,
-        sortType: SortType
+        sortType: SortType,
+        maxSearchDistance: Int, // 📍 추가
+        sortDirection: SortDirection // 📍 추가
     ): AuthResult<List<CoursePathGroup>>
 
     suspend fun getCourseFromAI(
@@ -22,5 +25,6 @@ interface CourseRepository {
         currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
+        maxSearchDistance: Int
     ): AuthResult<List<CoursePathGroup>>
 }
