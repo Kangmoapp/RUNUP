@@ -31,6 +31,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -92,6 +94,7 @@ import com.naver.maps.map.overlay.OverlayImage
 import com.naver.maps.map.overlay.PathOverlay
 import com.naver.maps.map.overlay.PolylineOverlay
 import com.example.runup.R
+import com.example.runup.domain.model.SortDirection
 import com.example.runup.domain.model.SortType
 import com.example.runup.ui.components.AIStatusOverlay
 import com.example.runup.ui.components.AiReasonBubble
@@ -611,7 +614,6 @@ private fun HomeContent(
                                         // 2. 공통 설정 영역 (AI 모드에서도 유지됨) 📍
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(20.dp), // 간격을 조금 더 줌
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             // [공통] 목표 거리
@@ -619,10 +621,42 @@ private fun HomeContent(
                                                 Text("목표 거리", color = Gray, fontSize = 11.sp)
                                                 Text("${courseRecommendationUiState.goalDistance / 1000.0}km", color = PointColor, fontWeight = FontWeight.Bold)
                                             }
+
+                                            Spacer(modifier = Modifier.width(24.dp)) // 기존보다 간격을 살짝 더 줌
+
                                             // [공통] 계산 방법 (왕복/편도)
                                             Column(modifier = Modifier.clickable { viewModel.openRecommendLoopDialog() }) {
                                                 Text("계산 방법", color = Gray, fontSize = 11.sp)
                                                 Text(if(courseRecommendationUiState.isLoop) "왕복" else "편도", color = PointColor, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            // ── 🔹 1. 계산방법과 거리 사이를 확 띄우기 위해 가중치(weight) 사용 📍 ──
+                                            Spacer(modifier = Modifier.weight(1f))
+
+                                            // ── 🔹 2 & 3. 코스까지의 거리 레이아웃 수정 📍 ──
+                                            Column(
+                                                horizontalAlignment = Alignment.End, // 우측 정렬로 변경하여 끝에 붙임
+                                                modifier = Modifier.clickable { viewModel.openMaxDistanceDialog() }
+                                            ) {
+                                                // 회색 라벨 변경
+                                                Text("코스까지의 거리", color = Gray, fontSize = 11.sp)
+
+                                                Row(verticalAlignment = Alignment.Bottom) {
+                                                    // '최대' 글자는 작게 (10.sp)
+                                                    Text(
+                                                        text = "최대 ",
+                                                        color = PointColor,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    // 선택한 숫자는 기존 크기 유지
+                                                    Text(
+                                                        text = "${courseRecommendationUiState.maxSearchDistance / 1000.0}km",
+                                                        color = PointColor,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -686,28 +720,48 @@ private fun HomeContent(
                                             ) {
                                                 // 1. 가로 정렬 옵션 리스트 칩 (왼쪽 영역)
                                                 Row(
-                                                    modifier = Modifier.weight(1f), // 버튼을 제외한 남은 공간 모두 차지
+                                                    modifier = Modifier.weight(1f),
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     SortType.entries.forEach { sortType ->
                                                         val isSelected = courseRecommendationUiState.currentSort == sortType
+                                                        val label = when(sortType) {
+                                                            SortType.DISTANCE -> "가까운"
+                                                            SortType.BRIGHT -> "밝기"
+                                                            SortType.PEOPLE -> "유동인구"
+                                                            SortType.DIFFICULTY -> "난이도"
+                                                            else -> sortType.label
+                                                        }
 
-                                                        // 개별 정렬 칩
-                                                        Box(
+                                                        Row(
                                                             modifier = Modifier
                                                                 .clip(RoundedCornerShape(20.dp))
                                                                 .background(if (isSelected) PointColor else Color.White.copy(alpha = 0.05f))
-                                                                .clickable { viewModel.confirmRecommendSort(sortType) } // 다이얼로그 없이 바로 상태 변경! 🚀
-                                                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                                                            contentAlignment = Alignment.Center
+                                                                .clickable { viewModel.confirmRecommendSort(sortType) }
+                                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Text(
-                                                                text = sortType.label,
+                                                                text = label,
                                                                 color = if (isSelected) Color.Black else Gray,
-                                                                fontSize = 12.sp,
+                                                                fontSize = 11.sp,
                                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                                             )
+
+                                                            // 📍 거리순이 아닐 때만 방향 화살표 표시
+                                                            if (isSelected && sortType != SortType.DISTANCE) {
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Icon(
+                                                                    imageVector = if (courseRecommendationUiState.sortDirection == SortDirection.DESCENDING)
+                                                                        Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                                                    contentDescription = null,
+                                                                    tint = Color.Black,
+                                                                    modifier = Modifier
+                                                                        .size(14.dp)
+                                                                        .clickable { viewModel.toggleSortDirection() } // 📍 클릭 시 오름/내림차순 전환
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -716,12 +770,12 @@ private fun HomeContent(
 
                                                 // 2. 정사각형 모양의 코스 추천 버튼 📍
                                                 ControlButton(
-                                                    text = "코스\n추천", // 👈 요청하신 대로 줄바꿈 적용!
+                                                    text = "코스 추천", // 👈 요청하신 대로 줄바꿈 적용!
                                                     color = PointColor,
                                                     contentColor = Color.Black,
                                                     isLoading = courseRecommendationUiState.isLoading,
                                                     modifier = Modifier
-                                                        .size(56.dp) // 72dp 정사각형
+                                                        .size(72.dp) // 72dp 정사각형
                                                         .clip(RoundedCornerShape(12.dp))
                                                 ) {
                                                     viewModel.onSearchClick()
@@ -873,6 +927,7 @@ private fun HomeContent(
         // 2. [추가] 코스 추천 전용 설정 다이얼로그들 🚀
         if (courseRecommendationUiState.showDistanceDialog) {
             DistanceGoalSettingDialog(
+                "목표 거리 설정",
                 range = 0..100,
                 startNumber = (courseRecommendationUiState.goalDistance / 100 + 1),
                 onConfirm = { viewModel.confirmRecommendDistance(it) }, // 추천 전용 함수 호출
@@ -886,6 +941,20 @@ private fun HomeContent(
                 isLoop = courseRecommendationUiState.isLoop,
                 onSelect = { viewModel.selectRecommendLoop(it) },
                 onDismiss = { viewModel.closeRecommendLoopDialog() }
+            )
+        }
+
+        if (courseRecommendationUiState.showMaxDistanceDialog) {
+            DistanceGoalSettingDialog(
+                "최대 코스 추천 범위",
+                range = 1..10, // 0.1km ~ 10.0km 범위
+                // 500m인 경우 5가 선택되어 0.5km로 표시되도록 계산
+                startNumber = (courseRecommendationUiState.maxSearchDistance / 100),
+                onConfirm = { kmUnit ->
+                    // 다이얼로그에서 선택한 숫자(예: 5)를 받아 500m로 변환하여 저장
+                    viewModel.confirmMaxDistance(kmUnit)
+                },
+                onDismiss = { viewModel.closeMaxDistanceDialog() }
             )
         }
     }
@@ -1134,34 +1203,30 @@ private fun BottomSection(
 private fun MapViewContainer(
     cameraPosition:LatLng,
     recommendCameraLocation: LatLng?,
-    bearing: Float = 0.0f, // 추가
+    bearing: Float = 0.0f,
     homeUi: HomeUi = HomeUi.RUN,
     latLngList: List<LatLng> = emptyList(),   // 지금까지 나의 러닝 경로 (러닝 모드)
     guidePath: List<LatLng> = emptyList(),    // 코스 시작점까지의 안내 경로
-    recommendPath: List<LatLng> = emptyList(), // 추천된 코스 경로 (추천 모드)
-    selectedCoursePath: List<LatLng> = emptyList(),
-    destinationMarkerPos: LatLng? = null,     // 🔹 추가: 목적지 마커
-
-    guideDistance: Int = 0,    // 🔹 추가: 미터 단위 거리
-    guideDuration: Long = 0L,  // 🔹 추가: 밀리초 단위 시간
+    recommendPath: List<LatLng> = emptyList(), // 추천된 후보 코스들의 경로 (추천 모드)
+    selectedCoursePath: List<LatLng> = emptyList(), // 최종 선택된 코스 경로
+    destinationMarkerPos: LatLng? = null,     // 목적지 마커
+    guideDistance: Int = 0, // 경로까지 걸리는 거리
+    guideDuration: Long = 0L, // 경로까지 걸리는 시간
     isTrackingMode: Boolean = false,
-    isManualMode: Boolean, // 👈 추가
-    onManualModeChange: (Boolean) -> Unit, // 👈 추가
+    isManualMode: Boolean,
+    onManualModeChange: (Boolean) -> Unit,
     modifier:Modifier = Modifier
 ) {
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
     val density = LocalDensity.current
 
-    // 🔹 [핵심] 처음 지도가 켜졌을 때만 순간이동을 하기 위한 플래그
-    var isFirstLoad by remember { mutableStateOf(true) }
+    var isFirstLoad by remember { mutableStateOf(true) } // 처음 지도가 켜졌을 때만 순간이동을 하기 위한 플래그
 
     val locationSource = remember {
         com.naver.maps.map.util.FusedLocationSource(context as android.app.Activity, 1000)
     }
-
 
     val mapView = remember {
         MapView(context).apply {
@@ -1169,80 +1234,57 @@ private fun MapViewContainer(
         }
     }
 
-    // 방법 1: 일반 선
-    val polyline = remember { PolylineOverlay() }
-
-    // 방법 2: 좀 더 "경로"처럼 보이는 선
-    // val pathOverlay = remember { PathOverlay() }
-
-    val marker = remember { Marker() }
-
-    // ── 🔹 추천 코스 전용 오버레이 설정 ── 📍
-    val recommendPathOverlay = remember {
+    val recommendPathOverlay = remember {// 추천 코스 전용 오버레이
         PathOverlay().apply {
             color = Color.Cyan.toArgb() // 추천 코스는 하늘색으로 구분
             outlineColor = Color.Black.toArgb()
             width = with(density) { 8.dp.toPx() }.toInt()
             outlineWidth = with(density) { 2.dp.toPx() }.toInt()
-
-            // 화살표 패턴 추가
             patternImage = OverlayImage.fromResource(R.drawable.arrow_path)
             patternInterval = with(density) { 20.dp.toPx() }.toInt()
         }
     }
 
-    // ── 🔹 최종 선택된 코스 전용 오버레이 추가 ── 📍
-    val selectedPathOverlay = remember {
+    val selectedPathOverlay = remember {// 최종 선택 코스 전용 오버레이
         PathOverlay().apply {
-            color = Color.Yellow.toArgb() // 선택된 코스는 우리 앱의 포인트 컬러인 노란색으로! 💛
+            color = Color.Yellow.toArgb()
             outlineColor = Color.Black.toArgb()
             width = with(density) { 15.dp.toPx() }.toInt()
             patternImage = OverlayImage.fromResource(R.drawable.arrow_path)
         }
     }
 
-    // 🔹 안내 경로용 오버레이 (새로 추가)
-    val guidePathOverlay = remember {
+    val guidePathOverlay = remember {// 안내 경로용 오버레이
         PathOverlay().apply {
-            // 🔹 네이버 스타일: 진한 하늘색 테두리 + 밝은 하늘색 내부
-            color = PointColor.toArgb() // 내부 색상 (노란색 )
-            outlineColor = Color.Black.toArgb() // 테두리 색상 (검은색)
-            width = with(density) { 12.dp.toPx() }.toInt() // 전체 너비
-            outlineWidth = with(density) { 2.dp.toPx() }.toInt() // 테두리 너비
-
-            // 🔹 핵심: 실제 네이버 지도 같은 화살표 패턴 추가
-            patternImage = OverlayImage.fromResource(
-                R.drawable.arrow_path
-            )
+            color = PointColor.toArgb()
+            outlineColor = Color.Black.toArgb()
+            width = with(density) { 12.dp.toPx() }.toInt()
+            outlineWidth = with(density) { 2.dp.toPx() }.toInt()
+            patternImage = OverlayImage.fromResource(R.drawable.arrow_path)
             patternInterval = with(density) { 20.dp.toPx() }.toInt() // 화살표 간격
         }
     }
 
-    val runningPathOverlay = remember {
+    val runningPathOverlay = remember {// 실제 러닝한 경로 오버레이
         PathOverlay().apply {
-            color = PointColor.toArgb()       // 내부 주황색
-            outlineColor = Color.Black.toArgb() // 테두리 검은색
+            color = PointColor.toArgb()
+            outlineColor = Color.Black.toArgb()
             width = with(density) { 8.dp.toPx() }.toInt()
             outlineWidth = with(density) { 3.dp.toPx() }.toInt()
-
-            // 끝부분 둥글게 처리는 PathOverlay 기본 사양!
         }
     }
 
-    // 🔹 목적지 마커
-    val destMarker = remember {
+    val destMarker = remember {// 목적지 마커
         Marker().apply {
             icon = OverlayImage.fromResource(com.naver.maps.map.R.drawable.navermap_default_marker_icon_blue)
-            // 🔹 3. 캡션 너비 등도 density 스코프 안에서 계산
-            density.run {
+            density.run { // 캡션 너비 등도 density 스코프 안에서 계산
                 captionRequestedWidth = 100.dp.toPx().toInt()
             }
             captionTextSize = 14f
         }
     }
 
-    // 🔹 경로 정보 말풍선용 InfoWindow
-    val infoWindow = remember {
+    val infoWindow = remember { // 경로 정보 말풍선용 InfoWindow
         com.naver.maps.map.overlay.InfoWindow().apply {
             adapter = object : com.naver.maps.map.overlay.InfoWindow.DefaultTextAdapter(context) {
                 override fun getText(infoWindow: com.naver.maps.map.overlay.InfoWindow): CharSequence {
@@ -1252,13 +1294,11 @@ private fun MapViewContainer(
                     return "${km}km (${min}분)"
                 }
             }
-            // 말풍선 디자인 살짝 조정
             alpha = 0.9f
         }
     }
 
-    // 🔹 말풍선을 고정할 투명 마커
-    val anchorMarker = remember {
+    val anchorMarker = remember {// 풍선을 고정할 투명 마커
         Marker().apply {
             icon = OverlayImage.fromResource(com.naver.maps.map.R.drawable.navermap_default_location_overlay_sub_icon_arrow)
             alpha = 0f // 마커 자체는 투명하게
@@ -1267,18 +1307,16 @@ private fun MapViewContainer(
         }
     }
 
-    // 목적지 지점을 강조할 글로우 효과 (은은하게 퍼지는 원)
-    val destinationGlow = remember {
+    val destinationGlow = remember {// 목적지 지점을 강조할 글로우 효과 (은은하게 퍼지는 원)
         CircleOverlay().apply {
-            radius = 5.0 // 원의 반지름 (미터 단위)
+            radius = 5.0
             color = PointColor.copy(alpha = 0.2f).toArgb() // 우리 앱 포인트 컬러의 반투명 버전
             outlineColor = PointColor.toArgb() // 테두리는 선명하게
             outlineWidth = with(density) { 2.dp.toPx() }.toInt()
         }
     }
 
-    // 중심부의 작은 점 (목적지 정점)
-    val destinationCenter = remember {
+    val destinationCenter = remember {// 중심부의 작은 점
         CircleOverlay().apply {
             radius = 3.0 // 아주 작은 원
             color = Color.White.toArgb() // 흰색으로 강조
@@ -1316,12 +1354,22 @@ private fun MapViewContainer(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            // 오버레이 제거
-            marker.map = null
-            polyline.map = null
             guidePathOverlay.map = null
             destMarker.map = null
-            // pathOverlay.map = null
+        }
+    }
+
+    var naverMapInstance by remember { mutableStateOf<NaverMap?>(null) }
+
+    LaunchedEffect(Unit) {
+        mapView.getMapAsync { naverMap ->
+            naverMapInstance = naverMap
+            naverMap.locationSource = locationSource
+            naverMap.addOnCameraChangeListener { reason, _ ->
+                if (reason == CameraUpdate.REASON_GESTURE) {
+                    onManualModeChange(true)
+                }
+            }
         }
     }
 
@@ -1330,202 +1378,175 @@ private fun MapViewContainer(
             mapView
         },
         modifier = modifier,
-        update = { view ->
-            view.getMapAsync { naverMap: NaverMap ->
-                // 지도에 위치 소스 연결
-                if (naverMap.locationSource == null) {
-                    naverMap.locationSource = locationSource
+        update = { _ ->
+            val naverMap = naverMapInstance ?: return@AndroidView
+
+            // --------------------------------------------- 카메라 조정 로직 ----------------------------------
+
+            // 첫 로딩 -> 애니메이션 없이 바로 뜸
+            if (isFirstLoad) {
+                val initialCamera = CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
+                naverMap.moveCamera(initialCamera)
+                isFirstLoad = false
+                return@AndroidView
+            }
+
+            // 경로 안내 -> 따라가기 모드 설정 (현재 지도 모드와 위젯 상태가 다를 때만 업데이트)
+            val targetMode = if (isTrackingMode) LocationTrackingMode.Face else LocationTrackingMode.None
+            if (naverMap.locationTrackingMode != targetMode) {
+                naverMap.locationTrackingMode = targetMode
+                if (isTrackingMode) {
+                    naverMap.moveCamera(
+                        CameraUpdate.toCameraPosition(
+                            CameraPosition(cameraPosition, 18.0, 0.0, bearing.toDouble())
+                        ).animate(CameraAnimation.Easing)
+                    )
+                    return@AndroidView
+                }
+            }
+
+            if (isTrackingMode) {// 따라가기 모드일 때는 시스템이 위치를 추적하므로 수동 이동 건너뜀
+                naverMap.locationOverlay.isVisible = true
+            } else {
+                // 따라가기 모드 X -> 내 위치 오버레이 수동 설정
+                naverMap.locationOverlay.apply {
+                    isVisible = true
+                    position = cameraPosition
+                    setBearing(bearing)
+                    subIcon = OverlayImage.fromResource(com.naver.maps.map.R.drawable.navermap_default_location_overlay_sub_icon_arrow)
                 }
 
-                naverMap.addOnCameraChangeListener { reason, _ ->
-                    // 사용자가 손가락 제스처(드래그, 줌 등)로 지도를 움직였을 때
-                    if (reason == CameraUpdate.REASON_GESTURE) {
-                        onManualModeChange(true) // Free 모드로 변경
-                    }
-                }
-                // --------------------------------------------- 카메라 조정 로직 ----------------------------------
-
-                // 첫 로딩 -> 애니메이션 없이 바로 뜸
-                if (isFirstLoad) {
-                    // CameraUpdate.scrollTo()는 애니메이션 없이 즉시 좌표로 이동
-                    val initialCamera = CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
-                    naverMap.moveCamera(initialCamera)
-
-                    isFirstLoad = false // 이동 후 플래그를 꺼서 다음부터는 애니메이션이 작동
-                    return@getMapAsync // 첫 프레임에서는 여기서 종료하여 아래 중복 이동을 방지
-                }
-
-                // 경로 안내 -> 따라가기 모드 설정 (현재 지도 모드와 위젯 상태가 다를 때만 업데이트)
-                val targetMode = if (isTrackingMode) LocationTrackingMode.Face else LocationTrackingMode.None
-                if (naverMap.locationTrackingMode != targetMode) {
-                    naverMap.locationTrackingMode = targetMode
-
-                    if (isTrackingMode) {
-                        // 추적 모드를 켜는 순간에 카메라를 내 위치/방향으로 강제 세팅
+                // 카메라 이동 우선순위
+                when {
+                    homeUi == HomeUi.RUN -> { // 1순위 : 러닝 중일 때
                         naverMap.moveCamera(
                             CameraUpdate.toCameraPosition(
                                 CameraPosition(cameraPosition, 18.0, 0.0, bearing.toDouble())
-                            ).animate(CameraAnimation.Easing)
+                            ).pivot(PointF(0.5f, 0.65f)).animate(CameraAnimation.Easing, 1200)
                         )
-                        return@getMapAsync
                     }
-                }
-
-                if (isTrackingMode) {// 따라가기 모드일 때는 시스템이 위치를 추적하므로 수동 이동 건너뜀
-                    naverMap.locationOverlay.isVisible = true
-                } else { // 따라가기 모드 X
-                    // 따라가기 모드 X -> 내 위치 오버레이 수동 설정
-                    naverMap.locationOverlay.apply {
-                        isVisible = true
-                        position = cameraPosition
-                        setBearing(bearing)
-                        subIcon = OverlayImage.fromResource(com.naver.maps.map.R.drawable.navermap_default_location_overlay_sub_icon_arrow)
+                    isManualMode -> { // 2순위 : 자유 모드 활성화 시: 아래의 모든 카메라 이동 명령을 무시
+                        // 사용자가 지도를 마음대로 움직이게 둠
                     }
 
-                    // 카메라 이동 우선순위
-                    when {
-                        homeUi == HomeUi.RUN -> {
+                    guidePath.size >= 2 -> { // 3순위 : 경로 안내 중일 때
+                        val bounds = LatLngBounds.Builder().apply {
+                            guidePath.forEach { include(it) }
+                        }.build()
+                        naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
+                    }
+
+                    selectedCoursePath.size >= 2 -> { // 4순위 : homeUi가 HOME이더라도 selectedCoursePath 가 있으면 코스를 우선적으로 비춤
+                        val boundsBuilder = LatLngBounds.Builder()
+                        boundsBuilder.include(cameraPosition) // 현재 내 위치 포함
+
+                        selectedCoursePath.forEach { latLng -> // selectedCoursePath 직접 순회
+                            boundsBuilder.include(latLng)
+                        }
+
+                        try {
+                            val bounds = boundsBuilder.build()
+                            val cameraUpdate = CameraUpdate.fitBounds(bounds, 350) // 모든 지점이 포함되도록 카메라 업데이트 생성
+                                .animate(CameraAnimation.Easing, 1000)
+                            naverMap.moveCamera(cameraUpdate)
+                        } catch (e: Exception) { // 혹시 모를 에러 발생 시 리스트의 첫 번째 좌표로 이동하는 방어 로직
+                            val fallbackTarget = selectedCoursePath.first()
                             naverMap.moveCamera(
-                                CameraUpdate.toCameraPosition(
-                                    CameraPosition(cameraPosition, 18.0, 0.0, bearing.toDouble())
-                                )
-                                    .pivot(PointF(0.5f, 0.65f))
-                                    .animate(CameraAnimation.Easing, 1200)
-                            )
-                        }
-
-                        // [핵심] 자유 모드 활성화 시: 아래의 모든 카메라 이동 명령을 무시합니다. 📍
-                        isManualMode -> {
-                            // 아무것도 하지 않음 (사용자가 지도를 마음대로 움직이게 둠)
-                        }
-
-                        // 1순위: 경로 안내(내비게이션) 중일 때 (시작점까지 찾아가는 중)
-                        guidePath.size >= 2 -> {
-                            val bounds = LatLngBounds.Builder().apply {
-                                guidePath.forEach { include(it) }
-                            }.build()
-                            naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 150).animate(CameraAnimation.Easing, 1500))
-                        }
-
-                        // 2순위: homeUi가 HOME이더라도 selectedRecommendCourse가 있으면 코스를 우선적으로 비춤
-                        selectedCoursePath.size >= 2 -> { // ── 🔹 리스트가 비어있지 않은지 확인 📍
-                            val boundsBuilder = LatLngBounds.Builder()
-
-                            // 1. 현재 내 위치 포함
-                            boundsBuilder.include(cameraPosition)
-
-                            // 2. ── 🔹 넘겨받은 리스트(selectedCoursePath)를 직접 순회 ── 📍
-                            selectedCoursePath.forEach { latLng ->
-                                boundsBuilder.include(latLng)
-                            }
-
-                            try {
-                                val bounds = boundsBuilder.build()
-                                // 3. 모든 지점이 포함되도록 카메라 업데이트 생성
-                                // Padding 200: 왼쪽 상단 카드에 가려지지 않게 넉넉히 여백 부여
-                                val cameraUpdate = CameraUpdate.fitBounds(bounds, 350)
-                                    .animate(CameraAnimation.Easing, 1000)
-
-                                naverMap.moveCamera(cameraUpdate)
-                            } catch (e: Exception) {
-                                // 혹시 모를 에러 발생 시 리스트의 첫 번째 좌표로 이동하는 방어 로직
-                                val fallbackTarget = selectedCoursePath.first()
-                                naverMap.moveCamera(
-                                    CameraUpdate.toCameraPosition(CameraPosition(fallbackTarget, 15.5))
-                                        .animate(CameraAnimation.Easing, 1000)
-                                )
-                            }
-                        }
-
-                        // 3순위: 코스 추천 브라우징 모드일 때 (이전/다음 버튼 누르며 구경 중)
-                        homeUi == HomeUi.RECOMMEND && recommendCameraLocation != null -> {
-                            naverMap.moveCamera(
-                                CameraUpdate.toCameraPosition(CameraPosition(recommendCameraLocation, 16.0))
+                                CameraUpdate.toCameraPosition(CameraPosition(fallbackTarget, 15.5))
                                     .animate(CameraAnimation.Easing, 1000)
                             )
                         }
-
-                        // 4순위: 일반 홈 화면 (찜한 코스도 없고, 구경 중도 아닐 때 -> 나를 비춤)
-                        homeUi == HomeUi.HOME -> {
-                            naverMap.moveCamera(
-                                CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
-                                    .animate(CameraAnimation.Easing, 1200)
-                            )
-                        }
                     }
-                }
 
-
-                // 코스 그리는 부분 (내 러닝 코스, 경로 코스, 추천 코스)
-
-                if (latLngList.size >= 2) {
-                    runningPathOverlay.coords = latLngList
-                    runningPathOverlay.map = naverMap // 지도에 부착
-                } else {
-                    runningPathOverlay.map = null    // 좌표 부족 시 제거
-                }
-
-                if (selectedCoursePath.size >= 2) {
-                    selectedPathOverlay.coords = selectedCoursePath
-                    selectedPathOverlay.map = naverMap
-
-                    // ── 🔹 목적지 강조 로직 추가 📍 ──
-                    selectedCoursePath.lastOrNull()?.let { lastPoint ->
-                        destinationGlow.center = lastPoint
-                        destinationGlow.map = naverMap
-
-                        destinationCenter.center = lastPoint
-                        destinationCenter.map = naverMap
-                    }
-                } else {
-                    selectedPathOverlay.map = null
-                    destinationGlow.map = null
-                    destinationCenter.map = null
-                }
-
-                // 경로 가이드 모드
-                if (guidePath.size >= 2) {
-                    guidePathOverlay.coords = guidePath
-                    guidePathOverlay.map = naverMap
-
-                    // 말풍선 어댑터 갱신
-                    infoWindow.adapter = object : com.naver.maps.map.overlay.InfoWindow.DefaultTextAdapter(context) {
-                        override fun getText(infoWindow: com.naver.maps.map.overlay.InfoWindow): CharSequence {
-                            val km = String.format("%.1f", guideDistance / 1000f)
-                            val min = guideDuration / 1000 / 60
-                            return "${km}km (${min}분)"
+                    homeUi == HomeUi.RECOMMEND -> { // 5순위 : 코스 추천 후보 보여주기
+                        if (recommendCameraLocation != null && recommendCameraLocation != cameraPosition  // 👈 내 위치랑 같으면 무시
+                        ) {
+                            val bounds = LatLngBounds.Builder()
+                                .include(cameraPosition)
+                                .include(recommendCameraLocation)
+                                .build()
+                            naverMap.moveCamera(CameraUpdate.fitBounds(bounds, 350).animate(CameraAnimation.Easing, 1000))
                         }
                     }
 
-                    // 말풍선 위치 업데이트 및 유지
-                    val middleIndex = guidePath.size / 2
-                    anchorMarker.position = guidePath[middleIndex]
-                    anchorMarker.map = naverMap
-                    infoWindow.open(anchorMarker)
-                } else {
-                    // 경로 데이터가 아예 없을 때만 지웁니다.
-                    guidePathOverlay.map = null
-                    anchorMarker.map = null
-                    infoWindow.close()
-                }
-
-                // 목적지 마커 표시
-                destinationMarkerPos?.let {
-                    destMarker.position = it
-                    destMarker.map = naverMap
-                    destMarker.captionText = "목적지"
-                } ?: run {
-                    destMarker.map = null
-                }
-
-                // ── 🔹 추천 경로(Path) 그리기 로직 ── 📍
-                if (homeUi == HomeUi.RECOMMEND && recommendPath.size >= 2) {
-                    recommendPathOverlay.coords = recommendPath
-                    recommendPathOverlay.map = naverMap
-                } else {
-                    recommendPathOverlay.map = null
+                    homeUi == HomeUi.HOME -> { // 6순위: 일반 홈 화면 (찜한 코스도 없고, 구경 중도 아닐 때 -> 나를 비춤)
+                        naverMap.moveCamera(
+                            CameraUpdate.toCameraPosition(CameraPosition(cameraPosition, 18.0))
+                                .animate(CameraAnimation.Easing, 1200)
+                        )
+                    }
                 }
             }
+
+            // 코스 그리는 부분 (내 러닝 코스, 경로 코스, 추천 코스)
+            if (latLngList.size >= 2) { // 내 러닝 코스
+                runningPathOverlay.coords = latLngList
+                runningPathOverlay.map = naverMap // 지도에 부착
+            } else {
+                runningPathOverlay.map = null    // 좌표 부족 시 제거
+            }
+
+            if (selectedCoursePath.size >= 2) {
+                selectedPathOverlay.coords = selectedCoursePath
+                selectedPathOverlay.map = naverMap
+
+                // ── 🔹 목적지 강조 로직 추가 📍 ──
+                selectedCoursePath.lastOrNull()?.let { lastPoint ->
+                    destinationGlow.center = lastPoint
+                    destinationGlow.map = naverMap
+
+                    destinationCenter.center = lastPoint
+                    destinationCenter.map = naverMap
+                }
+            } else {
+                selectedPathOverlay.map = null
+                destinationGlow.map = null
+                destinationCenter.map = null
+            }
+
+            // 경로 가이드 모드
+            if (guidePath.size >= 2) {
+                guidePathOverlay.coords = guidePath
+                guidePathOverlay.map = naverMap
+
+                // 말풍선 어댑터 갱신
+                infoWindow.adapter = object : com.naver.maps.map.overlay.InfoWindow.DefaultTextAdapter(context) {
+                    override fun getText(infoWindow: com.naver.maps.map.overlay.InfoWindow): CharSequence {
+                        val km = String.format("%.1f", guideDistance / 1000f)
+                        val min = guideDuration / 1000 / 60
+                        return "${km}km (${min}분)"
+                    }
+                }
+
+                // 말풍선 위치 업데이트 및 유지
+                val middleIndex = guidePath.size / 2
+                anchorMarker.position = guidePath[middleIndex]
+                anchorMarker.map = naverMap
+                infoWindow.open(anchorMarker)
+            } else {
+                // 경로 데이터가 아예 없을 때만 지웁니다.
+                guidePathOverlay.map = null
+                anchorMarker.map = null
+                infoWindow.close()
+            }
+
+            // 목적지 마커 표시
+            destinationMarkerPos?.let {
+                destMarker.position = it
+                destMarker.map = naverMap
+                destMarker.captionText = "목적지"
+            } ?: run {
+                destMarker.map = null
+            }
+
+            // ── 🔹 추천 경로(Path) 그리기 로직 ── 📍
+            if (homeUi == HomeUi.RECOMMEND && recommendPath.size >= 2) {
+                recommendPathOverlay.coords = recommendPath
+                recommendPathOverlay.map = naverMap
+            } else {
+                recommendPathOverlay.map = null
+            }
+
         }
     )
 }

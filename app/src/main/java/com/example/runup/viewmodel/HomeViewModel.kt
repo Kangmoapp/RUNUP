@@ -12,6 +12,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.Path
 import com.example.runup.domain.model.Scores
+import com.example.runup.domain.model.SortDirection
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetRecommendedCourseUseCase
@@ -93,7 +94,10 @@ data class CourseRecommendationUiState(
     val courseIndex: Int = 0,
     val isLoading:Boolean = false,
     val isAiMode: Boolean = false,
-    val isFailSearchCourse: String = ""
+    val isFailSearchCourse: String = "",
+    val maxSearchDistance: Int = 500, // 기본 500m (0.5km)
+    val sortDirection: SortDirection = SortDirection.DESCENDING,
+    val showMaxDistanceDialog: Boolean = false
 )
 
 data class AiPostureUiState(
@@ -593,7 +597,9 @@ class HomeViewModel @Inject constructor(
                     location,
                     _courseRecommendationUiState.value.isLoop,
                     _courseRecommendationUiState.value.currentSort,
-                    3
+                    3,
+                    maxSearchDistance = _courseRecommendationUiState.value.maxSearchDistance, // 📍 추가
+                    sortDirection = _courseRecommendationUiState.value.sortDirection // 📍 추가
                 )
 
                 when (result) {
@@ -664,6 +670,7 @@ class HomeViewModel @Inject constructor(
 
         val address = addressUiState.value
         val currentAddressString = address?.let { "${it.city} ${it.district}".trim() } ?: ""
+        val maxSearchDist = _courseRecommendationUiState.value.maxSearchDistance
 
         viewModelScope.launch {
             // AI 전용 UseCase 호출 (두 번째 invoke 함수 사용)
@@ -673,7 +680,8 @@ class HomeViewModel @Inject constructor(
                 currentAddress = currentAddressString,
                 isLoop = _courseRecommendationUiState.value.isLoop,
                 userPrompt = userPrompt, // 👈 채팅창에서 받은 텍스트
-                count = 3
+                count = 3,
+                maxSearchDistance = maxSearchDist
             )
 
             when (result) {
@@ -961,4 +969,28 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+
+    // 2. ViewModel 함수 추가
+    fun openMaxDistanceDialog() {
+        _courseRecommendationUiState.update { it.copy(showMaxDistanceDialog = true) }
+    }
+    fun closeMaxDistanceDialog() {
+        _courseRecommendationUiState.update {
+            it.copy(showMaxDistanceDialog = false)
+        }
+    }
+
+    fun confirmMaxDistance(distanceKm: Int) {
+        _courseRecommendationUiState.update {
+            it.copy(maxSearchDistance = distanceKm * 100, showMaxDistanceDialog = false)
+        }
+    }
+
+    fun toggleSortDirection() {
+        _courseRecommendationUiState.update {
+            val next = if (it.sortDirection == SortDirection.DESCENDING) SortDirection.ASCENDING else SortDirection.DESCENDING
+            it.copy(sortDirection = next)
+        }
+    }
+
 }

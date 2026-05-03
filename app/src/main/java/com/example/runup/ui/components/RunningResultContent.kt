@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,9 +46,10 @@ fun RunningResultContent(
     onSave: (Float, Float, Float) -> Unit,
     onSkip: () -> Unit
 ) {
-    var brightnessScore by remember { mutableFloatStateOf(0f) }
-    var crowdedScore by remember { mutableFloatStateOf(0f) }
-    var difficultyScore by remember { mutableFloatStateOf(0f) }
+    // ── 🔹 1. 초기값을 null로 설정하여 "비어있음"을 표현 📍 ──
+    var brightnessScore: Float? by remember { mutableStateOf(null) }
+    var crowdedScore: Float? by remember { mutableStateOf(null) }
+    var difficultyScore: Float? by remember { mutableStateOf(null) }
 
     val runningPace = if (runningUiState.totalDistance < 100.0) 0.0
     else (runningUiState.totalTime / runningUiState.totalDistance) * 1000
@@ -115,7 +117,7 @@ fun RunningResultContent(
             verticalArrangement = Arrangement.spacedBy(10.dp) // 🔹 16dp -> 10dp
         ) {
             RatingSection("💡 밝기", brightnessScore) { brightnessScore = it }
-            RatingSection("👥 붐빔", crowdedScore) { crowdedScore = it }
+            RatingSection("👥 유동인구", crowdedScore) { crowdedScore = it }
             RatingSection("⛰️ 난이도", difficultyScore) { difficultyScore = it }
         }
 
@@ -141,7 +143,13 @@ fun RunningResultContent(
             Spacer(modifier = Modifier.weight(1f))
 
             Button(
-                onClick = { onSave(brightnessScore, crowdedScore, difficultyScore) },
+                onClick = {
+                    onSave(
+                        brightnessScore ?: 0.5f,
+                        crowdedScore ?: 0.5f,
+                        difficultyScore ?: 0.5f
+                    )
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = PointColor),
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.height(48.dp).width(140.dp) // 🔹 버튼 크기 살짝 축소
@@ -162,24 +170,36 @@ private fun ResultItem(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun RatingSection(label: String, score: Float, onScoreChange: (Float) -> Unit) {
+private fun RatingSection(
+    label: String,
+    score: Float?, // ── 🔹 Float에서 Float?로 변경 📍 ──
+    onScoreChange: (Float) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = WhiteTextColor.copy(alpha = 0.9f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(
+            text = label,
+            color = WhiteTextColor.copy(alpha = 0.9f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             for (i in 1..5) {
                 val starValue = i * 0.2f
-                val isSelected = score >= starValue - 0.01f
+                // ── 🔹 score가 null이면(아직 선택 안 함) 무조건 false가 되어 별이 비워짐 📍 ──
+                val isSelected = score != null && score >= starValue - 0.01f
+
                 Icon(
                     imageVector = if (isSelected) Icons.Filled.Star else Icons.Outlined.Star,
                     contentDescription = null,
                     tint = if (isSelected) PointColor else Color.White.copy(alpha = 0.2f),
                     modifier = Modifier
                         .size(28.dp)
-                        .clickable { onScoreChange(starValue) }
+                        .clickable { onScoreChange(starValue) } // 클릭 시에는 Float 값이 전달됨
                 )
             }
         }
