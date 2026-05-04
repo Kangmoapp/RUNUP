@@ -303,7 +303,7 @@ class CourseDataSourceImpl @Inject constructor(
             }
 
             if (sources.isEmpty()) {
-                return AuthResult.Fail("추천된 코스의 시작점을 찾을 수 없습니다.")
+                return AuthResult.Fail("근처에 조건에 맞는 코스가 없습니다...")
             }
 
             // 각 코스의 여러 갈래(A[1,2,3], B[1,2]...)를 받아옴

@@ -112,7 +112,7 @@ fun RunUpApp(
 
             Screen.SETTINGS -> SettingsScreen(
                 onBackClick = { viewModel.navigateTo(Screen.HOME) },
-                onLogoutClick = { viewModel.navigateTo(Screen.START) }
+                onLogoutClick = { viewModel.navigateTo(Screen.START) },
             )
 
             else -> {}

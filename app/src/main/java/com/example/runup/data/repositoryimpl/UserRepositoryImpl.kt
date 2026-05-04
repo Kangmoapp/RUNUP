@@ -76,10 +76,6 @@ class UserRepositoryImpl @Inject constructor(
         return userdatasource.getRunsPaged(filter, lastDate, pageSize)
     }
 
-    // 사용자 계정 삭제
-    override suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean> {
-        return userdatasource.deleteUserAccount(userpw)
-    }
     // 사용자 목표 가져오기
     override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>> {
         return userdatasource.getUserGoal()

@@ -42,7 +42,7 @@ class GeminiHelper(
 
         val userQueryVector = embeddingHelper.getEmbedding(queryText)
         val maxRadius = maxSearchDistance * 0.00001
-        val minCourseDistance = targetDist.toDouble()
+        val minCourseDistance = targetDist.toLong()
 
         // 1단계: 주변 코스 필터링
         val localCandidates = courseBox.query {
@@ -56,7 +56,7 @@ class GeminiHelper(
         }.find()
 
         if (localCandidates.isEmpty()) {
-            Log.d(TAG, "📍 [검색 결과] 주변에 조건에 맞는 코스가 하나도 없습니다.")
+            Log.d(TAG, "📍 [검색 결과] 주변에 조건에 맞는 코스가 없습니다.")
             return emptyList()
         }
 
@@ -93,15 +93,13 @@ class GeminiHelper(
 
         return topResults.map { it.get() }
     }
-    /**
-     * 최종 AI 검색 통합 함수
-     */
-    suspend fun performAiSearch(
+
+    suspend fun performAiSearch( // AI 검색 통합 함수
         userPrompt: String,
         userCity : String,
         userLoc: GeoPoint,
         maxSearchDistance: Int,
-        targetDist: Double,
+        targetDist: Double
     ): List<Pair<Course, String>> {
         Log.d(TAG, "🚀 Gemini AI 검색 시작 | 입력: '$userPrompt'")
 

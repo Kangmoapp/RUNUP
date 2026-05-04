@@ -31,21 +31,4 @@ class UserPreferenceDataSource @Inject constructor(
             preferences[IS_LOGIN_KEY] = isLogin
         }
     }
-
-    // 🔹 마지막 저장된 좌표 가져오기
-    fun getLastLocation(): Flow<Pair<Double, Double>?> {
-        return context.dataStore.data.map { preferences ->
-            val lat = preferences[LAST_LAT_KEY]
-            val lng = preferences[LAST_LNG_KEY]
-            if (lat != null && lng != null) lat to lng else null
-        }
-    }
-
-    // 🔹 새로운 좌표 저장하기
-    suspend fun updateLastLocation(lat: Double, lng: Double) {
-        context.dataStore.edit { preferences ->
-            preferences[LAST_LAT_KEY] = lat
-            preferences[LAST_LNG_KEY] = lng
-        }
-    }
 }

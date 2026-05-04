@@ -43,9 +43,6 @@ interface UserRepository {
         pageSize: Long
     ): AuthResult<List<RunRecord>>
 
-    // 회원 탈퇴
-    suspend fun deleteUserAccount(userpw: String): AuthResult<Boolean>
-
     // 사용자 목표 가져오기
     suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
 

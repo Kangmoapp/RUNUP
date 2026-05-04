@@ -8,6 +8,7 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserActivityStats
@@ -22,6 +23,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.util.Calendar
@@ -363,30 +365,6 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
-    // 회원 탈퇴
-    override suspend fun deleteUserAccount(password: String): AuthResult<Boolean> {
-        return try {
-            val user = auth.currentUser ?: return AuthResult.Fail("로그인이 필요합니다.")
-            val email = user.email ?: return AuthResult.Fail("사용자 이메일 정보를 찾을 수 없습니다.")
-
-            // 1. 보안을 위해 입력받은 비밀번호로 재인증을 진행합니다.
-            val credential = EmailAuthProvider.getCredential(email, password)
-            user.reauthenticate(credential).await()
-
-            // 2. Firestore에 있는 사용자 데이터를 먼저 삭제합니다. (선택 사항이지만 권장)
-            // 계정 삭제 후에는 UID 접근 권한이 없어질 수 있으므로 먼저 처리합니다.
-            firestore.collection("UserData").document(user.uid).delete().await()
-
-            // 3. Firebase Auth에서 계정을 삭제합니다.
-            user.delete().await()
-
-            AuthResult.Success(true)
-        } catch (e: Exception) {
-            // 비밀번호가 틀렸을 경우나 네트워크 오류 등
-            AuthResult.Fail("회원탈퇴가 실패하였습니다.", e)
-        }
-    }
-
     // 사용자 목표 가져오기
     override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>{
         return try {
@@ -618,4 +596,69 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
+    override suspend fun deletePersonalUserData(): AuthResult<Boolean> {
+        return try {
+            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+
+            // 1. Storage 프로필 이미지 삭제
+            try { storage.reference.child("userProfileImages/$uid").delete().await() } catch (e: Exception) { }
+
+            // 2. Firestore 유저 데이터 삭제 (하위 컬렉션 포함)
+            val userDocRef = firestore.collection("UserData").document(uid)
+
+            // ── 🔹 [사전 작업] 상대방 데이터 정리를 위해 내 리스트 정보 가져오기 📍 ──
+            val userSnapshot = userDocRef.get().await()
+            val friendUids = userSnapshot.get("friends") as? List<String> ?: emptyList()
+            val receivedUids = userSnapshot.get("receivedRequests") as? List<String> ?: emptyList()
+            val sentUids = userSnapshot.get("sentRequests") as? List<String> ?: emptyList()
+
+            val runs = userDocRef.collection("runs").get().await()
+            val stats = userDocRef.collection("PostStats").get().await()
+            val metadata = userDocRef.collection("metadata").get().await()
+
+            firestore.runBatch { batch ->
+                // (1) 상대방의 친구 목록에서 나를 삭제
+                friendUids.forEach { friendId ->
+                    val ref = firestore.collection("UserData").document(friendId)
+                    batch.update(ref, "friends", FieldValue.arrayRemove(uid))
+                }
+
+                // (2) 나에게 신청했던 사람들(received)의 '보낸 요청'에서 나를 삭제
+                receivedUids.forEach { requesterId ->
+                    val ref = firestore.collection("UserData").document(requesterId)
+                    batch.update(ref, "sentRequests", FieldValue.arrayRemove(uid))
+                }
+
+                // (3) 내가 신청했던 사람들(sent)의 '받은 요청'에서 나를 삭제
+                sentUids.forEach { receiverId ->
+                    val ref = firestore.collection("UserData").document(receiverId)
+                    batch.update(ref, "receivedRequests", FieldValue.arrayRemove(uid))
+                }
+
+                // (4) 내 하위 데이터 삭제 (기존 로직)
+                runs.forEach { batch.delete(it.reference) }
+                stats.forEach { batch.delete(it.reference) }
+                metadata.forEach { batch.delete(it.reference) }
+
+                // (5) 내 메인 문서 삭제
+                batch.delete(userDocRef)
+            }.await()
+
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("개인 데이터 삭제 실패: ${e.localizedMessage}")
+        }
+    }
+
+    /**
+     * [추가] 마지막 Auth 계정 삭제
+     */
+    override suspend fun deleteAuthAccount(): AuthResult<Boolean> {
+        return try {
+            auth.currentUser?.delete()?.await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            AuthResult.Fail("인증 계정 삭제 실패 (재로그인 필요)")
+        }
+    }
 }

@@ -5,6 +5,7 @@ import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserActivityStats
 import com.example.runup.domain.model.UserData
+import kotlinx.coroutines.coroutineScope
 
 interface UserDataSource {
     // 이메일 중복체크 (중복 여부를 Boolean으로 반환)
@@ -43,9 +44,6 @@ interface UserDataSource {
         pageSize: Long
     ): AuthResult<List<RunRecord>>
 
-    // 회원 탈퇴(계정 삭제)
-    suspend fun deleteUserAccount(password: String): AuthResult<Boolean>
-
     // 목표 가져오기
     suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>
 
@@ -76,6 +74,7 @@ interface UserDataSource {
     // 친구 삭제
     suspend fun deleteFriend(targetUid: String): AuthResult<Boolean>
 
+    suspend fun deletePersonalUserData(): AuthResult<Boolean>
 
-
+    suspend fun deleteAuthAccount(): AuthResult<Boolean>
 }

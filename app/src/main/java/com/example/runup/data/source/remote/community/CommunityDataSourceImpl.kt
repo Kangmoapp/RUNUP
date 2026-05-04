@@ -20,6 +20,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.GeoPoint
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
@@ -370,7 +371,13 @@ class CommunityDataSourceImpl @Inject constructor(
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    close(error)
+                    // ── 🔹 [수정] 로그아웃 시 발생하는 권한 에러면 조용히 종료 📍 ──
+                    if (error.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        Log.w("Firestore", "권한 상실(로그아웃 등)로 인해 리스너를 닫습니다.")
+                        close() // Flow를 닫아버림
+                    } else {
+                        close(error) // 그 외 진짜 에러는 던짐
+                    }
                     return@addSnapshotListener
                 }
                 val comments = snapshot?.documents?.mapNotNull { doc ->
@@ -693,5 +700,67 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
+    /**
+     * [수정] 탈퇴 시 커뮤니티의 모든 데이터(내가 쓴 글 + 남의 글에 남긴 흔적)를 삭제
+     */
+    suspend fun deleteAllMyCommunityData(
+        uid: String,
+        uploadPostIds: List<String>,
+        likePostIds: List<String>,
+        commentPostIds: List<String>,
+        followPostIds: List<String>
+    ) = coroutineScope {
+        // 1. 내가 쓴 게시글 일괄 삭제 (기존 deletePost 활용)
+        uploadPostIds.forEach { postId ->
+            try {
+                val postDoc = firestore.collection("Posts").document(postId).get().await()
+                val post = postDoc.toObject(Post::class.java)?.copy(postId = postId)
+                if (post != null) {
+                    deletePost(post) // 👈 이미 잘 만들어두신 이 함수를 그대로 사용!
+                }
+            } catch (e: Exception) {
+                Log.e("CommunityDelete", "게시글($postId) 삭제 실패: ${e.message}")
+            }
+        }
 
+        // 2. 남의 게시글에 남긴 흔적(좋아요, 팔로우, 댓글) 청소
+        cleanupUserInteractions(uid, likePostIds, commentPostIds, followPostIds)
+    }
+
+    /**
+     * [보조] 타인의 게시글에 남긴 흔적 삭제 (Batch 활용)
+     */
+    private suspend fun cleanupUserInteractions(
+        uid: String,
+        likePostIds: List<String>,
+        commentPostIds: List<String>,
+        followPostIds: List<String>
+    ) {
+        // 좋아요 & 팔로우 차감 (Batch)
+        if (likePostIds.isNotEmpty() || followPostIds.isNotEmpty()) {
+            firestore.runBatch { batch ->
+                likePostIds.forEach { postId ->
+                    val ref = firestore.collection("Posts").document(postId)
+                    batch.update(ref, "likes", FieldValue.increment(-1), "likedBy", FieldValue.arrayRemove(uid))
+                }
+                followPostIds.forEach { postId ->
+                    val ref = firestore.collection("Posts").document(postId)
+                    batch.update(ref, "followCount", FieldValue.increment(-1), "followedBy", FieldValue.arrayRemove(uid))
+                }
+            }.await()
+        }
+
+        // 댓글 삭제 (서브컬렉션이므로 개별 처리)
+        commentPostIds.forEach { postId ->
+            val postRef = firestore.collection("Posts").document(postId)
+            val myComments = postRef.collection("Comments").whereEqualTo("authorId", uid).get().await()
+            if (!myComments.isEmpty) {
+                firestore.runBatch { batch ->
+                    myComments.forEach { batch.delete(it.reference) }
+                    batch.update(postRef, "commentCount", FieldValue.increment(-myComments.size().toLong()))
+                    batch.update(postRef, "commentedBy", FieldValue.arrayRemove(uid))
+                }.await()
+            }
+        }
+    }
 }

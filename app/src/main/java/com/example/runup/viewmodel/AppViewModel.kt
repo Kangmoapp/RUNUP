@@ -44,10 +44,6 @@ class AppViewModel @Inject constructor(
     private val _isSplashLoading = MutableStateFlow(true)
     val isSplashLoading: StateFlow<Boolean> = _isSplashLoading
 
-    // --- 추가된 부분: 상세페이지로 전달할 ID 저장 변수 ---
-    var selectedPostId: String = ""
-        private set
-
     // 유저 게시물 화면으로 갈 때 필요한 UID 저장
     var selectedTargetUid by mutableStateOf("")
         private set
@@ -127,13 +123,6 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    // --- 추가된 부분: ID를 저장하며 상세페이지로 이동하는 함수 ---
-    fun navigateToDetail(postId: String) {
-        screenStack.add(_currentScreen.value) // 현재 화면 저장
-        selectedPostId = postId
-        _currentScreen.value = Screen.COMMUNITY_COMMENT
-    }
-
     // 유저 게시물 이동 시에도 스택 저장
     fun navigateToUserPosts(uid: String) {
         screenStack.add(_currentScreen.value) // 현재 화면 저장
@@ -146,6 +135,4 @@ class AppViewModel @Inject constructor(
         screenStack.clear()
         _currentScreen.value = Screen.START
     }
-
-
 }
