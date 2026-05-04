@@ -907,6 +907,7 @@ private fun HomeContent(
 
         if (homeUiState.showDistanceDialog) {
             DistanceGoalSettingDialog(
+                "목표 거리 설정",
                 range = 0..100,
                 startNumber = (homeUiState.goalDistance/100 + 1),
                 onConfirm = onDistanceConfirm,
