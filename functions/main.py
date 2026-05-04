@@ -192,11 +192,9 @@ def generate_course_vector(event: firestore_fn.Event[firestore_fn.DocumentSnapsh
     hard = scores.get('hardScore', 0)
 
     def score_to_text(val, high_label, low_label):
-        if val >= 0.8: return f"매우 {high_label}"
-        if val >= 0.6: return f"적당히 {high_label}"
-        if val >= 0.4: return f"평범함"
-        if val >= 0.2: return f"적당히 {low_label}"
-        if val >= 0.0: return f"매우 {low_label}"
+        if val >= 0.66: return f"{high_label}"
+        if val >= 0.33: return f"평범함"
+        if val >= 0.0: return f"{low_label}"
         return "점수를 벗어남"
 
     bright_txt  = score_to_text(bright,   "밝음", "어두움")
