@@ -1,6 +1,7 @@
 package com.example.runup.ui.screens
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -111,8 +112,25 @@ fun RunUpApp(
             )
 
             Screen.SETTINGS -> SettingsScreen(
-                onBackClick = { viewModel.navigateTo(Screen.HOME) },
-                onLogoutClick = { viewModel.navigateTo(Screen.START) }
+                onBackClick = { viewModel.popBackStack() }, // 🔹 이전 화면 히스토리를 유지하며 돌아갑니다.
+
+                onLogoutClick = {
+                    // 🌟 단순히 이동만 하는 게 아니라, 세션과 스택을 모두 비웁니다.
+                    viewModel.logout()
+                },
+
+                onDeleteAccountClick = {
+                    // 🌟 회원탈퇴 로직을 실행합니다.
+                    viewModel.deleteAccount(
+                        onSuccess = {
+                        // ✅ 탈퇴 성공 시: 시작 화면으로 이동하고 스택 비우기
+                        viewModel.logout()
+                    },
+                        onFail = { errorMsg ->
+                            // ❌ 탈퇴 실패 시: 로그를 찍거나 사용자에게 알림 (필요 시 Toast 추가)
+                            Log.e("DeleteAccount", "탈퇴 실패: $errorMsg")
+                        })
+                }
             )
 
             else -> {}

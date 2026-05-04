@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -41,10 +43,12 @@ import com.example.runup.ui.theme.WhiteTextColor
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
+    onDeleteAccountClick: () -> Unit // 🌟 새로 추가된 탈퇴 콜백
 ) {
     val context = LocalContext.current
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) } // 🌟 탈퇴 확인 팝업 상태
     var notificationEnabled by remember { mutableStateOf(true) }
 
     // 로그아웃 확인 다이얼로그
@@ -61,6 +65,27 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("취소", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF2C2C2C)
+        )
+    }
+
+    // 🌟 회원탈퇴 확인 다이얼로그 추가
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("회원탈퇴", color = Color.White) },
+            text = { Text("정말 탈퇴하시겠어요?\n계정 및 모든 러닝 기록이 삭제되며 복구할 수 없습니다.", color = Color.Gray, fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDeleteAccountClick() // 탈퇴 진행
+                }) { Text("탈퇴하기", color = Color(0xFFE57373)) } // 강조된 빨간색
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
                     Text("취소", color = Color.Gray)
                 }
             },
@@ -114,12 +139,19 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // 로그아웃
+            // 계정 관리 섹션
             SettingsSectionHeader("계정 관리")
             SettingsItem(
                 title = "로그아웃",
                 titleColor = Color(0xFFE57373),
                 onClick = { showLogoutDialog = true }
+            )
+
+            // 🌟 회원탈퇴 버튼 추가
+            SettingsItem(
+                title = "회원탈퇴",
+                titleColor = Color(0xFFE57373),
+                onClick = { showDeleteDialog = true }
             )
         }
     }
@@ -160,13 +192,13 @@ private fun SettingsItem(
                     }
                 }
                 Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
                     tint = Color.Gray,
                     modifier = Modifier.size(20.dp)
                 )
             }
-            Divider(
+            HorizontalDivider(
                 color = Color(0xFF2C2C2C),
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = 18.dp)
@@ -206,7 +238,7 @@ private fun SettingsSwitchItem(
                     )
                 )
             }
-            Divider(
+            HorizontalDivider(
                 color = Color(0xFF2C2C2C),
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = 18.dp)
@@ -235,7 +267,7 @@ private fun SettingsVersionItem() {
                 Text(text = "앱 버전", color = WhiteTextColor, fontSize = 16.sp, modifier = Modifier.weight(1f))
                 Text(text = versionName, color = Color.Gray, fontSize = 14.sp)
             }
-            Divider(
+            HorizontalDivider(
                 color = Color(0xFF2C2C2C),
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(horizontal = 18.dp)

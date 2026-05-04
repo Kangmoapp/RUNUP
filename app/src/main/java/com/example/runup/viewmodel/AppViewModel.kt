@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
+import com.example.runup.domain.repository.UserRepository
 import com.example.runup.domain.usecase.GetUserLoginStatusUseCase
 import com.example.runup.ui.navigation.Screen
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,6 +20,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AppViewModel @Inject constructor(
+    private val userRepository: UserRepository,
     private val getUserLoginStatusUseCase: GetUserLoginStatusUseCase,
     private val locationRepository: LocationRepository,
 ) : ViewModel() {
@@ -147,5 +149,20 @@ class AppViewModel @Inject constructor(
         _currentScreen.value = Screen.START
     }
 
+    // 🌟 회원탈퇴 함수 추가
+    fun deleteAccount(onSuccess: () -> Unit, onFail: (String) -> Unit) {
+        viewModelScope.launch {
+            // 1. 아까 UserDataSourceImpl에 만들어둔 탈퇴 API 호출
+            val result = userRepository.deleteUserAccount("") // (또는 UseCase 호출)
 
+            when (result) {
+                is AuthResult.Success -> {
+                    onSuccess() // 2. 성공 시 MainActivity로 성공 신호 보내기
+                }
+                is AuthResult.Fail -> {
+                    onFail(result.message ?: "탈퇴 실패") // 실패 시 에러 메시지
+                }
+            }
+        }
+    }
 }

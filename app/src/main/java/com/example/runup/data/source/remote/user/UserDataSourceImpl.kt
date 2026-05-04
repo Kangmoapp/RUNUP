@@ -192,21 +192,23 @@ class UserDataSourceImpl @Inject constructor(
 
     override suspend fun deleteUserAccount(password: String): AuthResult<Boolean> {
         return try {
-            // 1. SessionManager에서 내 신분증(UID) 꺼내기
-            val uid = sessionManager.getUid()
+            // 1. 가짜 비밀번호(password) 대신, 진짜 내 신분증(UID)을 꺼냅니다.
+            val myUid = sessionManager.getUid()
+            Log.d("DeleteAccount", "탈퇴 시도 UID: $myUid") // 로그로 확인용
 
-            // 2. Spring 서버로 계정 삭제 요청 (서버 DB에서 CASCADE로 모든 데이터 연쇄 폭파됨!)
-            val response = apiService.deleteUserAccount(uid)
+            // 2. 서버에 진짜 UID를 헤더에 실어서 보냅니다.
+            val response = apiService.deleteUserAccount(myUid)
 
             if (response.isSuccessful) {
-                // 💡 (선택 사항) 탈퇴 성공 시 로컬 세션도 비워주는 것이 좋습니다.
-                // sessionManager.clearSession()
+                Log.d("DeleteAccount", "서버 탈퇴 처리 성공")
                 AuthResult.Success(true)
             } else {
-                AuthResult.Fail("회원탈퇴 서버 거절 (코드: ${response.code()})")
+                Log.e("DeleteAccount", "서버 거절: ${response.code()}")
+                AuthResult.Fail("서버에서 탈퇴를 거절했습니다. (코드: ${response.code()})")
             }
         } catch (e: Exception) {
-            AuthResult.Fail("탈퇴 요청 중 네트워크 오류: ${e.message}", e)
+            Log.e("DeleteAccount", "네트워크 오류", e)
+            AuthResult.Fail("네트워크 오류가 발생했습니다.", e)
         }
     }
 
