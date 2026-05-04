@@ -21,7 +21,8 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
     // 서버 기본 URL (본인의 Spring Boot 서버 주소로 변경하세요)
-    private const val BASE_URL = "http://192.168.4.6:8080/"
+    //private const val BASE_URL = "http://192.168.4.6:8080/"
+    private const val BASE_URL = "http://15.164.226.197:8080"
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
