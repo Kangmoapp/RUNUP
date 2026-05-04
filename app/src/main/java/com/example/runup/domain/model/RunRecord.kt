@@ -1,6 +1,6 @@
 package com.example.runup.domain.model
 
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 
 data class RunRecord(
     val recordDate: Long = 0L,

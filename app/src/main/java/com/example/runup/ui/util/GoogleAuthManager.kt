@@ -17,6 +17,7 @@ import javax.inject.Singleton
 class GoogleAuthManager @Inject constructor() {
 
     private val webClientId = "119763044034-7fmna97qp33hgoke2a7f0ogpm2i8ssj3.apps.googleusercontent.com"
+    //private val webClientId = "300166627266-1gkmlpd8g490d8se60jb79nh1vkv0b1c.apps.googleusercontent.com"
 
     fun signIn(
         context: Context,

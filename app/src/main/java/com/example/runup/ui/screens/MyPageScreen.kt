@@ -386,10 +386,19 @@ fun MyPageScreen(
                         ProfileCompactButton(
                             text = "기록 보기",
                             icon = Icons.Default.Description,
-                            modifier = Modifier.weight(1f), // 버튼이 가로를 꽉 채우도록 🔹
+                            modifier = Modifier.weight(1f),
                             onClick = {
-                                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
-                                if (myUid.isNotEmpty()) onPostClick(myUid)
+                                val myUid = userData?.userId ?: ""
+
+                                // 🚨 [진실의 약] 클릭할 때마다 화면 하단에 내 UID가 뭔지 띄워줍니다!
+                                android.widget.Toast.makeText(context, "내 UID: [$myUid]", android.widget.Toast.LENGTH_SHORT).show()
+
+                                if (myUid.isNotEmpty()) {
+                                    onPostClick(myUid)
+                                } else {
+                                    // UID가 없으면 에러 메시지를 띄웁니다.
+                                    android.widget.Toast.makeText(context, "데이터를 불러오는 중입니다...", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
                         )
                         ProfileCompactButton(
@@ -434,9 +443,14 @@ fun MyPageScreen(
                         ) {
                             // 총 달린 횟수
                             GoalItem("달린 횟수", "${userData?.totalRunningCount ?: 0}회")
-                            // 총 달린 거리:
+
+                            // 총 달린 거리
                             val totalDistanceMeters = userData?.totalRunningDistance ?: 0L
                             GoalItem("총 거리", DistanceMapper.formatDistance(totalDistanceMeters.toDouble()))
+
+                            // 🌟 [복구] 총 달린 시간 (이 부분이 누락되어 있었습니다!)
+                            val totalSeconds = userData?.totalRunningTime ?: 0
+                            GoalItem("총 시간", formatSeconds(totalSeconds))
                         }
                     }
                 }
@@ -690,7 +704,9 @@ fun ExpandableRunItem(
                             color = PointColor,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(formatDuration(run.time), color = Color.LightGray, fontSize = 12.sp)
+                        // 🚨 기존: formatDuration(run.time)
+                        // 🌟 수정: 시간(초)을 제대로 변환하는 formatSeconds를 사용합니다!
+                        Text(TimeMapper.formatSeconds(run.time), color = Color.LightGray, fontSize = 12.sp)
                     }
                 }
 
@@ -703,13 +719,23 @@ fun ExpandableRunItem(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 1. 코스 지도 표시 영역
-                    val centerLat = (run.course.minLat + run.course.maxLat) / 2
-                    val centerLng = (run.course.minLng + run.course.maxLng) / 2
+                    // 좌표 데이터만 따로 뽑아냅니다.
+                    val pathPoints = run.course.locationPoints.map { it.locationPoint }
 
-                    // 코스 크기에 따른 동적 줌 (CommunityScreen 로직 재사용)
+                    // 🚨 서버에서 minLat/maxLat이 0.0으로 왔을 경우, 실제 좌표(pathPoints)에서 직접 평균을 구해옵니다!
+                    val actualMinLat = if (run.course.minLat != 0.0) run.course.minLat else pathPoints.minOfOrNull { it.latitude } ?: 35.89
+                    val actualMaxLat = if (run.course.maxLat != 0.0) run.course.maxLat else pathPoints.maxOfOrNull { it.latitude } ?: 35.89
+                    val actualMinLng = if (run.course.minLng != 0.0) run.course.minLng else pathPoints.minOfOrNull { it.longitude } ?: 128.61
+                    val actualMaxLng = if (run.course.maxLng != 0.0) run.course.maxLng else pathPoints.maxOfOrNull { it.longitude } ?: 128.61
+
+                    // 방어 로직이 적용된 진짜 중심점!
+                    val centerLat = (actualMinLat + actualMaxLat) / 2
+                    val centerLng = (actualMinLng + actualMaxLng) / 2
+
+                    // 코스 크기에 따른 동적 줌
                     val dynamicZoom = remember(run.course) {
-                        val latDiff = run.course.maxLat - run.course.minLat
-                        val lngDiff = run.course.maxLng - run.course.minLng
+                        val latDiff = actualMaxLat - actualMinLat
+                        val lngDiff = actualMaxLng - actualMinLng
                         val maxDiff = maxOf(latDiff, lngDiff)
                         when {
                             maxDiff > 0.04 -> 13
@@ -838,13 +864,17 @@ fun ExpandableRunItem(
                     ) {
                         DetailMetricItem(
                             "평균 페이스",
-                            calculatePace(run.time, run.course.distance.toDouble())
+                            // 🌟 수정: calculatePace는 밀리초(ms)를 받으므로, 초(s)에 1000을 곱해줍니다!
+                            calculatePace(run.time * 1000, run.course.distance.toDouble())
                         )
                         DetailMetricItem(
                             "평균 속도",
                             String.format(
                                 "%.1f km/h",
-                                (run.course.distance / 1000.0) / (run.time / 3600000.0)
+                                // 🌟 수정: 0초 만에 종료했을 때 시속 5000km가 찍히는 걸 막는 방어 로직 추가!
+                                if (run.time > 0) {
+                                    (run.course.distance / 1000.0) / (run.time / 3600.0)
+                                } else 0.0
                             )
                         )
                     }

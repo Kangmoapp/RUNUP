@@ -84,4 +84,8 @@ interface UserRepository {
     suspend fun getFriendUids(): AuthResult<List<String>>
 
     suspend fun deleteFriend(targetUid: String): AuthResult<Boolean>
+
+    // 기존 UserRepository.kt 인터페이스 파일에 추가
+    suspend fun getPendingRequests(): AuthResult<List<com.example.runup.domain.model.FriendSummary>>
+    suspend fun getMyFriends(): AuthResult<List<com.example.runup.domain.model.FriendSummary>>
 }

@@ -4,7 +4,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.SortType
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 
 interface CourseDataSource {
     suspend fun saveCourse(course: Course) : AuthResult<Boolean>

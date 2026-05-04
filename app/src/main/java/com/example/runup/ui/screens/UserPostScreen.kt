@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
@@ -100,7 +101,7 @@ import com.example.runup.viewmodel.HomeViewModel
 import com.example.runup.viewmodel.MapSnapshot
 import com.example.runup.viewmodel.UserPostViewModel
 import com.example.runup.viewmodel.UserTotalStats
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -120,7 +121,7 @@ fun UserPostScreen(
 
     val selectedTab by viewModel.currentTab.collectAsState()
     val stats by viewModel.userStats.collectAsState()
-    val myUid = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
+    val myUid = viewModel.myUid
 
     val topBarTitle = if (targetUid == myUid) {
         "나의 활동"
@@ -306,131 +307,234 @@ fun UserPostScreen(
             )
 
             if (uiState.isInitialLoading) {
-                // ── 데이터를 불러오는 동안 보여줄 로딩 화면 ── 🔹
+                // ── 데이터를 불러오는 동안 보여줄 로딩 화면 ──
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(color = PointColor)
                 }
-            } else {
+            }else {
                 // ── [2] 게시물 그리드 영역 (데이터 로드가 완료되면 그리드 표시) ──
                 PullToRefreshBox(
                     isRefreshing = uiState.isRefreshing,
                     onRefresh = { viewModel.fetchUserPosts(targetUid, isInitial = true, forceRefresh = true) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(uiState.posts, key = { it.postId }) { post ->
-                            val cachedSnapshot = mapSnapshotsCache[post.postId]
-                            val context = LocalContext.current
-                            val density = LocalDensity.current
+                    // 🌟 [추가된 부분] 데이터가 텅 비었을 때 보여줄 Empty View!
+                    if (uiState.posts.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState()), // 당겨서 새로고침 가능하게!
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "🏃‍♂️💨", fontSize = 50.sp)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "아직 기록이 없어요!",
+                                    color = WhiteTextColor,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "첫 번째 러너가 되어 멋진 코스를 남겨보세요.",
+                                    color = Color.Gray,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(uiState.posts, key = { it.postId }) { post ->
+                                val cachedSnapshot = mapSnapshotsCache[post.postId]
+                                val context = LocalContext.current
+                                val density = LocalDensity.current
 
-                            // 기준점: 팝업이 차지하는 95% 너비
-                            val screenWidthPx = remember { context.resources.displayMetrics.widthPixels.toFloat() }
-                            val popupWidthPx = screenWidthPx * 0.95f
-                            val markerSizePx = with(density) { 64.dp.toPx() }
+                                // 기준점: 팝업이 차지하는 95% 너비
+                                val screenWidthPx =
+                                    remember { context.resources.displayMetrics.widthPixels.toFloat() }
+                                val popupWidthPx = screenWidthPx * 0.95f
+                                val markerSizePx = with(density) { 64.dp.toPx() }
 
-                            LaunchedEffect(post.postId) {
-                                if (cachedSnapshot == null && post.runRecord != null) {
-                                    val record = post.runRecord
-                                    val centerLat = (record.course.minLat + record.course.maxLat) / 2
-                                    val centerLng = (record.course.minLng + record.course.maxLng) / 2
+                                LaunchedEffect(post.postId) {
+                                    if (cachedSnapshot == null && post.runRecord != null) {
+                                        val record = post.runRecord
+                                        val centerLat =
+                                            (record.course.minLat + record.course.maxLat) / 2
+                                        val centerLng =
+                                            (record.course.minLng + record.course.maxLng) / 2
 
-                                    val maxDiff = maxOf(record.course.maxLat - record.course.minLat, record.course.maxLng - record.course.minLng)
-                                    val dynamicZoom = when {
-                                        maxDiff > 0.04 -> 14.0
-                                        maxDiff > 0.015 -> 15.0
-                                        maxDiff > 0.005 -> 16.0
-                                        maxDiff > 0.002 -> 17.0
-                                        else -> 18.0
-                                    }
+                                        val maxDiff = maxOf(
+                                            record.course.maxLat - record.course.minLat,
+                                            record.course.maxLng - record.course.minLng
+                                        )
+                                        val dynamicZoom = when {
+                                            maxDiff > 0.04 -> 14.0
+                                            maxDiff > 0.015 -> 15.0
+                                            maxDiff > 0.005 -> 16.0
+                                            maxDiff > 0.002 -> 17.0
+                                            else -> 18.0
+                                        }
 
-                                    val apiW = popupWidthPx.toInt().coerceAtMost(1024)
-                                    val url = buildNaverStaticMapUrl(centerLat, centerLng, dynamicZoom.toInt(), apiW, apiW)
+                                        val apiW = popupWidthPx.toInt().coerceAtMost(1024)
+                                        val url = buildNaverStaticMapUrl(
+                                            centerLat,
+                                            centerLng,
+                                            dynamicZoom.toInt(),
+                                            apiW,
+                                            apiW
+                                        )
 
-                                    // 코스 전체 경로 및 중단점 미리 계산 📍
-                                    val computedPathPoints = record.course.locationPoints.map {
-                                        latLngToPixel(
-                                            it.locationPoint.latitude, it.locationPoint.longitude,
-                                            centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx
-                                        ) to it.stop
-                                    }
-                                    // 실제 위치 계산
-                                    val newPositions = post.locationImages.filter { it.location != null }.associate { img ->
-                                        img.url to latLngToPixel(img.location!!.latitude, img.location!!.longitude, centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx)
-                                    }
+                                        // 코스 전체 경로 및 중단점 미리 계산 📍
+                                        val computedPathPoints = record.course.locationPoints.map {
+                                            latLngToPixel(
+                                                it.locationPoint.latitude,
+                                                it.locationPoint.longitude,
+                                                centerLat,
+                                                centerLng,
+                                                dynamicZoom,
+                                                popupWidthPx,
+                                                popupWidthPx
+                                            ) to it.stop
+                                        }
+                                        // 실제 위치 계산
+                                        val newPositions =
+                                            post.locationImages.filter { it.location != null }
+                                                .associate { img ->
+                                                    img.url to latLngToPixel(
+                                                        img.location!!.latitude,
+                                                        img.location!!.longitude,
+                                                        centerLat,
+                                                        centerLng,
+                                                        dynamicZoom,
+                                                        popupWidthPx,
+                                                        popupWidthPx
+                                                    )
+                                                }
 
-                                    // 2. 경계 계산
-                                    val pMin = latLngToPixel(record.course.minLat, record.course.minLng, centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx)
-                                    val pMax = latLngToPixel(record.course.maxLat, record.course.maxLng, centerLat, centerLng, dynamicZoom, popupWidthPx, popupWidthPx)
-                                    val newBounds = Rect(minOf(pMin.x, pMax.x), minOf(pMin.y, pMax.y), maxOf(pMin.x, pMax.x), maxOf(pMin.y, pMax.y))
+                                        // 2. 경계 계산
+                                        val pMin = latLngToPixel(
+                                            record.course.minLat,
+                                            record.course.minLng,
+                                            centerLat,
+                                            centerLng,
+                                            dynamicZoom,
+                                            popupWidthPx,
+                                            popupWidthPx
+                                        )
+                                        val pMax = latLngToPixel(
+                                            record.course.maxLat,
+                                            record.course.maxLng,
+                                            centerLat,
+                                            centerLng,
+                                            dynamicZoom,
+                                            popupWidthPx,
+                                            popupWidthPx
+                                        )
+                                        val newBounds = Rect(
+                                            minOf(pMin.x, pMax.x),
+                                            minOf(pMin.y, pMax.y),
+                                            maxOf(pMin.x, pMax.x),
+                                            maxOf(pMin.y, pMax.y)
+                                        )
 
-                                    // 3. 슬롯 및 클로저 오프셋 계산 (popupWidthPx 기준)
-                                    val slots = assignSlots(post.locationImages.filter { it.location != null }, centerLat, centerLng)
-                                    val newCloserOffsets = slots.entries.associate { (postImage, slot) ->
-                                        val orig = newPositions[postImage.url]!!
-                                        postImage.url to calculateCloserOffset(
-                                            orig.x, orig.y, slot, popupWidthPx, popupWidthPx,
-                                            newBounds.left, newBounds.right, newBounds.top, newBounds.bottom, markerSizePx
+                                        // 3. 슬롯 및 클로저 오프셋 계산 (popupWidthPx 기준)
+                                        val slots = assignSlots(
+                                            post.locationImages.filter { it.location != null },
+                                            centerLat,
+                                            centerLng
+                                        )
+                                        val newCloserOffsets =
+                                            slots.entries.associate { (postImage, slot) ->
+                                                val orig = newPositions[postImage.url]!!
+                                                postImage.url to calculateCloserOffset(
+                                                    orig.x,
+                                                    orig.y,
+                                                    slot,
+                                                    popupWidthPx,
+                                                    popupWidthPx,
+                                                    newBounds.left,
+                                                    newBounds.right,
+                                                    newBounds.top,
+                                                    newBounds.bottom,
+                                                    markerSizePx
+                                                )
+                                            }
+
+                                        viewModel.saveMapSnapshot(
+                                            post.postId,
+                                            MapSnapshot(
+                                                staticMapUrl = url,
+                                                pathPoints = computedPathPoints,
+                                                startPoint = computedPathPoints.firstOrNull()?.first,
+                                                endPoint = computedPathPoints.lastOrNull()?.first,
+                                                markerPositions = newPositions,
+                                                closerOffsets = newCloserOffsets,
+                                                courseBounds = newBounds
+                                            )
                                         )
                                     }
-
-                                    viewModel.saveMapSnapshot(
-                                        post.postId,
-                                        MapSnapshot(
-                                            staticMapUrl = url,
-                                            pathPoints = computedPathPoints,
-                                            startPoint = computedPathPoints.firstOrNull()?.first,
-                                            endPoint = computedPathPoints.lastOrNull()?.first,
-                                            markerPositions = newPositions,
-                                            closerOffsets = newCloserOffsets,
-                                            courseBounds = newBounds
-                                        )
-                                    )
                                 }
+
+                                PostThumbnail(
+                                    post = post,
+                                    myUid = myUid,
+                                    snapshot = cachedSnapshot,
+                                    fullScreenWidthPx = popupWidthPx,
+                                    onClick = { viewModel.selectPost(post) }
+                                )
                             }
 
-                            PostThumbnail(
-                                post = post,
-                                myUid = myUid,
-                                snapshot = cachedSnapshot,
-                                fullScreenWidthPx = popupWidthPx,
-                                onClick = { viewModel.selectPost(post) }
-                            )
-                        }
-
-                        // 조건: 로딩 중이 아니고, 마지막 페이지가 아닐 때만 노출
-                        if (!uiState.isLastPage && uiState.posts.isNotEmpty()) {
-                            item(span = { GridCells.Fixed(2).let { androidx.compose.foundation.lazy.grid.GridItemSpan(2) } }) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (uiState.isLoading) {
-                                        // 버튼 대신 로딩 인디케이터 표시
-                                        CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                    } else {
-                                        // 더보기 버튼 UI
-                                        Surface(
-                                            modifier = Modifier
-                                                .clickable { viewModel.fetchUserPosts(targetUid, isInitial = false) }, // 추가 로드 호출
-                                            color = Color.White.copy(alpha = 0.05f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text(
-                                                text = "더보기 ▾",
-                                                color = Color.Gray,
-                                                fontSize = 13.sp,
-                                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                            // 조건: 로딩 중이 아니고, 마지막 페이지가 아닐 때만 노출
+                            if (!uiState.isLastPage && uiState.posts.isNotEmpty()) {
+                                item(span = {
+                                    GridCells.Fixed(2)
+                                        .let { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }
+                                }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (uiState.isLoading) {
+                                            // 버튼 대신 로딩 인디케이터 표시
+                                            CircularProgressIndicator(
+                                                color = PointColor,
+                                                modifier = Modifier.size(24.dp),
+                                                strokeWidth = 2.dp
                                             )
+                                        } else {
+                                            // 더보기 버튼 UI
+                                            Surface(
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        viewModel.fetchUserPosts(
+                                                            targetUid,
+                                                            isInitial = false
+                                                        )
+                                                    }, // 추가 로드 호출
+                                                color = Color.White.copy(alpha = 0.05f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "더보기 ▾",
+                                                    color = Color.Gray,
+                                                    fontSize = 13.sp,
+                                                    modifier = Modifier.padding(
+                                                        horizontal = 24.dp,
+                                                        vertical = 8.dp
+                                                    )
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -627,7 +731,8 @@ fun StatsHeader(
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         StatItem("Posts", stats.totalPosts.toString(), selectedTab == "POSTS") { onTabClick("POSTS") }
-        StatItem("Likes", stats.totalLikes.toString(), selectedTab == "HEARTS") { onTabClick("HEARTS") }
+        // 🚨 "HEARTS" 였던 부분을 모두 "LIKES"로 수정합니다!
+        StatItem("Likes", stats.totalLikes.toString(), selectedTab == "LIKES") { onTabClick("LIKES") }
         StatItem("Comments", stats.totalComments.toString(), selectedTab == "COMMENTS") { onTabClick("COMMENTS") }
         StatItem("Follows", stats.totalFollows.toString(), selectedTab == "FOLLOWS") { onTabClick("FOLLOWS")}
     }

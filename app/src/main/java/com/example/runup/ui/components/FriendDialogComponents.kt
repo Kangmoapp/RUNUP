@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -66,7 +67,8 @@ import com.example.runup.domain.model.UserData
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.viewmodel.FriendUiState
 import com.example.runup.viewmodel.FriendViewModel
-
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 
 @Composable
 fun FriendListDialog(
@@ -188,7 +190,6 @@ fun FriendListDialog(
         )
     }
 }
-
 @Composable
 fun FriendSearchTab(
     uiState: FriendUiState,
@@ -213,6 +214,9 @@ fun FriendSearchTab(
                     Icon(Icons.Default.Search, null, tint = PointColor)
                 }
             },
+            // 🌟 [추가] 키보드의 돋보기(완료) 버튼을 눌러도 검색되도록!
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSearch(searchText) }),
             shape = RoundedCornerShape(12.dp),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.White.copy(alpha = 0.03f),
@@ -234,6 +238,19 @@ fun FriendSearchTab(
         )
 
         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.White.copy(alpha = 0.05f))
+
+        // 🌟 [추가] 검색 중일 때는 빙글빙글 로딩 바를 보여줍니다!
+        if (uiState.isSearching) {
+            Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = PointColor, modifier = Modifier.size(24.dp))
+            }
+        }
+        // 🌟 [추가] 에러 메시지가 있으면 빨간 글씨로 띄워줍니다!
+        else if (uiState.searchErrorMessage != null) {
+            Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                Text(text = uiState.searchErrorMessage, color = Color(0xFFE57373), fontSize = 13.sp)
+            }
+        }
 
         uiState.searchResult?.let { user ->
             val isMe = user.userId == myUid
@@ -258,7 +275,7 @@ fun FriendSearchTab(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .alpha(if (isActionDisabled) 0.2f else 1f) // 🔹 신청/친구 상태일 때 흐리게 처리
+                            .alpha(if (isActionDisabled) 0.2f else 1f)
                             .background(if (isActionDisabled) Color.Transparent else Color.White.copy(alpha = 0.05f))
                     ) {
                         Icon(

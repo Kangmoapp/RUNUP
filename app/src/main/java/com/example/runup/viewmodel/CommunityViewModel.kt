@@ -1,5 +1,4 @@
 package com.example.runup.viewmodel
-
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -10,33 +9,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.runup.data.source.local.SessionManager
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
-import com.example.runup.domain.model.AddressModel
-import com.example.runup.domain.model.AdmVO
-import com.example.runup.domain.model.AuthResult
-import com.example.runup.domain.model.Comment
-import com.example.runup.domain.model.FilterState
-import com.example.runup.domain.model.FilterType
-import com.example.runup.domain.model.Post
-import com.example.runup.domain.model.PostImage
-import com.example.runup.domain.model.RunFilter
-import com.example.runup.domain.model.RunRecord
-import com.example.runup.domain.model.ViewScope
+import com.example.runup.domain.model.*
 import com.example.runup.domain.repository.CourseRepository
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.ui.util.CommunityRefreshManager
 import com.example.runup.ui.util.ImagePreloader
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -72,10 +57,9 @@ data class MapSnapshot(
     val closerOffsets: Map<String, Offset>,   // 마커의 최종 위치
     val courseBounds: androidx.compose.ui.geometry.Rect // 코스 경계 픽셀
 )
-private var lastVisibleSnapshot: DocumentSnapshot? = null
 private var isLastPage = false
 
-
+private var lastPostId: String? = null // 🔹 DocumentSnapshot 대신 ID를 저장합니다.
 
 @HiltViewModel
 class CommunityViewModel @Inject constructor(
@@ -85,7 +69,8 @@ class CommunityViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val refreshManager: CommunityRefreshManager,
     private val imagePreloader: ImagePreloader,
-    private val courseRepository: CourseRepository, // 🔹 추가
+    private val courseRepository: CourseRepository,
+    private val sessionManager: SessionManager // 🔹 새로 추가!
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -155,61 +140,49 @@ class CommunityViewModel @Inject constructor(
 
 
     fun fetchPosts(isInitial: Boolean = false, forceRefresh: Boolean = false) {
-        // 처음이면서 post가 존재하는 상태이면 굳이 fetchPost를 실행하지 않음
-        if (!forceRefresh && isInitial && _communityUiState.value.posts.isNotEmpty()) {
-            return
-        }
-
-        // isLoading 상태거나, 처음이 아니면서 마지막페이지이면
+        if (!forceRefresh && isInitial && _communityUiState.value.posts.isNotEmpty()) return
         if (_communityUiState.value.isLoading || (isLastPage && !isInitial)) return
 
         if (isInitial) {
-            lastVisibleSnapshot = null // 마지막 보던 곳
-            isLastPage = false // 마지막 페이지 여부
+            lastPostId = null // 🔹 초기화
+            isLastPage = false
             _communityUiState.update { it.copy(
                 posts = emptyList(),
-                isInitialLoading = !forceRefresh, // 새로고침일 때는 전체화면 로딩(중앙 아이콘) 안 띄움
-                isRefreshing = forceRefresh       // 새로고침일 때만 상단 당기기 인디케이터 활성화
-            ) } // 초기화 시 리스트 비우기
+                isInitialLoading = !forceRefresh,
+                isRefreshing = forceRefresh
+            ) }
         }
 
         viewModelScope.launch {
             _communityUiState.update { it.copy(isLoading = true) }
             try {
                 val currentFilter = _communityUiState.value.filterState
-
-                // 🔹 [핵심] 스코프에 따른 ID 리스트 준비
+                val myUid = sessionManager.getUid()
                 val targetIds = when (currentFilter.scope) {
-                    ViewScope.MINE -> listOf(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "")
+                    // 🔹 FirebaseAuth.getInstance()... 대신 myUid 사용
+                    ViewScope.MINE -> listOf(myUid)
                     ViewScope.FRIENDS -> {
                         val result = userRepository.getFriendUids()
-                        if (result is AuthResult.Success) {
-                            result.data.ifEmpty { emptyList() }
-                        } else {
-                            emptyList()
-                        }
+                        if (result is AuthResult.Success) result.data.ifEmpty { emptyList() } else emptyList()
                     }
                     ViewScope.ALL -> emptyList()
                 }
 
-                // 마지막 보던 곳에서 최대 3개 가져오기
-                val result = dataSource.getPosts(lastVisibleSnapshot, 3L, currentFilter, friendIds = targetIds)
+                // 🔹 lastPostId 파라미터 전달
+                val result = dataSource.getPosts(lastPostId, 3L, currentFilter, friendIds = targetIds)
 
                 if (result is AuthResult.Success) {
-                    val (newPosts, lastSnapshot) = result.data
-                    if (newPosts.isEmpty() || newPosts.size < 3) { // 새로 가져온 포스터가 3개 미만이면 마지막 페이지 여부 체크
+                    val (newPosts, lastId) = result.data // 🔹 Pair 해체
+                    if (newPosts.isEmpty() || newPosts.size < 3) {
                         isLastPage = true
                     }
-                    lastVisibleSnapshot = lastSnapshot // 다음 호출을 위해 커서 업데이트
+                    lastPostId = lastId // 🔹 커서 업데이트
 
-                    // 먼저 포스트 데이터만 업데이트 (아직 isInitialLoading은 true 유지)
                     _communityUiState.update { state ->
                         state.copy(posts = if (isInitial) newPosts else state.posts + newPosts)
                     }
 
-                    // 비트맵 프리로딩 시작
                     preloadBitmaps(newPosts) {
-                        // 프리로딩이 완료되면(혹은 상단 3개가 준비되면) 로딩 종료
                         if (isInitial) {
                             _communityUiState.update { it.copy(isInitialLoading = false, isRefreshing = false) }
                         }
@@ -218,7 +191,6 @@ class CommunityViewModel @Inject constructor(
             } catch (e: Exception) {
                 _communityUiState.update { it.copy(isInitialLoading = false) }
             } finally {
-                // 성공/실패 여부와 상관없이 로딩 종료
                 _communityUiState.update { it.copy(isLoading = false, isRefreshing = false) }
             }
         }
@@ -226,10 +198,7 @@ class CommunityViewModel @Inject constructor(
 
     private fun observeRefreshEvents() {
         viewModelScope.launch {
-            // SharedFlow를 통해 전역적으로 발생하는 리프레시 신호를 수집합니다 👂
             refreshManager.refreshEvent.collectLatest {
-                // isInitial = true -> 페이징 초기화
-                // forceRefresh = true -> 로딩 바 활성화 및 캐시 무시
                 fetchPosts(isInitial = true, forceRefresh = true)
             }
         }
@@ -385,40 +354,75 @@ class CommunityViewModel @Inject constructor(
         ) }
     }
 
+    // CommunityViewModel.kt 내의 uploadPost 함수를 통째로 교체하세요.
+
     fun uploadPost(content: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
-            // 피드 상태의 로딩 시작
+            // 1. 로딩 시작
             _postUploadUiState.update { it.copy(isLoading = true) }
 
-            val selectedRecord = _postUploadUiState.value.selectedRunRecord
+            try {
+                val selectedRecord = _postUploadUiState.value.selectedRunRecord
 
-            // 1. 🔹 주소를 추출할 타겟 좌표 결정 (코스 중점 우선)
-            val targetLocation = if (selectedRecord != null) {
-                // 코스의 위도/경도 중점 계산
-                val centerLat = (selectedRecord.course.minLat + selectedRecord.course.maxLat) / 2.0
-                val centerLng = (selectedRecord.course.minLng + selectedRecord.course.maxLng) / 2.0
-                GeoPoint(centerLat, centerLng)
-            } else {
-                // 만약 러닝 기록 없이 글만 쓰는 경우라면 현재 위치 사용
-                locationRepository.currentLocation.value
+                // 2. 타겟 좌표 결정
+                val targetLocation = if (selectedRecord != null) {
+                    val centerLat = (selectedRecord.course.minLat + selectedRecord.course.maxLat) / 2.0
+                    val centerLng = (selectedRecord.course.minLng + selectedRecord.course.maxLng) / 2.0
+                    GeoPoint(centerLat, centerLng)
+                } else {
+                    locationRepository.currentLocation.value
+                }
+
+                // 🌟 [진실의 로그 1] 내 GPS 좌표가 제대로 잡히고 있나?
+                Log.d("UploadDebug", "1. 현재 잡힌 타겟 좌표: 위도=${targetLocation?.latitude}, 경도=${targetLocation?.longitude}")
+
+                // 🌟 1. 러닝 기록이 있다면 그 중앙 좌표를, 없다면 0.0으로 둡니다.
+                val centerLat = if (selectedRecord != null) (selectedRecord.course.minLat + selectedRecord.course.maxLat) / 2.0 else 0.0
+                val centerLng = if (selectedRecord != null) (selectedRecord.course.minLng + selectedRecord.course.maxLng) / 2.0 else 0.0
+
+                // 🌟 2. 주소 결정 로직 (아주 안전하게!)
+                val address = if (centerLat != 0.0 && centerLng != 0.0) {
+                    // 러닝 기록의 좌표가 정상(0.0이 아님)일 때만 네이버 API를 호출합니다.
+                    try {
+                        locationRepository.getAddressFromCoords(centerLat, centerLng)
+                    } catch (e: Exception) {
+                        Log.e("UploadDebug", "러닝 기록 주소 변환 실패, 내 현재 위치로 대체합니다.")
+                        addressUiState.value // 실패하면 앱이 켜질 때 잡아둔 내 현재 주소를 씁니다.
+                    }
+                } else {
+                    // 일반 포스트 업로드이거나 좌표가 0.0일 때는 굳이 API를 안 부르고, 이미 갖고 있는 주소를 바로 씁니다!
+                    Log.d("UploadDebug", "일반 업로드 또는 좌표 0.0 -> 기존 주소(${addressUiState.value?.dong}) 바로 사용!")
+                    addressUiState.value
+                }
+
+                Log.d("UploadDebug", "최종 결정된 서버 전송 주소: ${address?.city} ${address?.district} ${address?.dong}")
+
+                // 4. 업로드 API 호출
+                val result = dataSource.uploadPost(
+                    content = content,
+                    locationImageUris = selectedLocationImageUris,
+                    commonImageUris = selectedCommonImageUris,
+                    runRecord = selectedRecord,
+                    address = address
+                )
+
+                // 5. 결과 처리
+                if (result is AuthResult.Success) {
+                    clearSelectedImages()
+                    _postUploadUiState.update { it.copy(selectedRunRecord = null) }
+                    onSuccess()
+                    fetchPosts(isInitial = true, forceRefresh = true)
+                } else if (result is AuthResult.Fail) {
+                    Log.e("UploadDebug", "업로드 API 서버 통신 실패: ${result.message}")
+                }
+
+            } catch (e: Exception) {
+                Log.e("UploadDebug", "업로드 로직 전체에서 예상치 못한 에러: ${e.message}")
+            } finally {
+                // 🌟 6. [핵심 수정] 성공하든 에러가 나든 무조건 로딩 바를 꺼줍니다.
+                // 그래야 화면이 멈춘 것처럼 보이지 않습니다.
+                _postUploadUiState.update { it.copy(isLoading = false) }
             }
-
-            // 2. 🔹 결정된 좌표로 주소(AddressModel) 변환
-            val address = targetLocation?.let {
-                locationRepository.getAddressFromCoords(it.latitude, it.longitude)
-            }
-
-            val result = dataSource.uploadPost(content, selectedLocationImageUris, selectedCommonImageUris,selectedRecord, address)
-
-            if (result is AuthResult.Success) {
-                clearSelectedImages() // 위에서 수정한 함수 호출
-                // 2. 게시글 작성 상태(업로드용 uiState) 초기화
-                _postUploadUiState.update { it.copy(selectedRunRecord = null) }
-                onSuccess()
-                fetchPosts(isInitial = true, forceRefresh = true)
-            }
-            // 3. 로딩 종료
-            _postUploadUiState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -610,41 +614,32 @@ class CommunityViewModel @Inject constructor(
     fun onFollowClick(postId: String, onCourseReady: (Post) -> Unit) {
         viewModelScope.launch {
             val result = dataSource.followRunning(postId)
-            if (result is AuthResult.Success) {
-                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
-                var targetPost: Post? = null // 🔹 저장을 위한 임시 변수
 
-                // 1. 리스트 상태 즉시 업데이트
+            if (result is AuthResult.Success) {
+                val myUid = sessionManager.getUid()
+                var targetPost: Post? = null
+
+                // 1. 화면의 하트/팔로우 숫자 즉시 업데이트
                 _communityUiState.update { state ->
                     val updatedPosts = state.posts.map { post ->
                         if (post.postId == postId) {
                             val alreadyFollowed = post.followedBy.contains(myUid)
-                            val newCount = if (alreadyFollowed) post.followCount else post.followCount + 1
-                            val newFollowedBy = if (alreadyFollowed) post.followedBy else post.followedBy + myUid
+                            // 팔로우 중이었으면 취소(-1), 아니었으면 추가(+1)
+                            val newCount = if (alreadyFollowed) post.followCount - 1 else post.followCount + 1
+                            val newFollowedBy = if (alreadyFollowed) post.followedBy - myUid else post.followedBy + myUid
 
                             val updatedPost = post.copy(followCount = newCount, followedBy = newFollowedBy)
-                            targetPost = updatedPost // 🔹 업데이트된 데이터를 밖으로 빼냄
+                            targetPost = updatedPost
                             updatedPost
                         } else post
                     }
                     state.copy(posts = updatedPosts)
                 }
 
-                // ── 🔹 2. [핵심] 따라뛰기 5회 달성 시 공식 코스로 등록 ── 📍
-                targetPost?.let { post ->
-                    // followCount가 딱 5가 된 순간 + 코스 데이터가 실재할 때 실행
-                    if (post.followCount == 5 && post.runRecord != null) {
-                        val saveResult = courseRepository.saveCourse(post.runRecord.course)
+                // 🚨 기존에 있던 'post.followCount == 5 이면 courseRepository.saveCourse()' 하던 로직은 삭제!
+                // (서버가 알아서 MySQL 공식 코스 DB에 예쁘게 넣어줍니다)
 
-                        if (saveResult is AuthResult.Success) {
-                            Log.d("CoursePromotion", "축하합니다! 인기가 많아 공식 코스로 등록되었습니다: ${post.postId}")
-                        } else {
-                            Log.e("CoursePromotion", "공식 코스 등록 실패")
-                        }
-                    }
-                }
-
-                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
+                // 2. 누르자마자 홈 화면으로 넘어가서 바로 뛸 수 있게 코스 데이터 전달 🏃‍♂️
                 targetPost?.let { onCourseReady(it) }
             }
         }
@@ -658,5 +653,7 @@ class CommunityViewModel @Inject constructor(
             )
         }
     }
+
+
 }
 

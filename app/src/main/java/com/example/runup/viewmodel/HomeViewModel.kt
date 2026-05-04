@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.BuildConfig
 import com.example.runup.data.local.UserPreferenceDataSource
+import com.example.runup.data.source.local.SessionManager
+import com.example.runup.data.source.remote.user.UserDataSource
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.CourseRecommendation
@@ -28,7 +30,7 @@ import com.example.runup.service.TMapRouteRequest
 import com.example.runup.service.TtsManager
 import com.example.runup.ui.navigation.HomeUi
 import com.naver.maps.geometry.LatLng
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -119,6 +121,8 @@ class HomeViewModel @Inject constructor(
     private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
 
     @ApplicationContext private val context: Context,
+    private val userDataSource: UserDataSource,
+    private val sessionManager: SessionManager
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
     val homeUiState: StateFlow<HomeUiState> = _homeUiState
@@ -232,39 +236,36 @@ class HomeViewModel @Inject constructor(
     fun closePaceDialog() {
         _homeUiState.update { it.copy(showPaceDialog = false) }
     }
-
-    fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
-        val distanceMeter:Int = distanceKm*100
-        _homeUiState.update {
-            it.copy(showDistanceDialog = false)
-        }
+    fun confirmDistance(distancePickerValue: Int) {
         viewModelScope.launch {
-            when (val result = goalsettingUseCase(distanceMeter, _homeUiState.value.goalPace)) {
-                is AuthResult.Success -> {
+            val targetDistance = distancePickerValue * 100
+            val result = userDataSource.updateUserGoal(targetDistance, _homeUiState.value.goalPace)
 
-                }
-                is AuthResult.Fail -> {
+            // 🌟 [수정] 결과에 상관없이 일단 다이얼로그 창은 닫습니다!
+            _homeUiState.update { it.copy(showDistanceDialog = false) }
 
-                }
-
+            if (result is AuthResult.Success) {
+                _homeUiState.update { it.copy(goalDistance = targetDistance) }
+            } else {
+                // 🌟 왜 실패했는지 안드로이드 스튜디오 Logcat에 에러를 띄웁니다.
+                Log.e("GoalUpdate", "거리 목표 업데이트 실패: ${(result as? AuthResult.Fail)?.message}")
             }
         }
     }
 
-    fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
-        val paceTotal:Int = paceMinute*60 + paceSecond
-        _homeUiState.update {
-            it.copy(showPaceDialog = false)
-        }
+    fun confirmPace(minute: Int, second: Int) {
         viewModelScope.launch {
-            when (val result = goalsettingUseCase(_homeUiState.value.goalDistance, paceTotal)) {
-                is AuthResult.Success -> {
+            val targetPaceSeconds = (minute * 60) + second
+            val result = userDataSource.updateUserGoal(_homeUiState.value.goalDistance, targetPaceSeconds)
 
-                }
-                is AuthResult.Fail -> {
+            // 🌟 [수정] 결과에 상관없이 일단 다이얼로그 창은 닫습니다!
+            _homeUiState.update { it.copy(showPaceDialog = false) }
 
-                }
-
+            if (result is AuthResult.Success) {
+                _homeUiState.update { it.copy(goalPace = targetPaceSeconds) }
+            } else {
+                // 🌟 왜 실패했는지 에러 로그 확인
+                Log.e("GoalUpdate", "페이스 목표 업데이트 실패: ${(result as? AuthResult.Fail)?.message}")
             }
         }
     }
@@ -435,21 +436,34 @@ class HomeViewModel @Inject constructor(
     }
 
     fun recordRunningCourse(scores: Scores) {
-        //_isTracking.value = false
         recordingJob?.cancel()
+
         viewModelScope.launch {
             val nodes = locationRepository.recordedNodes.value
             val distance = locationRepository.totalDistance.value.toInt()
-            val timeInMillis = locationRepository.totalTime.value * 1000L
 
+            // 💡 1000을 곱하지 않고 '초' 단위 그대로 사용합니다.
+            val timeInSeconds = locationRepository.totalTime.value
             if (nodes.isNotEmpty()) {
-                val result = recordRunningUseCase(nodes, distance, timeInMillis.toInt(), scores)
-                if (result is AuthResult.Success) {
-                    // 저장 성공 후 경로 데이터만 초기화
-                    locationRepository.clearData()
+                val result = recordRunningUseCase(nodes, distance, timeInSeconds, scores)
+                when (result) {
+                    is AuthResult.Success -> {
+                        Log.d("RunRecord", "✅ 서버에 기록 저장 성공!")
+                    }
+                    is AuthResult.Fail -> {
+                        Log.e("RunRecord", "❌ 서버 저장 실패: ${result.message}", result.throwable)
+                    }
                 }
+            } else {
+                Log.w("RunRecord", "⚠️ 저장 취소: 기록된 좌표(위치 이동)가 하나도 없습니다! (제자리 테스트)")
             }
+
+            // 🌟🌟🌟 [핵심 수정] 🌟🌟🌟
+            // 저장이 성공하든, 실패하든, 노드가 0개이든 상관없이
+            // 러닝이 끝났으므로 "무조건" 데이터를 초기화합니다!
+            locationRepository.clearData()
         }
+
         stopForegroundService()
         _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }

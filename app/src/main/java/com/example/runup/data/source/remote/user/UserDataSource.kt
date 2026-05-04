@@ -1,6 +1,7 @@
 package com.example.runup.data.source.remote.user
 
 import com.example.runup.domain.model.AuthResult
+import com.example.runup.domain.model.FriendSummary
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserActivityStats
@@ -76,6 +77,11 @@ interface UserDataSource {
     // 친구 삭제
     suspend fun deleteFriend(targetUid: String): AuthResult<Boolean>
 
+    // 🌟 [추가] 내 친구 목록 가져오기
+    suspend fun getMyFriends(): AuthResult<List<FriendSummary>>
+
+    // 🌟 [추가] 받은 요청 목록 가져오기
+    suspend fun getPendingRequests(): AuthResult<List<FriendSummary>>
 
 
 }

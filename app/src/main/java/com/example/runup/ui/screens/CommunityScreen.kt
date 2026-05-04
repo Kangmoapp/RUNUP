@@ -34,6 +34,7 @@ import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.CommunityViewModel
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.graphics.nativeCanvas
@@ -56,7 +57,7 @@ import com.example.runup.ui.components.getSelectedLocationText
 import com.example.runup.R
 import com.example.runup.domain.model.Path
 import com.example.runup.viewmodel.HomeViewModel
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -330,96 +331,131 @@ fun CommunityScreen(
                 .fillMaxSize()
                 .padding(padding)
         ){
-
-
-            // 메인 콘텐츠: 초기 로딩이 끝났을 때만 보여줌
-            if (!communityState.isInitialLoading) {
-                LazyColumn(
-                    state = scrollState,
-                    modifier = Modifier.fillMaxSize()
+// 🌟 1. 로딩 중일 때는 로딩 오버레이 표시
+            if (communityState.isInitialLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(BackGroudColor),
+                    contentAlignment = Alignment.Center
                 ) {
-                    items(communityState.posts, key = { it.postId }) { post ->
-                        val snapshot = mapSnapshots[post.postId]
-                        val authorBitmap = profilesCaches[post.authorProfileUrl]
-                        // ── 🔹 [핵심 최적화] 내 포스트에 필요한 비트맵들만 필터링 ── 📍
-                        val relevantLocationBitmaps = remember(post.postId, locationMarkerCaches) {
-                            post.locationImages
-                                .mapNotNull { img -> locationMarkerCaches[img.url]?.let { img.url to it } }
-                                .toMap()
-                        }
-
-                        val relevantCommonBitmaps = remember(post.postId, fullImageCaches) {
-                            post.commonImages
-                                .mapNotNull { img -> fullImageCaches[img.url]?.let { img.url to it } }
-                                .toMap()
-                        }
-
-                        PostItem(
-                            post = post,
-                            maxWidthPx = screenWidthPx,
-                            mapSnapShots = snapshot,     // ✅ 이 포스트용 지도 정보
-                            authorProfileBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
-                            locationBitmaps = relevantLocationBitmaps,    // ✅ 마커용 썸네일들
-                            commonImageBitmaps = relevantCommonBitmaps,  // ✅ 페이저용 원본들
-                            onLikeClick = { viewModel.onLikeClick(post.postId) },
-                            onFollowClick = {
-                                viewModel.onFollowClick(post.postId) { readyPost ->
-                                    // 1. runRecord가 null이면 바로 종료 (Safe Call + Return) 📍
-                                    val runRecord = readyPost.runRecord ?: return@onFollowClick
-
-                                    // 2. 이제 runRecord는 non-null 상태입니다. course를 안전하게 가져옵니다.
-                                    val course = runRecord.course
-                                    val locationNodes = course.locationPoints
-
-                                    // 3. 좌표가 하나도 없으면 진행할 의미가 없으니 체크!
-                                    if (locationNodes.isEmpty()) {
-                                        Log.e("RUNUP_DEBUG", "코스 좌표 데이터가 비어있습니다.")
-                                        return@onFollowClick
-                                    }
-
-                                    // 4. 좌표 변환 (Node -> GeoPoint)
-                                    val pathPoints = locationNodes.map { it.locationPoint }
-
-                                    // 5. 중심점 계산 (Bounding Box 중앙값)
-                                    // min/max 값이 0.0이면 첫 좌표를 중심으로 사용
-                                    val centerLat = if (course.minLat != 0.0) (course.minLat + course.maxLat) / 2.0 else pathPoints.first().latitude
-                                    val centerLng = if (course.minLng != 0.0) (course.minLng + course.maxLng) / 2.0 else pathPoints.first().longitude
-
-                                    // 6. Path 객체 생성
-                                    val extractedPath = Path(
-                                        distance = course.distance,
-                                        points = pathPoints,
-                                        centerPoint = GeoPoint(centerLat, centerLng)
-                                    )
-
-                                    // 7. HomeViewModel로 전달 및 화면 이동
-                                    mainViewModel.setCourseFromCommunity(
-                                        path = extractedPath,
-                                        authorName = post.authorName
-                                    )
-
-                                    // communityscreen 의 onfollow click 메인(홈) 화면으로 복귀
-                                    onFollowClick()
-                                }
-                            },
-                            onCommentClick = {
-                                selectedPostIdForComment = post.postId
-                                showCommentSheet = true
-                            },
-                            onDeletePost = { viewModel.deletePost(post) },
-                            onImageClick = { url -> enlargedImageUri = url },
-                            onSaveMapSnapshot = { viewModel.saveMapSnapshot(post.postId, it) },
-                            onProfileClick = { selectedProfileId = post.authorId },
-                        )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color.White)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("다른 러너들과 연결 중입니다...", color = Color.White)
                     }
+                }
+            } else {
+                // 🌟 2. 로딩이 끝났는데 데이터가 비어있다면? -> Empty View!
+                if (communityState.posts.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(androidx.compose.foundation.rememberScrollState()), // 당겨서 새로고침 가능
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "🏃‍♂️💨", fontSize = 50.sp)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("아직 러닝 기록이 없어요!", color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("이 지역의 첫 번째 러너가 되어 멋진 코스를 남겨보세요.", color = Color.Gray, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        state = scrollState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(communityState.posts, key = { it.postId }) { post ->
+                            val snapshot = mapSnapshots[post.postId]
+                            val authorBitmap = profilesCaches[post.authorProfileUrl]
+                            // ── 🔹 [핵심 최적화] 내 포스트에 필요한 비트맵들만 필터링 ── 📍
+                            val relevantLocationBitmaps =
+                                remember(post.postId, locationMarkerCaches) {
+                                    post.locationImages
+                                        .mapNotNull { img -> locationMarkerCaches[img.url]?.let { img.url to it } }
+                                        .toMap()
+                                }
 
-                    // 추가 로딩 바
-                    if (communityState.isLoading) {
-                        item {
-                            Box(modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(32.dp))
+                            val relevantCommonBitmaps = remember(post.postId, fullImageCaches) {
+                                post.commonImages
+                                    .mapNotNull { img -> fullImageCaches[img.url]?.let { img.url to it } }
+                                    .toMap()
+                            }
+
+                            PostItem(
+                                post = post,
+                                maxWidthPx = screenWidthPx,
+                                mapSnapShots = snapshot,     // ✅ 이 포스트용 지도 정보
+                                authorProfileBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
+                                locationBitmaps = relevantLocationBitmaps,    // ✅ 마커용 썸네일들
+                                commonImageBitmaps = relevantCommonBitmaps,  // ✅ 페이저용 원본들
+                                onLikeClick = { viewModel.onLikeClick(post.postId) },
+                                onFollowClick = {
+                                    viewModel.onFollowClick(post.postId) { readyPost ->
+                                        // 1. runRecord가 null이면 바로 종료 (Safe Call + Return) 📍
+                                        val runRecord = readyPost.runRecord ?: return@onFollowClick
+
+                                        // 2. 이제 runRecord는 non-null 상태입니다. course를 안전하게 가져옵니다.
+                                        val course = runRecord.course
+                                        val locationNodes = course.locationPoints
+
+                                        // 3. 좌표가 하나도 없으면 진행할 의미가 없으니 체크!
+                                        if (locationNodes.isEmpty()) {
+                                            Log.e("RUNUP_DEBUG", "코스 좌표 데이터가 비어있습니다.")
+                                            return@onFollowClick
+                                        }
+
+                                        // 4. 좌표 변환 (Node -> GeoPoint)
+                                        val pathPoints = locationNodes.map { it.locationPoint }
+
+                                        // 5. 중심점 계산 (Bounding Box 중앙값)
+                                        // min/max 값이 0.0이면 첫 좌표를 중심으로 사용
+                                        val centerLat =
+                                            if (course.minLat != 0.0) (course.minLat + course.maxLat) / 2.0 else pathPoints.first().latitude
+                                        val centerLng =
+                                            if (course.minLng != 0.0) (course.minLng + course.maxLng) / 2.0 else pathPoints.first().longitude
+
+                                        // 6. Path 객체 생성
+                                        val extractedPath = Path(
+                                            distance = course.distance,
+                                            points = pathPoints,
+                                            centerPoint = GeoPoint(centerLat, centerLng)
+                                        )
+
+                                        // 7. HomeViewModel로 전달 및 화면 이동
+                                        mainViewModel.setCourseFromCommunity(
+                                            path = extractedPath,
+                                            authorName = post.authorName
+                                        )
+
+                                        // communityscreen 의 onfollow click 메인(홈) 화면으로 복귀
+                                        onFollowClick()
+                                    }
+                                },
+                                onCommentClick = {
+                                    selectedPostIdForComment = post.postId
+                                    showCommentSheet = true
+                                },
+                                onDeletePost = { viewModel.deletePost(post) },
+                                onImageClick = { url -> enlargedImageUri = url },
+                                onSaveMapSnapshot = { viewModel.saveMapSnapshot(post.postId, it) },
+                                onProfileClick = { selectedProfileId = post.authorId },
+                            )
+                        }
+
+                        // 추가 로딩 바
+                        if (communityState.isLoading) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp), contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
                             }
                         }
                     }

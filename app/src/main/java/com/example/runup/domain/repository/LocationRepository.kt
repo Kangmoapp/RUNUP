@@ -3,7 +3,7 @@ package com.example.runup.domain.repository
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
 import com.example.runup.domain.model.Node
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import kotlinx.coroutines.flow.StateFlow
 
 interface LocationRepository {

@@ -5,7 +5,7 @@ import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.CourseRecommendation
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import okhttp3.Address
 import javax.inject.Inject
 

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.example.runup.data.source.local.SessionManager
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
@@ -46,7 +47,8 @@ data class UserTotalStats(
     val totalComments: Int = 0,
     val totalFollows: Int = 0,
 )
-
+private var lastPostId: String? = null // 🔹 DocumentSnapshot 대신 ID
+private var isLastPage = false
 @HiltViewModel
 class UserPostViewModel @Inject constructor(
     private val dataSource: CommunityDataSourceImpl,
@@ -55,10 +57,11 @@ class UserPostViewModel @Inject constructor(
     private val courseRepository: CourseRepository,
     private val refreshManager: CommunityRefreshManager,
     private val imagePreloader: ImagePreloader,
+    private val sessionManager: SessionManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
-    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
 
+    val myUid = sessionManager.getUid()
     private val _communityUiState = MutableStateFlow(CommunityUiState())
     val communityUiState = _communityUiState.asStateFlow()
 
@@ -116,29 +119,21 @@ class UserPostViewModel @Inject constructor(
     private var currentLoadedUid: String? = null // 현재 로드된 데이터의 주인 🔹
 
     fun initUserPage(targetUid: String) {
-        // 1. 페이징 관련 내부 변수 초기화 (매우 중요!)
-        lastVisibleSnapshot = null
+        lastPostId = null // 🔹 초기화
         isLastPage = false
 
-        // 2. UI 상태 초기화 (리스트 비우고 로딩 띄우기)
         _communityUiState.update { it.copy(
             posts = emptyList(),
-            isInitialLoading = true, // 새로운 데이터를 가져올 때까지 로딩 화면 강제 🔹
+            isInitialLoading = true,
             isRefreshing = false,
             isLastPage = false
         ) }
-
-        // 3. 탭 상태도 기본값으로 (필요시)
         _currentTab.value = "POSTS"
-
-        // 4. 새로운 데이터 로드 시작
         fetchUserPosts(targetUid, isInitial = true)
         loadUserStats(targetUid)
     }
 
-    // 🔹 이 화면의 핵심: 누구의 글을 보여줄 것인가?
     fun fetchUserPosts(targetUid: String, isInitial: Boolean = false, forceRefresh: Boolean = false) {
-        // 최초 진입 시 현재 타겟 아이디 저장
         if (targetUid.isNotEmpty()) { currentTargetUid = targetUid }
 
         if (currentLoadedUid != currentTargetUid) {
@@ -151,32 +146,32 @@ class UserPostViewModel @Inject constructor(
         val determinedScope = if (currentTargetUid == myUid) ViewScope.MINE else ViewScope.FRIENDS
 
         if (isInitial) {
-            lastVisibleSnapshot = null
+            lastPostId = null // 🔹 초기화
             isLastPage = false
             _communityUiState.update { it.copy(
                 posts = emptyList(),
                 isInitialLoading = !forceRefresh,
                 isRefreshing = forceRefresh,
                 filterState = it.filterState.copy(scope = determinedScope),
-                isLastPage = false // 초기화
+                isLastPage = false
             ) }
         }
 
         viewModelScope.launch {
             _communityUiState.update { it.copy(isLoading = true) }
 
+            // 🔹 lastPostId 전달
             val result = dataSource.getTargetUserPosts(
                 targetUid = currentTargetUid,
                 tabType = _currentTab.value,
                 filter = _communityUiState.value.filterState,
-                lastVisibleSnapshot = lastVisibleSnapshot,
+                lastPostId = lastPostId,
                 limit = 4L
             )
-
             if (result is AuthResult.Success) {
-                val (newPosts, lastSnapshot) = result.data
+                val (newPosts, lastId) = result.data // 🔹 Pair 해체
                 if (newPosts.size < 4) isLastPage = true
-                lastVisibleSnapshot = lastSnapshot
+                lastPostId = lastId // 🔹 커서 업데이트
 
                 _communityUiState.update { state ->
                     state.copy(
@@ -185,8 +180,17 @@ class UserPostViewModel @Inject constructor(
                     )
                 }
 
+                // 🚨 제가 주석 처리해서 날아가버렸던 코드를 다시 부활시킵니다!
+                // 이미지를 미리 로딩하고 나면, 빙글빙글 도는 로딩 바를 꺼줍니다.
                 preloadBitmaps(newPosts) {
-                    _communityUiState.update { it.copy(isInitialLoading = false, isRefreshing = false) }
+                    if (isInitial) {
+                        _communityUiState.update { it.copy(isInitialLoading = false) }
+                    }
+                }
+            } else {
+                // 🚨 데이터를 못 가져왔을 때도 무조건 로딩 바는 꺼야 화면이 안 멈춥니다.
+                if (isInitial) {
+                    _communityUiState.update { it.copy(isInitialLoading = false) }
                 }
             }
             _communityUiState.update { it.copy(isLoading = false, isRefreshing = false) }
@@ -321,9 +325,9 @@ class UserPostViewModel @Inject constructor(
             if (result is AuthResult.Success) {
                 val isLiked = result.data ?: false
                 _communityUiState.update { state ->
-                    val updatedPosts = if (currentTab.value == "HEARTS" && !isLiked && myUid == currentTargetUid) {
+                    val updatedPosts = if (currentTab.value == "LIKES" && !isLiked && myUid == currentTargetUid) {
                         state.posts.filter { it.postId != postId }
-                    } else {
+                    } else{
                         state.posts.map { post ->
                             if (post.postId == postId) {
                                 val newLikes = if (isLiked) post.likes + 1 else (post.likes - 1).coerceAtLeast(0)

@@ -6,7 +6,7 @@ import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import javax.inject.Inject
 
 class CourseRepositoryImpl @Inject constructor (

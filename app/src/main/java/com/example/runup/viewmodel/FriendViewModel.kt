@@ -16,27 +16,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.collections.map
-
 
 data class FriendUiState(
     val isLoading: Boolean = false,
-
-    // 친구 목록 관련
     val friends: List<FriendSummary> = emptyList(),
-
-    // 검색 관련
     val searchResult: FriendSummary? = null,
     val isSearching: Boolean = false,
     val searchErrorMessage: String? = null,
-
-    // 친구 관리(신청) 관련
     val sentRequests: List<FriendSummary> = emptyList(),
     val receivedRequests: List<FriendSummary> = emptyList(),
-
-    // UI 제어 플래그
     val showManagementDialog: Boolean = false,
-    val deletingFriendId: String? = null // 현재 삭제 버튼이 활성화된 친구의 ID
+    val deletingFriendId: String? = null
 )
 
 @HiltViewModel
@@ -55,11 +45,9 @@ class FriendViewModel @Inject constructor(
     val profileBitmaps = userStateManager.profileBitmaps
 
     init {
-        // 화면 진입 시 즉시 데이터 로드
         refreshAllFriendData()
     }
 
-    // ── 🔹 탭 전환 및 창 닫기 시 일시적 상태 초기화 ──
     fun resetTransientStates() {
         _uiState.update { it.copy(
             searchResult = null,
@@ -69,38 +57,25 @@ class FriendViewModel @Inject constructor(
         ) }
     }
 
-    // ── [핵심 로직 1] 모든 친구 데이터 동기화 ──
+    // ── [1] 모든 친구 데이터 동기화 (Spring API 사용) ──
     fun refreshAllFriendData() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+
+            // 🌟 Firebase가 아니라 Spring API에서 목록을 한 방에 가져옵니다.
+            val friendsRes = userRepository.getMyFriends()
+            val pendingRes = userRepository.getPendingRequests()
+
             _uiState.update { it.copy(
-                isLoading = true
+                friends = if (friendsRes is AuthResult.Success) friendsRes.data else emptyList(),
+                receivedRequests = if (pendingRes is AuthResult.Success) pendingRes.data else emptyList(),
+                sentRequests = emptyList(), // 서버 구조상 보낸 요청은 생략
+                isLoading = false
             ) }
-
-            // 1. 내 최신 정보 가져오기 (UID 리스트를 얻기 위함)
-            val myDataResult = userRepository.getMyUserData()
-
-            if (myDataResult is AuthResult.Success) {
-                val myData = myDataResult.data
-
-                // 2. 친구, 보낸 신청, 받은 신청 요약 정보를 병렬로 가져오기
-                // (성능을 위해 async-awaitAll 사용 권장하지만, 이해를 돕기 위해 순차로 작성합니다)
-                val friends = userRepository.getUsersSummary(myData.friends).getOrDefault(emptyList()).map { it.toSummary() }
-                val sent = userRepository.getUsersSummary(myData.sentRequests).getOrDefault(emptyList()).map { it.toSummary() }
-                val received = userRepository.getUsersSummary(myData.receivedRequests).getOrDefault(emptyList()).map { it.toSummary() }
-
-                _uiState.update { it.copy(
-                    friends = friends,
-                    sentRequests = sent,
-                    receivedRequests = received,
-                    isLoading = false
-                ) }
-            } else {
-                _uiState.update { it.copy(isLoading = false) }
-            }
         }
     }
 
-    // ── [핵심 로직 2] ID로 친구 검색 ──
+    // ── [2] 이메일로 친구 검색 ──
     fun searchUser(searchId: String) {
         if (searchId.isBlank()) return
 
@@ -114,17 +89,20 @@ class FriendViewModel @Inject constructor(
                     _uiState.update { it.copy(searchResult = summary, isSearching = false) }
                 }
                 is AuthResult.Fail -> {
-                    _uiState.update { it.copy(searchErrorMessage = "해당 ID의 사용자가 없습니다.", isSearching = false) }
+                    _uiState.update { it.copy(searchErrorMessage = "해당 이메일의 사용자가 없습니다.", isSearching = false) }
                 }
             }
         }
     }
 
-    // ── [핵심 로직 3] 친구 액션 처리 (신청/수락/거절) ──
+    // ── [3] 친구 액션 처리 (신청/수락/거절/삭제) ──
     fun sendRequest(targetUid: String) {
+        // 🌟 UID가 아니라 이메일로 보내야 합니다!
+        val targetEmail = _uiState.value.searchResult?.userEmail ?: return
         viewModelScope.launch {
-            if (userRepository.sendFriendRequest(targetUid) is AuthResult.Success) {
-                refreshAllFriendData() // 성공 시 목록 갱신
+            if (userRepository.sendFriendRequest(targetEmail) is AuthResult.Success) {
+                refreshAllFriendData()
+                resetTransientStates() // 신청 성공 시 팝업 닫기
             }
         }
     }
@@ -145,28 +123,27 @@ class FriendViewModel @Inject constructor(
         }
     }
 
+    fun deleteFriend(targetUid: String) {
+        viewModelScope.launch {
+            if (userRepository.deleteFriend(targetUid) is AuthResult.Success) {
+                setDeletingFriend(null)
+                refreshAllFriendData()
+            }
+        }
+    }
+
     // ── UI 제어 함수 ──
     fun toggleManagementDialog(show: Boolean) {
         _uiState.update { it.copy(showManagementDialog = show) }
+        if (show) refreshAllFriendData() // 열 때마다 최신화
     }
 
     fun setDeletingFriend(uid: String?) {
         _uiState.update { it.copy(deletingFriendId = uid) }
     }
 
-    fun deleteFriend(targetUid: String) {
-        viewModelScope.launch {
-            val result = userRepository.deleteFriend(targetUid)
-            if (result is AuthResult.Success) {
-                setDeletingFriend(null) // 삭제 버튼 숨기기
-                refreshAllFriendData()   // 목록 갱신
-            }
-        }
-    }
-
     fun fetchTargetUserProfile(targetUid: String) {
         viewModelScope.launch {
-            // 이미 구현된 getUsersSummary를 활용 (리스트에 UID 하나만 담아서 보냄)
             val result = userRepository.getUsersSummary(listOf(targetUid))
             if (result is AuthResult.Success) {
                 _targetUserProfile.value = result.data.firstOrNull()
@@ -174,13 +151,7 @@ class FriendViewModel @Inject constructor(
         }
     }
 
-    // 팝업이 닫힐 때 데이터를 비워주기 위한 함수
     fun clearTargetUserProfile() {
         _targetUserProfile.value = null
     }
-}
-
-// AuthResult 확장 함수 (편의용)
-fun <T> AuthResult<T>.getOrDefault(default: T): T {
-    return if (this is AuthResult.Success) this.data else default
 }

@@ -1,6 +1,9 @@
 package com.example.runup.di
 
 import com.example.runup.BuildConfig
+import com.example.runup.data.source.remote.community.CommunityApiService
+import com.example.runup.data.source.remote.course.CourseApiService
+import com.example.runup.data.source.remote.user.UserApiService
 import com.example.runup.service.GovLocationApiService
 import com.example.runup.service.NaverMapApiService
 import com.example.runup.service.TMapApiService
@@ -17,7 +20,8 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-
+    // 서버 기본 URL (본인의 Spring Boot 서버 주소로 변경하세요)
+    private const val BASE_URL = "http://192.168.4.6:8080/"
     @Provides
     @Singleton
     fun provideOkHttpClient(): OkHttpClient {
@@ -80,4 +84,33 @@ object NetworkModule {
         return retrofit.create(GovLocationApiService::class.java)
     }
 
+    @Provides
+    @Singleton
+    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserApiService(retrofit: Retrofit): UserApiService {
+        return retrofit.create(UserApiService::class.java)
+    }
+
+    // 💡 이 메서드를 추가하여 CourseApiService를 Hilt가 알게 합니다.
+    @Provides
+    @Singleton
+    fun provideCourseApiService(retrofit: Retrofit): CourseApiService {
+        return retrofit.create(CourseApiService::class.java)
+    }
+
+
+    @Provides
+    @Singleton
+    fun provideCommunityApiService(retrofit: Retrofit): CommunityApiService {
+        return retrofit.create(CommunityApiService::class.java)
+    }
 }

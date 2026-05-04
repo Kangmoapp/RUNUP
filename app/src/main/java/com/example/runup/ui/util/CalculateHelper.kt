@@ -4,7 +4,7 @@ import android.util.Log
 import androidx.compose.ui.geometry.Offset
 import com.example.runup.domain.model.MarkerSlot
 import com.example.runup.domain.model.PostImage
-import com.google.firebase.firestore.GeoPoint
+import com.example.runup.domain.model.GeoPoint
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.ln
