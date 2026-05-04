@@ -87,6 +87,7 @@ import kotlin.collections.component2
 @Composable
 fun PostItem(
     post: Post,
+    myUid: String?,
     maxWidthPx: Float,
     mapSnapShots : MapSnapshot?,         // 👈 추가
     authorProfileBitmap: Bitmap?,                // 👈 추가
@@ -104,7 +105,6 @@ fun PostItem(
     var showMenu by remember { mutableStateOf(false) }
     var showFollowDialog by remember { mutableStateOf(false) } //따라 뛰기 다이얼로그
 
-    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
     val isMyPost = post.authorId == myUid
 
     // 페이저 상태 관리 (총 페이지 수 = 지도(1) + 일반 이미지 개수)

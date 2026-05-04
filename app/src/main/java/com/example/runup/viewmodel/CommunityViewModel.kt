@@ -73,6 +73,7 @@ class CommunityViewModel @Inject constructor(
     private val sessionManager: SessionManager // 🔹 새로 추가!
 ) : ViewModel() {
 
+    val myUid = sessionManager.getUid()
     // 커뮤니티 스크린 상태 관련
     private val _communityUiState = MutableStateFlow(CommunityUiState())
     val communityUiState: StateFlow<CommunityUiState> = _communityUiState.asStateFlow()

@@ -2,6 +2,7 @@ package com.example.runup.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.runup.data.source.local.SessionManager
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.FriendSummary
 import com.example.runup.domain.model.UserData
@@ -33,9 +34,10 @@ data class FriendUiState(
 class FriendViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val userStateManager: UserStateManager,
-    private val imagePreloader: ImagePreloader
+    private val imagePreloader: ImagePreloader,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
-
+    val myUid: String = sessionManager.getUid()
     private val _uiState = MutableStateFlow(FriendUiState())
     val uiState: StateFlow<FriendUiState> = _uiState.asStateFlow()
 

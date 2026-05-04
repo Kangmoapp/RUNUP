@@ -77,7 +77,7 @@ fun FriendListDialog(
     viewModel: FriendViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val myUid = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid }
+    val myUid = viewModel.myUid // (FriendViewModel에 myUid 변수가 있다는 가정)
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // 선택된 친구 id

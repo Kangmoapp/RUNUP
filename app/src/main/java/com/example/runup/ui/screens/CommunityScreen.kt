@@ -69,6 +69,7 @@ fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel(),
     mainViewModel: HomeViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
 ) {
+    val myUid = viewModel.myUid
     val communityState by viewModel.communityUiState.collectAsState() // 커뮤니티 Ui 상태
     val addressUiState by viewModel.addressUiState.collectAsState() // 현재 주소 상태
 
@@ -384,6 +385,7 @@ fun CommunityScreen(
 
                             PostItem(
                                 post = post,
+                                myUid = myUid,
                                 maxWidthPx = screenWidthPx,
                                 mapSnapShots = snapshot,     // ✅ 이 포스트용 지도 정보
                                 authorProfileBitmap = authorBitmap,   // ✅ 이 작성자 프로필 사진
@@ -500,6 +502,7 @@ fun CommunityScreen(
         ) {
             CommentBottomSheet(
                 postId = selectedPostIdForComment ?: "",
+                myUid = myUid,
                 comments = communityState.comments, // 🔹 CommunityViewModel의 데이터
                 onAddComment = { content ->
                     viewModel.addComment(selectedPostIdForComment!!, content)

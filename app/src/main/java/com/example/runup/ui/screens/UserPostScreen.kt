@@ -581,6 +581,7 @@ fun UserPostScreen(
                 ) {
                     PostItem(
                         post = livePopupPost,
+                        myUid = myUid,
                         maxWidthPx = popupWidthPx,
                         mapSnapShots = mapSnapshotsCache[livePopupPost.postId],
                         authorProfileBitmap = profileCache[livePopupPost.authorProfileUrl],
@@ -665,6 +666,7 @@ fun UserPostScreen(
         ) {
             CommentBottomSheet(
                 postId = livePopupPost.postId,
+                myUid = myUid,
                 comments = uiState.comments, // 🔹 UserPostViewModel의 댓글 리스트
                 onAddComment = { content ->
                     viewModel.addComment(livePopupPost.postId, content)

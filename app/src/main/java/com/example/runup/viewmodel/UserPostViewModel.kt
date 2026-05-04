@@ -26,7 +26,6 @@ import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.repository.UserRepository
 import com.example.runup.ui.util.CommunityRefreshManager
 import com.example.runup.ui.util.ImagePreloader
-import com.google.firebase.firestore.DocumentSnapshot
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -47,8 +46,6 @@ data class UserTotalStats(
     val totalComments: Int = 0,
     val totalFollows: Int = 0,
 )
-private var lastPostId: String? = null // 🔹 DocumentSnapshot 대신 ID
-private var isLastPage = false
 @HiltViewModel
 class UserPostViewModel @Inject constructor(
     private val dataSource: CommunityDataSourceImpl,
@@ -61,6 +58,7 @@ class UserPostViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
+    private var lastPostId: String? = null // 🔹 DocumentSnapshot 대신 ID
     val myUid = sessionManager.getUid()
     private val _communityUiState = MutableStateFlow(CommunityUiState())
     val communityUiState = _communityUiState.asStateFlow()
@@ -90,7 +88,6 @@ class UserPostViewModel @Inject constructor(
     private val _fullImageCache = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
     val fullImageCache = _fullImageCache.asStateFlow()
 
-    private var lastVisibleSnapshot: DocumentSnapshot? = null
     private var isLastPage = false
 
     val addressUiState: StateFlow<AddressModel?> = locationRepository.addressState
@@ -431,7 +428,7 @@ class UserPostViewModel @Inject constructor(
         viewModelScope.launch {
             val result = dataSource.followRunning(postId)
             if (result is AuthResult.Success) {
-                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                val myUid = sessionManager.getUid()
                 var updatedPost: Post? = null
 
                 _communityUiState.update { state ->

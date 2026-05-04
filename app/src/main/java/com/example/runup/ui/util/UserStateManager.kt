@@ -3,7 +3,6 @@ package com.example.runup.ui.util
 import android.graphics.Bitmap
 import com.example.runup.domain.model.Post
 import com.example.runup.domain.model.UserData
-import com.google.firebase.firestore.DocumentSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update

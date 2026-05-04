@@ -54,6 +54,7 @@ import com.example.runup.domain.model.Comment
 @Composable
 fun CommentBottomSheet(
     postId: String,
+    myUid: String?,
     comments: List<Comment>, // 댓글 리스트를 직접 받음
     onAddComment: (String) -> Unit,             // 댓글 달기 로직
     onDeleteComment: (String, String) -> Unit,  // 댓글 삭제 로직
@@ -117,6 +118,7 @@ fun CommentBottomSheet(
                     items(comments) { comment ->
                         CommentItem(
                             comment = comment,
+                            myUid = myUid,
                             bitmapCache = bitmapCache,
                             onDelete = { onDeleteComment(postId, comment.commentId) },
                             onProfileClick = { userId -> selectedProfileId = userId }
@@ -197,6 +199,7 @@ fun CommentBottomSheet(
 @Composable
 fun CommentItem(
     comment: Comment, // 윤석님의 댓글 모델
+    myUid: String?,
     bitmapCache: Map<String, Bitmap>,
     onDelete: () -> Unit,
     onProfileClick: (String) -> Unit // 🔹 콜백 파라미터 추가
@@ -205,7 +208,6 @@ fun CommentItem(
     val authorProfileBitmap = bitmapCache[comment.authorProfileUrlMini]
 
     var showDeleteDialog by remember { mutableStateOf(false) }
-    val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
     // 2. 내가 쓴 댓글인지 확인 🔹
     val isMyComment = remember(comment.authorId, myUid) {
         myUid != null && comment.authorId == myUid

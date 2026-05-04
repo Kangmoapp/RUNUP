@@ -131,7 +131,7 @@ fun ProfileMiniPopup(
                                 Spacer(Modifier.width(16.dp))
 
                                 // 1. 현재 로그인한 내 UID 가져오기
-                                val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                                val myUid = viewModel.myUid
                                 val isAlreadyFriend = uiState.friends.any { it.userId == userId }
                                 val isAlreadySent = uiState.sentRequests.any { it.userId == userId }
                                 val isMe = userId == myUid
