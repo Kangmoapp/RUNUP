@@ -19,8 +19,6 @@ interface UserApiService {
     @POST("api/v1/user/login")
     suspend fun loginUser(@Body request: Map<String, String>): Response<Map<String, String>> // 🔹 변경
 
-    @DELETE("api/v1/user/account")
-    suspend fun deleteUserAccount(@Query("password") password: String): Response<Boolean>
 
     @PATCH("api/v1/user/name")
     suspend fun updateUserName(@Query("name") name: String): Response<Boolean>
@@ -36,8 +34,10 @@ interface UserApiService {
         @Query("time") time: Int           // 초(s) 단위
     ): Response<Boolean>
 
+    // [수정 전] suspend fun getUserGoal(): Response<Map<String, Int>>
+    // 🌟 [수정 후] 서버에 내가 누군지 UID를 꼭 알려줘야 합니다!
     @GET("api/v1/user/goal")
-    suspend fun getUserGoal(): Response<Map<String, Int>>
+    suspend fun getUserGoal(@Header("X-USER-UID") uid: String): Response<Map<String, Int>>
 
 
     @DELETE("api/v1/runs/{courseId}")
@@ -85,7 +85,7 @@ interface UserApiService {
     suspend fun signInWithGoogle(@Body request: Map<String, String>): Response<Map<String, String>> // 🔹 변경
 
 
-    @POST("api/runs")
+    @POST("api/v1/runs") // 🌟 v1을 추가하여 스프링과 주소를 맞춥니다.
     suspend fun saveRunRecord(
         @Header("X-USER-UID") uid: String,
         @Body record: RunRecord
@@ -119,4 +119,11 @@ interface UserApiService {
 
     @DELETE("api/v1/user/friends/{targetUid}")
     suspend fun deleteFriend(@Header("X-USER-UID") uid: String, @Path("targetUid") targetUid: String): retrofit2.Response<Boolean>
+
+
+    // [수정] 비밀번호 대신 토큰/UID를 보내어 안전하게 삭제
+    @DELETE("api/v1/user/account")
+    suspend fun deleteUserAccount(
+        @Header("X-USER-UID") uid: String
+    ): Response<Boolean>
 }

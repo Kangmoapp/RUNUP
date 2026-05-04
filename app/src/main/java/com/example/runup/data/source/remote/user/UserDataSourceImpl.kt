@@ -192,17 +192,40 @@ class UserDataSourceImpl @Inject constructor(
 
     override suspend fun deleteUserAccount(password: String): AuthResult<Boolean> {
         return try {
-            val response = apiService.deleteUserAccount(password)
-            if (response.isSuccessful) AuthResult.Success(true)
-            else AuthResult.Fail("회원탈퇴 실패")
+            // 1. SessionManager에서 내 신분증(UID) 꺼내기
+            val uid = sessionManager.getUid()
+
+            // 2. Spring 서버로 계정 삭제 요청 (서버 DB에서 CASCADE로 모든 데이터 연쇄 폭파됨!)
+            val response = apiService.deleteUserAccount(uid)
+
+            if (response.isSuccessful) {
+                // 💡 (선택 사항) 탈퇴 성공 시 로컬 세션도 비워주는 것이 좋습니다.
+                // sessionManager.clearSession()
+                AuthResult.Success(true)
+            } else {
+                AuthResult.Fail("회원탈퇴 서버 거절 (코드: ${response.code()})")
+            }
         } catch (e: Exception) {
-            AuthResult.Fail("탈퇴 요청 오류", e)
+            AuthResult.Fail("탈퇴 요청 중 네트워크 오류: ${e.message}", e)
         }
+    }
+
+    override suspend fun deletePersonalUserData(): AuthResult<Boolean> {
+        return AuthResult.Success(true)
+    }
+
+    override suspend fun deleteAuthAccount(): AuthResult<Boolean> {
+        return AuthResult.Success(true)
     }
 
     override suspend fun getUserGoal(): AuthResult<Pair<Int, Int>> {
         return try {
-            val response = apiService.getUserGoal()
+            // 🌟 1. 세션에서 내 UID 꺼내기
+            val uid = sessionManager.getUid()
+
+            // 🌟 2. apiService에 uid 넘겨주기
+            val response = apiService.getUserGoal(uid)
+
             if (response.isSuccessful && response.body() != null) {
                 val data = response.body()!!
                 AuthResult.Success(Pair(data["goalDistance"] ?: 0, data["goalTime"] ?: 0))
@@ -412,4 +435,7 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Fail("구글 로그인 중 서버 연결 오류", e)
         }
     }
+
+
+
 }

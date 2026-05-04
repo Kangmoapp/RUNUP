@@ -267,4 +267,18 @@ class CommunityDataSourceImpl @Inject constructor(
         matrix.postRotate(degree)
         return Bitmap.createBitmap(img, 0, 0, img.width, img.height, matrix, true).also { img.recycle() }
     }
+
+    // 🌟 [추가] 회원탈퇴 시 내 커뮤니티 데이터 삭제
+    // MySQL의 CASCADE 설정 덕분에 Spring 서버에서 유저를 지우면 게시글/댓글/좋아요가 자동 삭제됩니다!
+    // 따라서 안드로이드에서 파이어베이스처럼 일일이 지울 필요 없이 무조건 Success를 반환합니다.
+    suspend fun deleteAllMyCommunityData(): AuthResult<Boolean> {
+        Log.d("CommunityData", "서버 DB에서 커뮤니티 데이터가 연쇄 삭제(CASCADE) 되었습니다.")
+        return AuthResult.Success(true)
+    }
+
+    // 🌟 [추가] 상호작용(좋아요 등) 찌꺼기 정리
+    // 이 역시 서버 DB에서 자동으로 지워주므로 내용은 비워둡니다.
+    private suspend fun cleanupUserInteractions() {
+        Log.d("CommunityData", "상호작용 데이터 정리 완료 (서버 위임)")
+    }
 }

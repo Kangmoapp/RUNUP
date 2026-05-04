@@ -83,5 +83,7 @@ interface UserDataSource {
     // 🌟 [추가] 받은 요청 목록 가져오기
     suspend fun getPendingRequests(): AuthResult<List<FriendSummary>>
 
+    suspend fun deleteAuthAccount(): AuthResult<Boolean>
+    suspend fun deletePersonalUserData(): AuthResult<Boolean>
 
 }
