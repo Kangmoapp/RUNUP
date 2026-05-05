@@ -106,7 +106,7 @@ import com.example.runup.viewmodel.CourseRecommendationUiState
 @Composable
 private fun Preview_HomeContent() {
     HomeContent(
-        homeUiState = HomeUiState(homeUi = HomeUi.HOME, selectedTab = HomeTab.RUNNING),
+        homeUiState = HomeUiState(homeUi = HomeUi.HOME, selectedTab = HomeTab.RECOMMEND),
         runningUiState = RunningUiState(),
         guideUiState = GuideUiState(),
         aiPostureUiState = AiPostureUiState(),
@@ -149,7 +149,7 @@ private fun Preview_HomeContent() {
         onConfirmMaxDistance = {},
         onCloseMaxDistanceDialog = {},
 
-        helpStep = HelpStep.NONE
+        helpStep = HelpStep.RECOMMEND_3
     )
 }
 
@@ -513,7 +513,7 @@ private fun HomeContent(
                     .align(Alignment.BottomEnd)
                     .fillMaxWidth()
                     // 바텀시트 높이 + 네비바(80dp) + 기본 여백(16dp)
-                    .padding(bottom = with(density) { animatedSheetHeightDp } + 80.dp + 16.dp,
+                    .padding(bottom = with(density) { animatedSheetHeightDp } + with(density) { (navBarHeightPx).toDp() } + 16.dp,
                         start = 16.dp,
                         end = 16.dp),
                 verticalAlignment = Alignment.Bottom, // 메시지와 버튼의 바닥 높이를 맞춤
@@ -973,9 +973,6 @@ private fun HomeContent(
                                                     color = PointColor,
                                                     contentColor = Color.Black,
                                                     isLoading = courseRecommendationUiState.isLoading,
-                                                    modifier = Modifier
-                                                        .size(72.dp) // 72dp 정사각형
-                                                        .clip(RoundedCornerShape(12.dp))
                                                 ) {
                                                     if (canSearch) {
                                                         isManualMode = false
@@ -1150,7 +1147,8 @@ private fun HomeContent(
 
                         HelpStep.NONE -> HelpStep.NONE
                     }
-                }
+                },
+                screenHeightPx = screenHeightPx
             )
         }
 
@@ -1192,6 +1190,7 @@ private fun HomeContent(
 @Composable
 private fun HelpOverlay(
     step: HelpStep,
+    screenHeightPx:Float,
     onNext: () -> Unit
 ) {
     val text = when (step) {
@@ -1209,6 +1208,16 @@ private fun HelpOverlay(
 
         HelpStep.NONE -> ""
     }
+
+    val density = LocalDensity.current
+
+    val navBarHeightPx       = screenHeightPx * 0.095f  // 80 / 844
+    val collapsedHeightPx    = screenHeightPx * 0.130f  // 110 / 844
+    val recommendTabHeightPx = screenHeightPx * 0.237f  // 200 / 844
+
+    val homeHeight = with(density) { (navBarHeightPx + collapsedHeightPx).toDp() }
+    val naviHeight = with(density) { (navBarHeightPx).toDp() }
+    val recoHeight = with(density) { (navBarHeightPx + recommendTabHeightPx).toDp() }
 
     Box(
         modifier = Modifier
@@ -1233,7 +1242,7 @@ private fun HelpOverlay(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.5f)
-                            .height(80.dp)
+                            .height(with(density) { navBarHeightPx.toDp() })
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
@@ -1244,32 +1253,30 @@ private fun HelpOverlay(
             HelpStep.HOME_2 -> {
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom,
+                        .fillMaxWidth()
+                        .height(homeHeight)
+                        .padding(bottom = naviHeight, top = 24.dp)
+                        .align(Alignment.BottomStart),
+                    verticalArrangement = Arrangement.Center,
                 ){
                     Box(
                         modifier = Modifier
                             .width(150.dp)
-                            .height(65.dp)
+                            .height(60.dp)
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
                             )
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.5f)
-                            .height(80.dp)
                     )
                 }
             }
             HelpStep.HOME_3 -> {
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(bottom = 190.dp, end = 10.dp)
-                        .fillMaxWidth(),
+                        .fillMaxSize()
+                        .padding(end = 10.dp)
+                        .padding(bottom = homeHeight)
+                        .padding(bottom = 10.dp),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
                 ){
@@ -1286,15 +1293,16 @@ private fun HelpOverlay(
             HelpStep.HOME_4 -> {
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(bottom = 94 .dp, end = 10.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom,
+                        .fillMaxWidth()
+                        .height(homeHeight)
+                        .padding(bottom = naviHeight, top = 24.dp, end = 10.dp)
+                        .align(Alignment.BottomStart),
+                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.End
                 ){
                     Box(
                         modifier = Modifier
-                            .size(width = 96.dp, height = 46.dp)
+                            .size(width = 96.dp, height = 54.dp)
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
@@ -1314,7 +1322,7 @@ private fun HelpOverlay(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.5f)
-                            .height(80.dp)
+                            .height(naviHeight)
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
@@ -1326,10 +1334,13 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 97.dp, start = 10.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom,
+                        .fillMaxWidth()
+                        .height(recoHeight)
+                        .padding(bottom = naviHeight, top = 24.dp, start = 10.dp),
+                    verticalArrangement = Arrangement.Center,
                 ){
+                    Box(modifier = Modifier.height(43.dp))
+                    Box(modifier = Modifier.height(55.dp))
                     Box(
                         modifier = Modifier
                             .width(235.dp)
@@ -1345,30 +1356,32 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 200.dp, end = 10.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom,
+                        .fillMaxWidth()
+                        .height(recoHeight)
+                        .padding(bottom = naviHeight, top = 24.dp, end = 10.dp),
+                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.End
                 ){
                     Box(
                         modifier = Modifier
-                            .size(width = 88.dp, height = 38.dp)
+                            .size(width = 88.dp, height = 43.dp)
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
                             )
                     )
+                    Box(modifier = Modifier.height(60.dp))
+                    Box(modifier = Modifier.height(43.dp))
                 }
             }
             HelpStep.RECOMMEND_4 ->{
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(horizontal = 10.dp)
-                        .padding(bottom = 148.dp)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.Bottom,
-                    horizontalAlignment = Alignment.End
+                        .fillMaxWidth()
+                        .height(recoHeight)
+                        .padding(bottom = naviHeight, top = 24.dp, end = 10.dp, start = 10.dp),
+                    verticalArrangement = Arrangement.Center
                 ){
                     Box(
                         modifier = Modifier
@@ -1385,7 +1398,9 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 290.dp, end = 10.dp)
+                        .padding(bottom = with(density) { (navBarHeightPx+recommendTabHeightPx).toDp() })
+                        .padding(bottom = 9.dp)
+                        .padding(end = 10.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
@@ -1405,7 +1420,8 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 95.dp, end = 10.dp)
+                        .padding(bottom = with(density) { navBarHeightPx.toDp() })
+                        .padding(bottom = 15.dp, end = 10.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
