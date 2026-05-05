@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -57,14 +58,18 @@ fun BottomSection(
 ) {
     val density = LocalDensity.current
     // 네이버 지도 스타일 높이 설정
-    val navBarHeight = 80.dp // 하단 메뉴바 높이
-    val imeHeightPxFloat = imeHeightPx.toFloat()
 
-    // 바텀 시트 높이
-    val hiddenHeightPx = with(density) { 60.dp.toPx() } // 시트가 아예 내려가 있는 상태 (처음)
-    val collapsedHeightPx = with(density) { 110.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
-    val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
-    val expandedHeightPx = with(density) { 500.dp.toPx() }  // 최대로 올렸을 때 높이
+    val imeHeightPxFloat = imeHeightPx.toFloat()
+    val screenHeightPx = LocalConfiguration.current.screenHeightDp.let {
+        with(density) { it.dp.toPx() }
+    }
+
+
+    val navBarHeight = with(density) { (screenHeightPx * 0.095f).toDp() }
+    val hiddenHeightPx       = screenHeightPx * 0.071f  // 60 / 844
+    val collapsedHeightPx    = screenHeightPx * 0.130f  // 110 / 844
+    val recommendTabHeightPx = screenHeightPx * 0.237f  // 200 / 844
+    val expandedHeightPx     = screenHeightPx * 0.652f  // 550 / 844
 
     // 최대 바텀 시트 높이
     val maxAllowedHeight = when (selectedTab) {
@@ -176,7 +181,7 @@ fun BottomSection(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        if (!isResultLocked && selectedTab != HomeTab.RECOMMEND) {  // 🔹 lock이면 무시
+                        if (homeUi == HomeUi.RUN) {
                             onHeightChange(
                                 (sheetHeightPx - delta).coerceIn(
                                     hiddenHeightPx,

@@ -70,6 +70,7 @@ import com.example.runup.ui.components.PaceGoalSettingDialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -299,14 +300,17 @@ private fun HomeContent(
 ){
     val isPreview = LocalInspectionMode.current
     val density = LocalDensity.current
+    val screenHeightPx = LocalConfiguration.current.screenHeightDp.let {
+        with(density) { it.dp.toPx() }
+    }
 
-    val navBarHeightPx = with(density) { 80.dp.toPx() } // 네비게이션 바 높이 (px)
 
-    val hiddenHeightPx = with(density) { 60.dp.toPx() }
-    val collapsedHeightPx = with(density) { 110.dp.toPx() }
-    val selectedCourseTabHeightPx = with(density) { 135.dp.toPx() }
-    val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
-    val expandedHeightPx = with(density) { 500.dp.toPx() }
+    val navBarHeightPx       = screenHeightPx * 0.095f  // 80 / 844
+    val hiddenHeightPx       = screenHeightPx * 0.071f  // 60 / 844
+    val collapsedHeightPx    = screenHeightPx * 0.130f  // 110 / 844
+    val selectedCourseTabHeightPx = screenHeightPx * 0.160f  // 135 / 844
+    val recommendTabHeightPx = screenHeightPx * 0.237f  // 200 / 844
+    val expandedHeightPx     = screenHeightPx * 0.652f  // 550 / 844
 
     var sheetHeightPx by remember { mutableFloatStateOf(hiddenHeightPx) } // 시트 높이 상태
 
