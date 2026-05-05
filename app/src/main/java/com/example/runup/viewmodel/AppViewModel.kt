@@ -10,6 +10,7 @@ import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.repository.LocationRepository
 import com.example.runup.domain.usecase.GetUserLoginStatusUseCase
 import com.example.runup.ui.navigation.Screen
+import com.example.runup.ui.navigation.TermsType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,12 @@ class AppViewModel @Inject constructor(
 
     private val _isMenuVisible = MutableStateFlow(false)
     val isMenuVisible: StateFlow<Boolean> = _isMenuVisible
+
+    var termsType by mutableStateOf(TermsType.SERVICE)
+        private set
+    fun updateTermsType(type: TermsType) {
+        termsType = type
+    }
 
     fun openMenu() {
         _isMenuVisible.value = true

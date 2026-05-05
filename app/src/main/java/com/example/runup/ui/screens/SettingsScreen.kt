@@ -49,11 +49,13 @@ import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.SettingsViewModel
+import com.example.runup.ui.navigation.TermsType
 
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
     onLogoutClick: () -> Unit,
+    onTermsClick: (TermsType) -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -159,15 +161,13 @@ fun SettingsScreen(
             SettingsItem(
                 title = "개인정보처리방침",
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://your-domain.com/privacy"))
-                    context.startActivity(intent)
+                    onTermsClick(TermsType.PRIVACY)
                 }
             )
             SettingsItem(
                 title = "이용약관",
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://your-domain.com/terms"))
-                    context.startActivity(intent)
+                    onTermsClick(TermsType.SERVICE)
                 }
             )
             // ── 🔹 [수정] 클릭 이벤트를 넘겨주도록 변경 📍 ──

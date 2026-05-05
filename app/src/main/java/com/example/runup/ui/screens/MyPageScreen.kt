@@ -100,8 +100,11 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
 import com.example.runup.domain.model.RunFilter
 import com.example.runup.ui.components.DetailMetricItem
+import com.example.runup.ui.components.DistanceGoalSettingDialog
 import com.example.runup.ui.components.FriendListDialog
 import com.example.runup.ui.components.GoalItem
+import com.example.runup.ui.components.LoopSelectionDialog
+import com.example.runup.ui.components.PaceGoalSettingDialog
 import com.example.runup.ui.components.ScoreIndicator
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.util.calculatePace
@@ -110,7 +113,6 @@ import com.example.runup.ui.util.mapper.DistanceMapper
 import com.example.runup.ui.util.mapper.TimeMapper.formatDuration
 import com.example.runup.ui.util.mapper.TimeMapper.formatSeconds
 import com.example.runup.viewmodel.CommunityViewModel
-import com.example.runup.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -127,7 +129,7 @@ fun MyPageScreen(
 
     val userData by viewModel.userState.collectAsState()
     val profileBitmaps by viewModel.profileBitmaps.collectAsState()
-    val runState by viewModel.runState.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
 
     // 내 프로필 URL 추출
     val myProfileUrl = userData?.userProfileUrl ?: ""
@@ -412,8 +414,24 @@ fun MyPageScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                            GoalItem("목표 거리", "${(userData?.goalDistance ?: 0) / 1000f}km")
-                            GoalItem("목표 페이스", formatSeconds(userData?.goalTime ?: 0))
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable{viewModel.openDistanceDialog()},
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("목표 거리", color = Color.Gray, fontSize = 12.sp)
+                                Text("${uiState.goalDistance / 1000f}km", color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable{viewModel.openPaceDialog()},
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("목표 페이스", color = Color.Gray, fontSize = 12.sp)
+                                Text(formatSeconds(uiState.goalPace), color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -450,7 +468,7 @@ fun MyPageScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RunFilter.entries.forEach { filter ->
                             FilterChip(
-                                selected = runState.selectedFilter  == filter,
+                                selected = uiState.selectedFilter  == filter,
                                 onClick = { viewModel.updateFilter(filter) },
                                 label = { Text(filter.label) },
                                 colors = FilterChipDefaults.filterChipColors(
@@ -464,14 +482,14 @@ fun MyPageScreen(
                 }
             }
 
-            if (userData == null && runState.isLoadingMore) {
+            if (userData == null && uiState.isLoadingMore) {
                 // 초기 로딩
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = PointColor)
                     }
                 }
-            } else if (runState.pagedRuns.isEmpty() && !runState.isLoadingMore) {
+            } else if (uiState.pagedRuns.isEmpty() && !uiState.isLoadingMore) {
                 // 데이터 없음
                 item {
                     Box(modifier = Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
@@ -481,7 +499,7 @@ fun MyPageScreen(
             } else {
                 // 리스트 표시
                 itemsIndexed(
-                    runState.pagedRuns,
+                    uiState.pagedRuns,
                     key = { _, run -> run.recordDate },
                     contentType = { _, _ -> "run_record_item" }
                 ) { index, run ->
@@ -520,7 +538,7 @@ fun MyPageScreen(
                             .animateContentSize(), // 👈 내용 변경 시 높이 변화를 부드럽게!
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (runState.hasMore) {
+                        if (uiState.hasMore) {
                             // [1] 더 보기 버튼 모드
                             Box(
                                 modifier = Modifier
@@ -529,7 +547,7 @@ fun MyPageScreen(
                                     .offset(y = (-10).dp), // 이전 아이템과 살짝 밀착
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (runState.isLoadingMore) {
+                                if (uiState.isLoadingMore) {
                                     CircularProgressIndicator(color = PointColor, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                                 } else {
                                     Text(
@@ -558,6 +576,28 @@ fun MyPageScreen(
                 onPostClick = { uid ->
                     onPostClick(uid) // MyPageScreen이 이미 가지고 있는 함수 전달
                 }
+            )
+        }
+
+        if (uiState.showDistanceDialog) { // 목표 거리 설정 다이얼로그
+            DistanceGoalSettingDialog(
+                "목표 거리 설정",
+                range = 0..100,
+                startNumber = (uiState.goalDistance/100 + 1),
+                onConfirm = {viewModel.confirmDistance(it)},
+                onDismiss = {viewModel.closeDistanceDialog()}
+            )
+        }
+        else if (uiState.showPaceDialog) { // 목표 페이스 설정 다이얼로그
+            PaceGoalSettingDialog(
+                rangeMinutes = 0..20,
+                rangeSeconds = 0..59,
+                startMinute = (uiState.goalPace/60 + 1),
+                startSecond = (uiState.goalPace%60 + 1),
+                onConfirm = { minute, second ->
+                    viewModel.confirmPace(minute, second)
+                },
+                onDismiss = {viewModel.closePaceDialog()},
             )
         }
     }

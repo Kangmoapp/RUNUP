@@ -39,7 +39,7 @@ fun LoadingScreen(
             modifier = Modifier.fillMaxSize()
         ){
             Image(
-                painter = painterResource(id = R.drawable.yellow_shoes),
+                painter = painterResource(id = R.drawable.icon_character),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
