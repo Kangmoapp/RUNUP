@@ -41,23 +41,19 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(notificationEnabled = enabled) }
     }
 
-    // 구글 전용 회원 탈퇴 실행
     fun deleteAccount() {
         viewModelScope.launch {
-            // 로딩 시작
             _uiState.update { it.copy(isLoading = true) }
             updateUserLoginStatusUseCase.invoke(false)
             val result = deleteUserAccountUseCase.invoke()
             if (result is AuthResult.Success) {
                 userStateManager.clear()
-
             }
-
-            // 결과 업데이트 및 로딩 종료
+            // 삭제 완전히 끝난 후에 상태 업데이트
             _uiState.update { it.copy(
                 isLoading = false,
                 deleteResult = result
-            ) }
+            )}
         }
     }
 

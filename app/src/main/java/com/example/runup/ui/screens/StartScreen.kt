@@ -723,14 +723,24 @@ private fun Previewpage0(){
 @Composable
 private fun page0(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "달리기를 시작해\n 볼까요?")
+        StartText(text = "달리기를 시작해 볼까요?")
+        Column(
+            modifier = Modifier
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Bottom
+        ){
+            Image(
+                painter = painterResource(id = R.drawable.icon_character),
+                contentDescription = "목표를 세우고 러닝을 시작해요"
+            )
+        }
     }
 }
 
 @Composable
 private fun page1(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "목표를 세우고\n러닝을 시작해요")
+        StartText(text = "목표를 세우고 러닝을 시작해요")
         Column(
             modifier = Modifier
                 .fillMaxSize(),
@@ -738,7 +748,7 @@ private fun page1(){
         ){
             Image(
                 painter = painterResource(id = R.drawable.tuto_goalset),
-                contentDescription = "목표를 세우고러닝을 시작해요"
+                contentDescription = "목표를 세우고 러닝을 시작해요"
             )
         }
     }
@@ -747,7 +757,7 @@ private fun page1(){
 @Composable
 private fun page2(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "새로운 코스를 찾아\n달려봐요")
+        StartText(text = "새로운 코스를 찾아 달려봐요")
         Column(
             modifier = Modifier
                 .fillMaxSize(),
@@ -764,7 +774,7 @@ private fun page2(){
 @Composable
 private fun page3(){
     Column(modifier = Modifier.fillMaxSize().padding(top = 100.dp)){
-        StartText(text = "함께 달리고\n러닝을 공유해요")
+        StartText(text = "함께 달리고 러닝을 공유해요")
         Column(
             modifier = Modifier
                 .fillMaxSize(),
@@ -772,7 +782,7 @@ private fun page3(){
         ){
             Image(
                 painter = painterResource(id = R.drawable.tuto_community),
-                contentDescription = "함께 달리고\n러닝을 공유해요"
+                contentDescription = "함께 달리고 러닝을 공유해요"
             )
         }
     }
