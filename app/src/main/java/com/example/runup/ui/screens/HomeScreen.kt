@@ -149,7 +149,7 @@ private fun Preview_HomeContent() {
         onConfirmMaxDistance = {},
         onCloseMaxDistanceDialog = {},
 
-        helpStep = HelpStep.RECOMMEND_3
+        helpStep = HelpStep.NONE
     )
 }
 
@@ -445,6 +445,7 @@ private fun HomeContent(
                             maxLines = 1,
                         )
                     }
+                    /*
                     if(homeUiState.homeUi == HomeUi.HOME){
                         when (homeUiState.selectedTab) {
                             HomeTab.RUNNING -> {
@@ -465,6 +466,8 @@ private fun HomeContent(
                             else -> { }
                         }
                     }
+
+                     */
                     MenuBtn(
                         modifier = Modifier.align(Alignment.TopEnd)
                             .padding(top = 35.dp, end = 18.dp),
@@ -672,27 +675,51 @@ private fun HomeContent(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             // 목표 거리 클릭 영역
-                                            Column(
-                                                horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
-                                                modifier = Modifier.clickable { onDistanceClick() }
-                                            ) {
-                                                Text(text = "목표 거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
-                                                Text(
-                                                    text = "${homeUiState.goalDistance.toDouble() / 1000}km",
-                                                    color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                            if(homeUiState.homeUi == HomeUi.RUN){
+                                                Column(
+                                                    horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                                ) {
+                                                    Text(text = "목표 거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                                    Text(
+                                                        text = "${homeUiState.goalDistance.toDouble() / 1000}km",
+                                                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                                    )
+                                                }
 
-                                            // 목표 페이스 클릭 영역
-                                            Column(
-                                                horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
-                                                modifier = Modifier.clickable { onPaceClick() }
-                                            ) {
-                                                Text(text = "목표 페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
-                                                Text(
-                                                    text = "${homeUiState.goalPace / 60}'${homeUiState.goalPace % 60}\"",
-                                                    color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
-                                                )
+                                                // 목표 페이스 클릭 영역
+                                                Column(
+                                                    horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                                ) {
+                                                    Text(text = "목표 페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                                    Text(
+                                                        text = "${homeUiState.goalPace / 60}'${homeUiState.goalPace % 60}\"",
+                                                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                            else{
+                                                Column(
+                                                    horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                                    modifier = Modifier.clickable { onDistanceClick() }
+                                                ) {
+                                                    Text(text = "목표 거리", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                                    Text(
+                                                        text = "${homeUiState.goalDistance.toDouble() / 1000}km",
+                                                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+
+                                                // 목표 페이스 클릭 영역
+                                                Column(
+                                                    horizontalAlignment = Alignment.Start, // 왼쪽 정렬로 변경
+                                                    modifier = Modifier.clickable { onPaceClick() }
+                                                ) {
+                                                    Text(text = "목표 페이스", color = WhiteTextColor.copy(alpha = 0.7f), fontSize = 11.sp)
+                                                    Text(
+                                                        text = "${homeUiState.goalPace / 60}'${homeUiState.goalPace % 60}\"",
+                                                        color = PointColor, fontSize = 16.sp, fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                         }
 
