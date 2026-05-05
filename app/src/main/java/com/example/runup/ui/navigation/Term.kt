@@ -1,4 +1,13 @@
 package com.example.runup.ui.navigation
+
+fun getTermsText(type: TermsType): String {
+    return when (type) {
+        TermsType.SERVICE -> TermsTexts.service
+        TermsType.PRIVACY -> TermsTexts.privacy
+        TermsType.LOCATION -> TermsTexts.location
+        TermsType.COMMUNITY -> TermsTexts.community
+    }
+}
 enum class TermsType(
     val title: String
 ) {
@@ -6,7 +15,7 @@ enum class TermsType(
     PRIVACY("개인정보 수집 및 이용 동의"),
     LOCATION("위치기반서비스 이용약관"),
     COMMUNITY("커뮤니티 게시물 활용 및 코스 공유 동의"),
-    SENSITIVE("민감정보 처리 동의")
+    //SENSITIVE("민감정보 처리 동의")
 }
 object TermsTexts {
     val service = """
@@ -124,6 +133,7 @@ object TermsTexts {
         동의하지 않을 경우 커뮤니티 게시물 활용, 코스 공유 기능을 포함한 RUNUP 서비스 이용이 제한될 수 있습니다.
     """.trimIndent()
 
+    /*
     val sensitive = """
         민감정보 처리 동의
     
@@ -151,4 +161,6 @@ object TermsTexts {
         이용자는 민감정보 처리에 동의하지 않을 수 있습니다.
         다만 동의하지 않을 경우 발 압력 분석, 운동 부하 분석, 맞춤형 피드백 등 일부 기능 이용이 제한될 수 있습니다.
     """.trimIndent()
+
+     */
 }

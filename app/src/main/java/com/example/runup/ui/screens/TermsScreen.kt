@@ -35,16 +35,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.runup.ui.navigation.TermsTexts
 import com.example.runup.ui.navigation.TermsType
+import com.example.runup.ui.navigation.getTermsText
 
-fun getTermsText(type: TermsType): String {
-    return when (type) {
-        TermsType.SERVICE -> TermsTexts.service
-        TermsType.PRIVACY -> TermsTexts.privacy
-        TermsType.LOCATION -> TermsTexts.location
-        TermsType.COMMUNITY -> TermsTexts.community
-        TermsType.SENSITIVE -> TermsTexts.sensitive
-    }
-}
 
 @Preview
 @Composable
