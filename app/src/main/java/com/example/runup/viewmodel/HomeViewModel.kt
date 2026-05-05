@@ -236,6 +236,11 @@ class HomeViewModel @Inject constructor(
                             goalPace = pace
                         )
                     }
+                    _courseRecommendationUiState.update {
+                        it.copy(
+                            goalDistance = distance
+                        )
+                    }
                 }
             }
         }
@@ -261,6 +266,9 @@ class HomeViewModel @Inject constructor(
         val distanceMeter:Int = distanceKm*100
         _homeUiState.update {
             it.copy(showDistanceDialog = false)
+        }
+        _courseRecommendationUiState.update {
+            it.copy(goalDistance = distanceMeter)
         }
         viewModelScope.launch {
             when (val result = goalsettingUseCase(distanceMeter, _homeUiState.value.goalPace)) {

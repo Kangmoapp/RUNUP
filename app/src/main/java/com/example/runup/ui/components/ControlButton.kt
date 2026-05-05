@@ -27,7 +27,7 @@ fun ControlButton(
 ) {
     Box(
         modifier = modifier
-            .size(width = 85.dp, height = 50.dp)
+            .size(width = 85.dp, height = 45.dp)
             .background(color = color, shape = RoundedCornerShape(12.dp))
             .clickable(enabled = !isLoading) { onClick() },
         contentAlignment = Alignment.Center
@@ -41,7 +41,7 @@ fun ControlButton(
         } else {
             Text(
                 text = text,
-                color = contentColor, // ── 🔹 넘겨받은 색상 적용 📍 ──
+                color = Color.Black, // ── 🔹 넘겨받은 색상 적용 📍 ──
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
