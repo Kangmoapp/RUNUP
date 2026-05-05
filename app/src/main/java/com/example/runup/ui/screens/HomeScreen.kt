@@ -25,9 +25,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -68,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.runup.domain.model.Scores
 import com.example.runup.ui.theme.PointColor
@@ -86,6 +90,7 @@ import com.example.runup.ui.components.BottomSection
 import com.example.runup.ui.components.CourseInfoCard
 import com.example.runup.ui.components.FailMessageBubble
 import com.example.runup.ui.components.FakeMap
+import com.example.runup.ui.components.HelpCircleButton
 import com.example.runup.ui.components.LoadingStart
 import com.example.runup.ui.components.LoopSelectionDialog
 import com.example.runup.ui.components.MapViewContainer
@@ -100,7 +105,7 @@ import com.example.runup.viewmodel.CourseRecommendationUiState
 @Composable
 private fun Preview_HomeContent() {
     HomeContent(
-        homeUiState = HomeUiState(homeUi = HomeUi.HOME),
+        homeUiState = HomeUiState(homeUi = HomeUi.HOME, selectedTab = HomeTab.RECOMMEND),
         runningUiState = RunningUiState(),
         guideUiState = GuideUiState(),
         aiPostureUiState = AiPostureUiState(),
@@ -142,6 +147,8 @@ private fun Preview_HomeContent() {
         onCloseRecommendLoopDialog = {},
         onConfirmMaxDistance = {},
         onCloseMaxDistanceDialog = {},
+
+        helpStep = HelpStep.RECOMMEND_1
     )
 }
 
@@ -227,6 +234,17 @@ fun HomeScreen(
     }
 }
 
+private enum class HelpStep {
+    NONE,
+    HOME_1,
+    HOME_2,
+    HOME_3,
+    HOME_4,
+    RECOMMEND_1,
+    RECOMMEND_2,
+    RECOMMEND_3
+}
+
 @Composable
 private fun HomeContent(
     homeUiState: HomeUiState,
@@ -273,6 +291,8 @@ private fun HomeContent(
     onCloseRecommendLoopDialog: () -> Unit,
     onConfirmMaxDistance: (Int) -> Unit,
     onCloseMaxDistanceDialog: () -> Unit,
+
+    helpStep: HelpStep = HelpStep.NONE
 ){
     val isPreview = LocalInspectionMode.current
     val density = LocalDensity.current
@@ -298,6 +318,8 @@ private fun HomeContent(
     var isManualMode by remember { mutableStateOf(false) }
 
     var showGuideBubble by remember { mutableStateOf(false) }
+
+    var helpStep by remember { mutableStateOf(helpStep) }
 
     LaunchedEffect(
         homeUiState.selectedTab,
@@ -416,11 +438,31 @@ private fun HomeContent(
                             maxLines = 1,
                         )
                     }
+                    if(homeUiState.homeUi == HomeUi.HOME){
+                        when (homeUiState.selectedTab) {
+                            HomeTab.RUNNING -> {
+                                HelpCircleButton(
+                                    onClick = { helpStep = HelpStep.HOME_1 },
+                                    modifier = Modifier
+                                        .padding(top = 50.dp, start = 8.dp)
+                                )
+                            }
+
+                            HomeTab.RECOMMEND -> {
+                                HelpCircleButton(
+                                    onClick = { helpStep = HelpStep.RECOMMEND_1 },
+                                    modifier = Modifier
+                                        .padding(top = 50.dp, start = 8.dp)
+                                )
+                            }
+                            else -> { }
+                        }
+                    }
                     MenuBtn(
-                        modifier = Modifier.align(Alignment.TopEnd),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                            .padding(top = 35.dp, end = 18.dp),
                         onMenuClick = onMenuClick
                     )
-
                 }
                 if (aiPostureUiState.isAiStatusOverlayVisible) { // 설정값이 true일 때만 렌더링
                     AIStatusOverlay(
@@ -1081,6 +1123,25 @@ private fun HomeContent(
                 onDismiss = onPaceClose
             )
         }
+        if (helpStep != HelpStep.NONE) {
+            HelpOverlay(
+                step = helpStep,
+                onNext = {
+                    helpStep = when (helpStep) {
+                        HelpStep.HOME_1 -> HelpStep.HOME_2
+                        HelpStep.HOME_2 -> HelpStep.HOME_3
+                        HelpStep.HOME_3 -> HelpStep.HOME_4
+                        HelpStep.HOME_4 -> HelpStep.NONE
+
+                        HelpStep.RECOMMEND_1 -> HelpStep.RECOMMEND_2
+                        HelpStep.RECOMMEND_2 -> HelpStep.RECOMMEND_3
+                        HelpStep.RECOMMEND_3 -> HelpStep.NONE
+
+                        HelpStep.NONE -> HelpStep.NONE
+                    }
+                }
+            )
+        }
 
         if (courseRecommendationUiState.showDistanceDialog) { // 코스 추천 목표 거리 설정 다이얼로그
             DistanceGoalSettingDialog(
@@ -1115,3 +1176,140 @@ private fun HomeContent(
         }
     }
 }
+
+
+@Composable
+private fun HelpOverlay(
+    step: HelpStep,
+    onNext: () -> Unit
+) {
+    val text = when (step) {
+        HelpStep.HOME_1 -> "여기는 러닝 탭입니다"
+        HelpStep.HOME_2 -> "목표 거리와 목표 페이스를 설정해 주세요"
+        HelpStep.HOME_3 -> "이 버튼을 눌러 내 위치로\n화면을 고정해 주세요"
+        HelpStep.HOME_4 -> "Run 버튼을 눌러 달리기를 시작합니다"
+
+        HelpStep.RECOMMEND_1 -> "여기는 코스 추천 탭입니다"
+        HelpStep.RECOMMEND_2 -> "추천 받을 방법을 선택해 주세요"
+        HelpStep.RECOMMEND_3 -> "추천 도움말 3"
+
+        HelpStep.NONE -> ""
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
+                onNext()
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        when (step) {
+            HelpStep.HOME_1 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                ){
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(80.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.HOME_2 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                ){
+                    Box(
+                        modifier = Modifier
+                            .width(150.dp)
+                            .height(65.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(80.dp)
+                    )
+                }
+            }
+            HelpStep.HOME_3 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 194.dp, end = 14.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.HOME_4 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 98 .dp, end = 14.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .size(width = 88.dp, height = 38.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+
+            HelpStep.RECOMMEND_1 -> "추천 도움말 1"
+            HelpStep.RECOMMEND_2 -> "추천 도움말 2"
+            HelpStep.RECOMMEND_3 -> "추천 도움말 3"
+
+            HelpStep.NONE -> ""
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 25.dp),
+            contentAlignment = Alignment.Center
+        ){
+            Text(
+                text = text,
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+        }
+
+    }
+}
+
