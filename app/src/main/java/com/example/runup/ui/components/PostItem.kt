@@ -104,6 +104,7 @@ fun PostItem(
     // 삭제 메뉴 상태 및 본인 확인
     var showMenu by remember { mutableStateOf(false) }
     var showFollowDialog by remember { mutableStateOf(false) } //따라 뛰기 다이얼로그
+    var showDeleteDialog by remember { mutableStateOf(false) } //삭제 확인 다이얼로그
 
     val myUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
     val isMyPost = post.authorId == myUid
@@ -111,6 +112,44 @@ fun PostItem(
     // 페이저 상태 관리 (총 페이지 수 = 지도(1) + 일반 이미지 개수)
     val totalPages = 1 + post.commonImages.size
     val pagerState = rememberPagerState(pageCount = { totalPages })
+
+    if (showDeleteDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "게시글 삭제",
+                    color = WhiteTextColor,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "정말 이 게시글을 삭제하시겠어요?",
+                    color = Color.LightGray,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDeletePost()           // 👈 실제 삭제 처리 로직 실행
+                    }
+                ) {
+                    Text("삭제", color = Color(0xFFE57373), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("취소", color = Color.Gray)
+                }
+            }
+        )
+    }
 
     // 따라뛰기 확인 다이얼로그
     if (showFollowDialog) {
@@ -260,8 +299,8 @@ fun PostItem(
                                 // 3. 내부 기본 패딩을 최소화 (이게 핵심!) 📍
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 onClick = {
-                                    onDeletePost()
                                     showMenu = false
+                                    showDeleteDialog = true
                                 }
                             )
                         }

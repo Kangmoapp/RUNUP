@@ -5,10 +5,8 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
-import com.example.runup.domain.repository.LocationRepository
-import com.example.runup.domain.usecase.GetUserGoalUseCase
-import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.LoginUseCase
+import com.example.runup.domain.usecase.SyncUserGoalServerToRoomUseCase
 import com.example.runup.domain.usecase.UpdateUserLoginStatusUseCase
 import com.example.runup.ui.util.GoogleAuthManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +26,7 @@ data class StartUiState(
 class StartViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val updateUserLoginStatusUseCase: UpdateUserLoginStatusUseCase,
+    private val syncUserGoalServerToRoomUseCase: SyncUserGoalServerToRoomUseCase,
     val googleAuthManager: GoogleAuthManager
 ): ViewModel(){
 
@@ -45,13 +44,9 @@ class StartViewModel @Inject constructor(
                 onTokenReceived = { idToken ->
                     signInWithGoogle(idToken, onSuccess)
                 }
-
             )
-
+            syncUserGoalServerToRoomUseCase.invoke()
         }
-    }
-    private fun successLogin(){
-
     }
 
     private fun signInWithGoogle(idToken: String, onSuccess: () -> Unit) {

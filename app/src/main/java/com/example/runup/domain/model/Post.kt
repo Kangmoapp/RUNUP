@@ -19,6 +19,7 @@ data class Post(
     val commentedBy: List<String> = emptyList(),
     val followCount: Int = 0,
     val followedBy: List<String> = emptyList(),
+    val isOfficialCourse: Boolean = false,
     val timestamp: Long = 0L,
     val city: String = "",
     val district: String = "",

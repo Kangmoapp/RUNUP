@@ -169,6 +169,34 @@ class UserRepositoryImpl @Inject constructor(
         return userdatasource.getUserActivityStats(uid)
     }
 
+    // 서버에서 사용자 목표를 가져와 Room DB에 동기화
+    override suspend fun syncUserGoalFromServer(): AuthResult<Boolean> {
+        return try {
+            val remoteResult = userdatasource.getUserGoal()
+
+            if (remoteResult is AuthResult.Success) {
+                val (goalDistance, goalTime) = remoteResult.data
+
+                // 2. Local(Room) DB에 저장
+                val userEntity = UserEntity(
+                    id = 0, // 단일 사용자 데이터 유지
+                    goalDistance = goalDistance,
+                    goalTime = goalTime
+                )
+                userDao.insertUser(userEntity)
+
+                AuthResult.Success(true)
+            } else if (remoteResult is AuthResult.Fail) {
+                // 서버에서 가져오는 데 실패한 경우
+                AuthResult.Fail(remoteResult.message)
+            } else {
+                AuthResult.Fail("서버 동기화 중 알 수 없는 오류가 발생했습니다.")
+            }
+        } catch (e: Exception) {
+            AuthResult.Fail(e.message ?: "데이터 동기화 중 오류가 발생했습니다.")
+        }
+    }
+
 
 
     //----------------------------------------------------------------------------------------//

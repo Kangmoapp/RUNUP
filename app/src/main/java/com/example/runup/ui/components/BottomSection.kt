@@ -62,9 +62,9 @@ fun BottomSection(
 
     // 바텀 시트 높이
     val hiddenHeightPx = with(density) { 60.dp.toPx() } // 시트가 아예 내려가 있는 상태 (처음)
-    val collapsedHeightPx = with(density) { 100.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
+    val collapsedHeightPx = with(density) { 110.dp.toPx() } // 메뉴 클릭 시 올라오는 높이
     val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
-    val expandedHeightPx = with(density) { 550.dp.toPx() }  // 최대로 올렸을 때 높이
+    val expandedHeightPx = with(density) { 500.dp.toPx() }  // 최대로 올렸을 때 높이
 
     // 최대 바텀 시트 높이
     val maxAllowedHeight = when (selectedTab) {
