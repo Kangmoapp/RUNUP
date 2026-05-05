@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -98,16 +99,34 @@ fun ProfileMiniPopup(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // 프로필 이미지
-                            AsyncImage(
-                                model = user.userProfileUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF2C2C2C)),
-                                contentScale = ContentScale.Crop
-                            )
+                            if (user.userProfileUrl.isNullOrEmpty()) {
+                                // ── 🔹 URL이 없을 때 보여줄 기본 아이콘 👤 📍 ──
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF2C2C2C)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "기본 프로필",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            } else {
+                                // ── 🔹 URL이 있을 때 기존 이미지 로드 📍 ──
+                                AsyncImage(
+                                    model = user.userProfileUrl,
+                                    contentDescription = "프로필 이미지",
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF2C2C2C)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
 
                             Spacer(Modifier.width(12.dp))
 

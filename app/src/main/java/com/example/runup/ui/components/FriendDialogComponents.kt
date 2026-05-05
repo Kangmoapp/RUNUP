@@ -1,7 +1,6 @@
 package com.example.runup.ui.components
 
 import android.graphics.Bitmap
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -59,10 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.example.runup.domain.model.FriendSummary
-import com.example.runup.domain.model.UserData
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.viewmodel.FriendUiState
 import com.example.runup.viewmodel.FriendViewModel
@@ -379,7 +377,7 @@ fun FriendItem(
                 .border(1.dp, Color.White.copy(alpha = 0.05f), CircleShape)
         ) {
             if (bitmap != null) {
-                // [1] 비트맵 창고에 사진이 있는 경우 (즉시 표시) 🔹
+                // [1] 비트맵 창고에 사진이 있는 경우 (즉시 표시)
                 Image(
                     bitmap = bitmap.asImageBitmap(),
                     contentDescription = null,
@@ -387,42 +385,51 @@ fun FriendItem(
                     contentScale = ContentScale.Crop
                 )
             } else if (!user.userProfileUrl.isNullOrEmpty()) {
-                // [2] 서버에서 로드해야 하는 경우 (로딩 바 표시) 🔹
+                // [2] 서버에서 로드해야 하는 경우
                 SubcomposeAsyncImage(
                     model = user.userProfileUrl,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                     loading = {
-                        // 친구 목록용 작은 로딩 바
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp), // 아이템 사이즈에 맞춰 작게 조절
+                                modifier = Modifier.size(18.dp),
                                 color = PointColor,
                                 strokeWidth = 2.dp
                             )
                         }
                     },
                     error = {
-                        // 로드 실패 시 기본 아이콘
+                        // ── 🔹 로드 실패 시 기본 아이콘 (수정) 📍 ──
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("👤", fontSize = 24.sp)
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "기본 프로필",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(28.dp)
+                            )
                         }
                     }
                 )
             } else {
-                // [3] URL도 없고 비트맵도 없는 경우
+                // ── 🔹 [3] URL도 없고 비트맵도 없는 경우 (수정) 📍 ──
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("👤", fontSize = 24.sp)
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "기본 프로필",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
             }
         }

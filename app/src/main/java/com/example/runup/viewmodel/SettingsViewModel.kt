@@ -4,6 +4,7 @@ package com.example.runup.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.usecase.DeleteUserAccountUseCase
 import com.example.runup.domain.usecase.UpdateUserLoginStatusUseCase
@@ -19,7 +20,8 @@ import javax.inject.Inject
 data class SettingsUiState(
     val isLoading: Boolean = false,
     val deleteResult: AuthResult<Boolean>? = null,
-    val notificationEnabled: Boolean = true // 필요한 설정 옵션들 추가
+    val notificationEnabled: Boolean = true, // 필요한 설정 옵션들 추가
+    val isAiPostureVisible: Boolean = true,
 )
 
 @HiltViewModel
@@ -27,6 +29,7 @@ class SettingsViewModel @Inject constructor(
     private val deleteUserAccountUseCase: DeleteUserAccountUseCase,
     private val userStateManager: UserStateManager, // 싱글톤 청소용
     private val updateUserLoginStatusUseCase: UpdateUserLoginStatusUseCase,
+    private val userPreferenceDataSource: UserPreferenceDataSource,
 ) : ViewModel() {
 
     // ── 🔹 [수정] 여러 StateFlow를 하나로 통합 📍 ──
@@ -61,5 +64,21 @@ class SettingsViewModel @Inject constructor(
     // 결과 상태 초기화 (토스트 띄운 후 호출)
     fun resetDeleteResult() {
         _uiState.update { it.copy(deleteResult = null) }
+    }
+
+    init {
+        // ── 🔹 앱 시작 시 저장된 설정값 불러오기 📍 ──
+        viewModelScope.launch {
+            userPreferenceDataSource.getAiPostureVisible().collect { isVisible ->
+                _uiState.update { it.copy(isAiPostureVisible = isVisible) }
+            }
+        }
+    }
+
+    // 스위치 토글 함수
+    fun toggleAiPostureVisible(isVisible: Boolean) {
+        viewModelScope.launch {
+            userPreferenceDataSource.updateAiPostureVisible(isVisible)
+        }
     }
 }

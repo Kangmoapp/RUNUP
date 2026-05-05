@@ -19,7 +19,7 @@ fun AiReasonBubble(
 ) {
     Surface(
         color = Color(0xEE311B92), // AI 느낌의 짙은 보라색 (살짝 투명)
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 2.dp),
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 2.dp, bottomEnd = 16.dp),
         modifier = modifier.wrapContentSize(),
         shadowElevation = 4.dp
     ) {

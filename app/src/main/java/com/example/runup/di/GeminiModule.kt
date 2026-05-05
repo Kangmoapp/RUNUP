@@ -1,5 +1,6 @@
 package com.example.runup.di
 
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.service.EmbeddingHelper
 import com.example.runup.service.GeminiHelper
@@ -22,8 +23,9 @@ object GeminiModule {
         embeddingHelper: EmbeddingHelper,
         courseBox: Box<CourseEntity>,
         courseMapper: CourseMapper,
+        userPreferenceDataSource: UserPreferenceDataSource
     ): GeminiHelper {
         // 이제 GemmaHelper를 만들 때 모든 재료를 다 던져줍니다.
-        return GeminiHelper(embeddingHelper, courseBox,  courseMapper)
+        return GeminiHelper(embeddingHelper, courseBox,  courseMapper, userPreferenceDataSource)
     }
 }

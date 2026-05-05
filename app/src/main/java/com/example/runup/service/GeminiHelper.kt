@@ -2,6 +2,7 @@ package com.example.runup.service
 
 import android.util.Log
 import com.example.runup.BuildConfig
+import com.example.runup.data.local.UserPreferenceDataSource
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity
 import com.example.runup.data.source.local.objectbox.entity.CourseEntity_
 import com.example.runup.domain.model.Course
@@ -18,6 +19,7 @@ class GeminiHelper(
     private val embeddingHelper: EmbeddingHelper, // 검색을 위해 필요
     private val courseBox: Box<CourseEntity>,
     private val courseMapper: CourseMapper,
+    private val userPreferenceDataSource: UserPreferenceDataSource
 ) {
     private val TAG = "RUNUP_GEMINI_SEARCH"
 
@@ -104,8 +106,9 @@ class GeminiHelper(
         Log.d(TAG, "🚀 Gemini AI 검색 시작 | 입력: '$userPrompt'")
 
         return try {
-            // 1. 벡터 검색으로 후보군 가져오기
+            // 벡터 검색으로 후보군 가져오기
             val topEntities = getSearchResult(userPrompt, userCity, userLoc, maxSearchDistance, targetDist)
+            // ── 🔹 후보가 없으면 여기서 종료 (Gemini 호출 안 함, false 반환) 📍
             if (topEntities.isEmpty()) return emptyList()
 
             val contextText = topEntities.mapIndexed { index, entity ->
@@ -115,6 +118,10 @@ class GeminiHelper(
             // 3. Gemini 호출
             val aiResponse = fetchGeminiResponse(userPrompt, contextText) ?: ""
             Log.d(TAG, aiResponse)
+
+            if (aiResponse.isNotBlank()) {
+                userPreferenceDataSource.incrementAiSearchCount()
+            }
 
             // 4. 여러 개의 추천 결과 파싱 (ID: ..., Reason: ... 쌍을 모두 찾음)
             val recommendedList = mutableListOf<Pair<Course, String>>()
@@ -162,30 +169,36 @@ class GeminiHelper(
      */
     private suspend fun fetchGeminiResponse(userPrompt: String, contextText: String): String? {
         val finalPrompt = """
-        당신은 러닝 코스 추천 전문가입니다. 
-        제공된 [Context]의 후보들 중 사용자의 요청([Query])에 가장 적합한 코스를 **최대 3개** 선정하여 우선순위가 높은 순서대로 나열하세요.
-
+        당신은 러닝 코스 전문가입니다. 
+        제공된 [Context]의 후보들 중 사용자의 요청([Query])에 가장 적합한 코스를 **최대 2개** 선정하여 우선순위가 높은 순서대로 나열하세요.
+        
         [Context]
         $contextText
-
+        
         [Query]
         "$userPrompt"
-
+        
+        [특징 분류 기준]
+        - High (0.66 이상): 밝음 / 많음 / 높음
+        - Ordinary (0.33 이상): 평범함
+        - Low (0.0 이상): 어두움 / 적음 / 낮음
+        * '평범함'은 사용자의 특정 요청(밝음/어두움 등)에 대해 완벽한 일치가 아닌 '일부 불일치'로 간주합니다.(단 사용자가 평범함을 요청했을 경우, 평범함은 완벽한 일치 입니다)
+        
         [Writing Rules (경우의 수)]
-        1. **모든 조건 만족 시**: "[해당하는 특징]을 만족하여 이 코스가 가장 적절해요!"라고 작성할 것.
+        1. **모든 조건 만족 시**: "[해당하는 특징]을 만족하는 코스에요!" 라고 작성할 것.
         2. **장소 관련 얘기만 있을시**: "[Query의 장소명] 주변의 코스에요!" 라고 간결하게 대답. 
-        3. **일부 조건 불일치 시**: "[일치하는 특징]은 만족하지만 [일치하지 않는 특징]인데 괜찮으실까요?"라고 질문할 것.
-        4. **적절한 코스/장소 없을 시**: "[Query의 장소명] 주변의 코스는 없는 것 같아요..."라고 작성하고 ID는 'None'으로 표기할 것.
-        5. [Query] 에 장소에 대한 얘기가 없을 시 - [일치하는 특징] 이 존재하면 3번과 같이 출력 / [일치하는 특징] 이 존재하지 않으면 "적절한 장소가 없는 것 같아요..." 로 출력
-
+        3. **일부 조건 불일치 시 (예: 밝은 곳 요청 시 '평범함' 데이터)**: "[일치하는 특징]은 만족하지만 [일치하지 않는 특징]인데 괜찮으실까요?"라고 질문할 것.
+        4. **장소는 일치하지만 특징이 정반대일 시**: "[Query의 장소명] 주변 코스이지만, 요청하신 [요청한 특징]과는 반대로 [현재 특징]인 코스인데 괜찮으실까요?"라고 질문할 것.
+        5. **장소 불일치/부재 시**: [Query]에 특정 장소가 명시되었으나 [Context]의 '주변 장소' 데이터에 해당 키워드가 전혀 존재하지 않는다면, 무조건 "[Query의 장소명] 주변의 코스는 없는 것 같아요..."라고 작성하고 ID는 'None'으로 표기할 것. (유사도가 높아도 장소 이름이 다르면 추천 금지)
+        6. [Query] 에 장소에 대한 얘기가 없을 시 - [일치하는 특징] 이 존재하면 3번과 같이 출력 / [일치하는 특징] 이 존재하지 않으면 "적절한 장소가 없는 것 같아요..." 로 출력
+        
         [Constraint]
         - Reason은 반드시 한 문장으로 간결하게 작성할 것.
         - 불필요한 인사나 부연 설명은 절대 금지.
-        - 적합한 코스가 3개 미만이라면 찾은 만큼만 결과물에 포함하세요.
-        - 사용자의 요청과 핵심 특징(밝기, 유동인구, 난이도)이 완전히 정반대인 코스(예: 밝은 곳 요청 시 '매우 어두움')는 후보군에서 즉시 제외하고 절대 추천하지 마세요.
-
+        - 적합한 코스가 2개 미만이라면 찾은 만큼만 결과물에 포함하세요.
+        - 사용자의 요청과 특징이 정반대이더라도, [Writing Rules] 4번에 해당하는 경우에만 후보에 포함시키세요. 그 외에 장소마저 일치하지 않으면서 특징이 정반대인 경우는 제외하세요.
+        
         [Output Format]
-        ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
         ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
         ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
         """.trimIndent()

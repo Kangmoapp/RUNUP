@@ -144,7 +144,7 @@ fun CommunityScreen(
                 onBackClick = onBackClick,
                 titleContent = {
                     Image(
-                        painter = painterResource(id = R.drawable.coursepick),
+                        painter = painterResource(id = R.drawable.course_pick),
                         contentDescription = "CoursePick Logo",
                         modifier = Modifier
                             .height(28.dp) // 로고 높이를 고정하면 가로는 비율에 맞춰 자동으로 조절됩니다 🔹

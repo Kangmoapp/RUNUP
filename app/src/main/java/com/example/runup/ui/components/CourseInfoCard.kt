@@ -177,7 +177,7 @@ private fun CompactTextScore(label: String, score: Double) {
             letterSpacing = (-0.5).sp // 자간 축소
         )
         Text(
-            text = String.format("%.1f", score),
+            text = String.format("%.2f", score),
             fontSize = 11.sp,
             fontWeight = FontWeight.ExtraBold,
             color = TextBlack

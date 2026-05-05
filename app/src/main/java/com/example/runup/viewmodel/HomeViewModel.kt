@@ -94,6 +94,8 @@ data class CourseRecommendationUiState(
     val courseIndex: Int = 0,
     val isLoading:Boolean = false,
     val isAiMode: Boolean = false,
+    val aiSearchCount: Int = 0, // 현재 호출 횟수
+    val maxAiLimit: Int = 4,     // 최대 제한,
     val isFailSearchCourse: String = "",
     val maxSearchDistance: Int = 500, // 기본 500m (0.5km)
     val sortDirection: SortDirection = SortDirection.DESCENDING,
@@ -101,6 +103,7 @@ data class CourseRecommendationUiState(
 )
 
 data class AiPostureUiState(
+    val isAiStatusOverlayVisible: Boolean = false,
     val isAiEnabled: Boolean = false,
     val currentPostureLabel: String = "AI 꺼짐",
     val leftBleState: String = "L: 대기 중",
@@ -113,19 +116,17 @@ enum class HomeTab { RUNNING, RECOMMEND }
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val recordRunningUseCase: RecordRunningUseCase,
-
     private val goalsettingUseCase: GoalSettingUseCase,
     private val getUserGoalUseCase: GetUserGoalUseCase,
+    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
     private val locationRepository: LocationRepository,
+    private val userPreferenceDataSource: UserPreferenceDataSource,
 
     private val postureAnalyzer: PostureAnalyzer,
     private val ttsManager: TtsManager,
     private val bleSensorManager: BleSensorManager,
     private val bleConnectionManager: BleConnectionManager,
-    private val naverMapApiService: NaverMapApiService,
     private val tMapApiService: TMapApiService,
-    private val getRecommendedCourseUseCase: GetRecommendedCourseUseCase,
-
     @ApplicationContext private val context: Context,
 ): ViewModel(){
     private val _homeUiState = MutableStateFlow(HomeUiState())
@@ -186,12 +187,18 @@ class HomeViewModel @Inject constructor(
     init {
         observeLocation()
         loadUserGoal()
+        loadAiCount()
 
         startCurrentLocationTracking()
 
         bleSensorManager.startDataProcessing()
         observeSensorData()
         observeBleConnection()
+        viewModelScope.launch {
+            userPreferenceDataSource.getAiPostureVisible().collect { isVisible ->
+                _AiPostureUiState.update { it.copy(isAiStatusOverlayVisible = isVisible) }
+            }
+        }
     }
 
     private fun observeLocation() {
@@ -448,12 +455,9 @@ class HomeViewModel @Inject constructor(
             locationRepository.startTimer()
             _isTracking.value = true
         }
-        //recordingJob?.cancel()
-
     }
 
     fun recordRunningCourse(scores: Scores) {
-        //_isTracking.value = false
         recordingJob?.cancel()
         viewModelScope.launch {
             val nodes = locationRepository.recordedNodes.value
@@ -469,6 +473,7 @@ class HomeViewModel @Inject constructor(
             }
         }
         stopForegroundService()
+        _courseProgress.value = CourseProgress.NONE
         _homeUiState.update { it.copy(homeUi = HomeUi.HOME) }
     }
 
@@ -576,9 +581,7 @@ class HomeViewModel @Inject constructor(
     // =====================================
 
     fun onSearchClick() {
-        if(_courseRecommendationUiState.value.isRecommendClick){
-
-        }
+        if (_courseRecommendationUiState.value.isRecommendClick) return
         else{
             updateRecommendState {
                 it.copy(
@@ -660,7 +663,12 @@ class HomeViewModel @Inject constructor(
     fun onAiSearchClick(userPrompt: String) {
         if (userPrompt.isBlank()) return // 빈 값 방어
 
-        // 로딩 시작
+        val currentCount = userPreferenceDataSource.getAiSearchCount()
+        if (currentCount >= 4) {
+            updateRecommendState { it.copy(isFailSearchCourse = "오늘의 AI 추천 횟수를 모두 사용했습니다. (4/4)") }
+            return
+        }
+
         updateRecommendState { it.copy(isLoading = true, isRecommendClick = false) }
 
         val location = _homeUiState.value.currentLocation ?: run {
@@ -671,6 +679,8 @@ class HomeViewModel @Inject constructor(
         val address = addressUiState.value
         val currentAddressString = address?.let { "${it.city} ${it.district}".trim() } ?: ""
         val maxSearchDist = _courseRecommendationUiState.value.maxSearchDistance
+
+
 
         viewModelScope.launch {
             // AI 전용 UseCase 호출 (두 번째 invoke 함수 사용)
@@ -684,17 +694,21 @@ class HomeViewModel @Inject constructor(
                 maxSearchDistance = maxSearchDist
             )
 
+            // ── 🔹 [추가] API 호출 여부에 상관없이 최신 카운트 읽어오기 📍 ──
+            val updatedCount = userPreferenceDataSource.getAiSearchCount()
+
             when (result) {
                 is AuthResult.Success -> {
+                    val updatedCount = updatedCount
                     updateRecommendState {
                         it.copy(
                             recommendedCourses = result.data,
                             courseIndex = 0,
                             isLoading = false,
-                            isRecommendClick = true // 결과 모드로 전환
+                            isRecommendClick = true, // 결과 모드로 전환,
+                            aiSearchCount = updatedCount
                         )
                     }
-                    Log.d("RUNUP_GEMINI_SEARCH", "${result.data}")
                     // 지도를 RECOMMEND 모드로 바꿔서 카드와 경로가 뜨게 함
                     _homeUiState.update { it.copy(homeUi = HomeUi.RECOMMEND) }
                 }
@@ -702,8 +716,9 @@ class HomeViewModel @Inject constructor(
                     updateRecommendState {
                         it.copy(
                             isLoading = false,
-                            isRecommendClick = false, // ── 🔹 상황 2로 가지 않고 상황 1 유지 📍 ──
-                            isFailSearchCourse = result.message
+                            isRecommendClick = false, // 상황 2로 가지 않고 상황 1 유지
+                            isFailSearchCourse = result.message,
+                            aiSearchCount = updatedCount
                         )
                     }
                     viewModelScope.launch {
@@ -758,8 +773,7 @@ class HomeViewModel @Inject constructor(
                 LatLng(it.latitude, it.longitude)
             }
         } else {
-            // 그 외에는 현재 내 위치를 반환
-            _homeUiState.value.currentLocation?.let { LatLng(it.latitude, it.longitude) }
+            null
         }
     }
 
@@ -912,7 +926,7 @@ class HomeViewModel @Inject constructor(
                 GeoPoint(point.latitude, point.longitude)
             )
             // GPS가 튀는 걸 감안해서 10~12m 정도로 넉넉하게 잡습니다.
-            if (dist < 10.0) {
+            if (dist < 8.0) {
                 lastIndexInRange = index
             }
         }
@@ -990,6 +1004,12 @@ class HomeViewModel @Inject constructor(
         _courseRecommendationUiState.update {
             val next = if (it.sortDirection == SortDirection.DESCENDING) SortDirection.ASCENDING else SortDirection.DESCENDING
             it.copy(sortDirection = next)
+        }
+    }
+
+    fun loadAiCount() {
+        _courseRecommendationUiState.update {
+            it.copy(aiSearchCount = userPreferenceDataSource.getAiSearchCount())
         }
     }
 

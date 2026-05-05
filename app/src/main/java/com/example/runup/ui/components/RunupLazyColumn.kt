@@ -2,6 +2,7 @@ package com.example.runup.ui.components
 
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -28,54 +29,48 @@ import kotlinx.coroutines.flow.first
 fun RunupLazyColumn(
     range: IntRange,
     startNumber: Int = 0,
-    ItemHeight:Int = 56,
-    VisibleItemsCount:Int = 3,
+    ItemHeight: Int = 56,
+    VisibleItemsCount: Int = 3,
     textMapper: (Int) -> String,
     onSelectedNumberChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val adjustedStart =
-        if (startNumber == 0) 0
-        else startNumber - 1
-
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startNumber)
+    val adjustedStart = (startNumber - range.first).coerceAtLeast(0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = adjustedStart)
     val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
-    val isScrolling = listState.isScrollInProgress
 
-    // ── 🔹 [핵심 추가] 초기 진입 시 위치 강제 고정 📍 ──
     LaunchedEffect(Unit) {
-        snapshotFlow { listState.layoutInfo.totalItemsCount }
+        android.util.Log.d("PICKER", "LaunchedEffect 실행됨")
+        snapshotFlow { listState.layoutInfo.viewportSize.height }
             .filter { it > 0 }
             .first()
-
-        listState.scrollToItem(adjustedStart)
+        listState.scrollToItem(adjustedStart + 1)
+        android.util.Log.d("PICKER", "scrollToItem 완료: ${listState.firstVisibleItemIndex}")
     }
 
     LazyColumn(
         state = listState,
         flingBehavior = snapFlingBehavior,
         modifier = modifier.height((ItemHeight * VisibleItemsCount).dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        item{
-            TextBox(text = "", ItemHeight = ItemHeight.dp)
-        }
+        item { Box(modifier = Modifier.height(ItemHeight.dp)) } // 빈 칸
+
         items(range.count()) { index ->
+            // 👇 isScrolling을 여기 안에서 직접 읽기 (리컴포즈 범위를 items 내부로 제한)
+            val isScrolling = listState.isScrollInProgress
             val number = range.first + index
-            val textVal = textMapper(number)
-            val isGray =
-                (index != listState.firstVisibleItemIndex || isScrolling)
-            TextBox(text = textVal, ItemHeight = ItemHeight.dp, isGray)
+            val isGray = (index != listState.firstVisibleItemIndex || isScrolling)
+            TextBox(text = textMapper(number), ItemHeight = ItemHeight.dp, isGray = isGray)
         }
-        item{
-            TextBox(text = "", ItemHeight = ItemHeight.dp)
-        }
+
+        item { Box(modifier = Modifier.height(ItemHeight.dp)) } // 빈 칸
     }
+
     LaunchedEffect(listState.firstVisibleItemIndex) {
         val selected = (range.first + listState.firstVisibleItemIndex)
             .coerceIn(range.first, range.last)
         onSelectedNumberChange(selected)
-        //selectedNumber = range.first + listState.firstVisibleItemIndex
     }
 }
 

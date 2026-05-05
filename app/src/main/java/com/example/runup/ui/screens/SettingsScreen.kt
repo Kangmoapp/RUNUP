@@ -42,6 +42,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
+import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.SettingsViewModel
 
@@ -75,7 +76,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     showLogoutDialog = false
                     onLogoutClick()
-                }) { Text("로그아웃", color = Color(0xFF4A90E2)) }
+                }) { Text("로그아웃", color = PointColor) }
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
@@ -121,11 +122,12 @@ fun SettingsScreen(
                 .padding(padding)
         ) {
             // 계정 섹션
-            SettingsSectionHeader("계정")
-            SettingsItem(
-                title = "계정 정보",
-                subtitle = "이름, 이메일 등 내 정보 확인",
-                onClick = { /* TODO: 계정 정보 화면으로 이동 */ }
+            SettingsSectionHeader("기능")
+            SettingsSwitchItem(
+                title = "AI 자세 교정",
+                subtitle = "홈 화면에서 AI 상태 오버레이를 표시합니다. (인솔 필요)",
+                checked = uiState.isAiPostureVisible,
+                onCheckedChange = { viewModel.toggleAiPostureVisible(it) }
             )
 
             // 알림 섹션
@@ -161,11 +163,6 @@ fun SettingsScreen(
             // 로그아웃
             SettingsSectionHeader("계정 관리")
             SettingsItem(
-                title = "로그아웃",
-                titleColor = Color(0xFFE57373),
-                onClick = { showLogoutDialog = true }
-            )
-            SettingsItem(
                 title = "회원 탈퇴",
                 titleColor = Color(0xFFE57373),
                 subtitle = "앱 내 모든 기록 및 활동 삭제",
@@ -186,7 +183,7 @@ fun SettingsScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 androidx.compose.material3.CircularProgressIndicator(
-                    color = Color(0xFF4A90E2),
+                    color = PointColor,
                     strokeWidth = 4.dp
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -205,7 +202,7 @@ fun SettingsScreen(
 private fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
-        color = Color(0xFF4A90E2),
+        color = PointColor,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 18.dp, top = 20.dp, bottom = 4.dp)
@@ -278,7 +275,7 @@ private fun SettingsSwitchItem(
                     onCheckedChange = onCheckedChange,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF4A90E2)
+                        checkedTrackColor = PointColor
                     )
                 )
             }

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -168,13 +169,30 @@ fun PostItem(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Color.Gray),
+                    .background(Color(0xFF2C2C2C)),
                 contentAlignment = Alignment.Center
             ) {
                 if (authorProfileBitmap != null) {
-                    Image(bitmap = authorProfileBitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    Image(
+                        bitmap = authorProfileBitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
                 } else {
-                    Text("👤", fontSize = 18.sp)
+                    // ── 🔹 이모지 대신 Material Icon 적용 📍 ──
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "기본 프로필",
+                            tint = Color.Gray,
+                            // 18.sp 이모지 크기와 비슷하게 20.dp 내외로 설정했습니다.
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(10.dp))

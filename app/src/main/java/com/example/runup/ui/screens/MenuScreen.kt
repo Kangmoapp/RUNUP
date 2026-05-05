@@ -2,6 +2,7 @@ package com.example.runup.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -37,12 +39,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.runup.R
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
@@ -90,13 +95,38 @@ fun MenuScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 1. 주요 활동 및 커뮤니티 섹션
-            MenuSectionTitle("나의 러닝")
+            MenuSectionTitle("코스 탐색")
 
             // 핵심 메뉴는 PointColor 아이콘으로 강조
-            MainMenuItem(text = "커뮤니티", icon = Icons.Default.People, onClick = onCommunityClick)
-            MainMenuItem(text = "마이페이지", icon = Icons.Default.Person, onClick = onMypageClick)
+            MainMenuItem(
+                icon = Icons.Default.TouchApp,
+                onClick = onCommunityClick
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.course_pick), // 👈 저장된 이미지 리소스
+                    contentDescription = "코스 픽",
+                    modifier = Modifier.height(30.dp), // 폰트 크기와 비슷하게 높이 조절
+                    contentScale = ContentScale.Fit
+                )
+            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            MenuSectionTitle("나의 기록")
+            MainMenuItem(
+                icon = Icons.Default.Person,
+                onClick = onMypageClick
+            ) {
+                // ── 🔹 텍스트 슬롯 영역 📍 ──
+                Text(
+                    text = "마이페이지",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             // 2. 관리 및 설정 섹션
             MenuSectionTitle("앱 관리")
@@ -134,11 +164,11 @@ private fun MenuSectionTitle(title: String) {
 // 핵심 메뉴 (PointColor 리플 효과 적용)
 @Composable
 private fun MainMenuItem(
-    text: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    // ── 🔹 텍스트 대신 Composable 콘텐츠를 직접 받도록 변경 📍 ──
+    content: @Composable () -> Unit
 ) {
-    // 🔹 클릭 인터랙션을 감지하기 위한 소스
     val interactionSource = remember { MutableInteractionSource() }
 
     Surface(
@@ -147,7 +177,6 @@ private fun MainMenuItem(
             .padding(vertical = 6.dp)
             .clickable(
                 interactionSource = interactionSource,
-                // 🔹 여기서 리플 색상을 PointColor로 지정!
                 indication = ripple(color = PointColor),
                 onClick = onClick
             ),
@@ -165,7 +194,12 @@ private fun MainMenuItem(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(16.dp))
-            Text(text = text, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+
+            // ── 🔹 이 부분에서 전달받은 콘텐츠(이미지 또는 텍스트)를 렌더링 📍 ──
+            Box(modifier = Modifier.height(24.dp), contentAlignment = Alignment.CenterStart) {
+                content()
+            }
+
             Spacer(modifier = Modifier.weight(1f))
             Icon(Icons.Default.ChevronRight, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }

@@ -193,23 +193,19 @@ def generate_course_vector(event: firestore_fn.Event[firestore_fn.DocumentSnapsh
 
     def score_to_text(val, high_label, low_label):
         if val >= 0.66: return f"{high_label}"
-        if val >= 0.33: return f"평범함"
+        if val >= 0.33: return f"평범한"
         if val >= 0.0: return f"{low_label}"
         return "점수를 벗어남"
 
-    bright_txt  = score_to_text(bright,   "밝음", "어두움")
-    crowded_txt = score_to_text(crowded,  "많음", "적음")
-    hard_txt    = score_to_text(hard,     "높음", "낮음")
+    bright_txt  = score_to_text(bright,   "밝은", "어두운")
+    crowded_txt = score_to_text(crowded,  "많은", "적은")
+    hard_txt    = score_to_text(hard,     "높은", "낮은")
 
     # ✅ clear_address 실제로 사용
     clear_address = address.replace("대한민국 ", "")
 
     description = (
-        f"위치: {clear_address} | "   # ✅ address → clear_address 로 수정
-        f"주변 장소: {landmark} | "
-        f"밝기: {bright_txt} | "
-        f"유동인구: {crowded_txt} | "
-        f"난이도: {hard_txt}"
+        f"{landmark} 근처 {bright_txt} 유동인구 {crowded_txt} 난이도 {hard_txt} 코스 있어?"
     )
 
     model = get_model()

@@ -23,7 +23,7 @@ fun ControlButton(
     modifier: Modifier = Modifier,
     contentColor: Color = Color.White, // ── 🔹 기본값은 화이트로 설정 📍 ──
     isLoading: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier

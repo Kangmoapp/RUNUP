@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -196,7 +197,7 @@ fun CommentBottomSheet(
 
 @Composable
 fun CommentItem(
-    comment: Comment, // 윤석님의 댓글 모델
+    comment: Comment,
     bitmapCache: Map<String, Bitmap>,
     onDelete: () -> Unit,
     onProfileClick: (String) -> Unit // 🔹 콜백 파라미터 추가
@@ -323,7 +324,7 @@ fun CommentItem(
             modifier = Modifier
                 .size(34.dp) // 댓글용으로 적당히 작은 사이즈
                 .clip(CircleShape)
-                .background(Color.Gray.copy(alpha = 0.2f))
+                .background(Color(0xFF2C2C2C))
                 .clickable { onProfileClick(comment.authorId) },
             contentAlignment = Alignment.Center
         ) {
@@ -342,7 +343,19 @@ fun CommentItem(
                     contentScale = ContentScale.Crop
                 )
             } else {
-                Text("👤", fontSize = 14.sp)
+                // ── 🔹 댓글용 기본 아이콘 (Material Icon 적용) 📍 ──
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "기본 프로필",
+                        tint = Color.Gray,
+                        // 텍스트 14.sp와 밸런스가 맞도록 16.dp로 설정했습니다.
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 

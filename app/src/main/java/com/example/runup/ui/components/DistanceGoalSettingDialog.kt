@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -87,7 +89,7 @@ fun DistanceGoalSettingDialog(
                     Box(
                         modifier = Modifier
                             .width(70.dp) // 너비를 확실히 고정! (스크린샷보다 넓게 설정)
-                            .fillMaxHeight(),
+                            .wrapContentHeight(),
                         contentAlignment = Alignment.Center // 내부 요소(배경, 숫자)를 중앙으로 집결
                     ) {
                         // 1. 하이라이트 배경 (박스 너비를 꽉 채움)
@@ -100,14 +102,16 @@ fun DistanceGoalSettingDialog(
                         ) {}
 
                         // 2. 숫자 리스트 (배경 위에 정확히 올림)
-                        RunupLazyColumn(
-                            range = range,
-                            startNumber = startNumber,
-                            ItemHeight = 56,
-                            textMapper = { (it / 10.0).toString() },
-                            onSelectedNumberChange = { number -> selectedNumber = number },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        key(range, startNumber) {  // 👈 range랑 startNumber가 바뀔 때만 재생성
+                            RunupLazyColumn(
+                                range = range,
+                                startNumber = startNumber,
+                                ItemHeight = 56,
+                                textMapper = { (it / 10.0).toString() },
+                                onSelectedNumberChange = { number -> selectedNumber = number },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
 
                     // ── [B] 단위 표시 (피커와 겹치지 않게 거리 두기) 📍 ──
