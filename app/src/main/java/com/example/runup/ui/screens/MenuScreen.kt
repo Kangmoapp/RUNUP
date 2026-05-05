@@ -174,17 +174,18 @@ private fun MainMenuItem(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(color = PointColor),
-                onClick = onClick
-            ),
+            .padding(vertical = 6.dp),
         color = Color(0xFF2C2C2C),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+            modifier = Modifier
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(color = PointColor),
+                    onClick = onClick
+                )
+                .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(

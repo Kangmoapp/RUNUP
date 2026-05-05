@@ -2,9 +2,6 @@ package com.example.runup.viewmodel
 
 import android.net.Uri
 import android.util.Log
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.runup.domain.model.AuthResult
@@ -13,6 +10,8 @@ import com.example.runup.domain.model.RunRecord
 import com.example.runup.domain.model.UserData
 import com.example.runup.domain.model.toSummary
 import com.example.runup.domain.repository.UserRepository
+import com.example.runup.domain.usecase.GetUserGoalUseCase
+import com.example.runup.domain.usecase.GoalSettingUseCase
 import com.example.runup.domain.usecase.SaveCourseUseCase
 import com.example.runup.ui.util.ImagePreloader
 import com.example.runup.ui.util.UserStateManager
@@ -23,16 +22,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class MyPageRunState(
+    val goalDistance: Int = 0,
+    val goalPace: Int = 0,
     val pagedRuns: List<RunRecord> = emptyList(),
     val selectedFilter: RunFilter = RunFilter.ALL,
     val hasMore: Boolean = true,
     val isLoadingMore: Boolean = false,
-    val lastDate: Long? = null
+    val lastDate: Long? = null,
+    val showDistanceDialog: Boolean = false,
+    val showPaceDialog: Boolean = false,
 )
 
 @HiltViewModel
@@ -40,7 +44,9 @@ class MyPageViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val saveCourseUseCase: SaveCourseUseCase,
     private val userStateManager: UserStateManager,
-    private val imagePreloader: ImagePreloader
+    private val imagePreloader: ImagePreloader,
+    private val goalsettingUseCase: GoalSettingUseCase,
+    private val getUserGoalUseCase: GetUserGoalUseCase,
 ) : ViewModel() {
     // 유저 데이터
     val userState: StateFlow<UserData?> = userStateManager.userData
@@ -49,11 +55,15 @@ class MyPageViewModel @Inject constructor(
     val profileBitmaps = userStateManager.profileBitmaps
 
     // 2. [통합] 러닝 기록 관련 UI 상태 📍
-    private val _runState = MutableStateFlow(MyPageRunState())
-    val runState: StateFlow<MyPageRunState> = _runState.asStateFlow()
+    private val _uiState = MutableStateFlow(MyPageRunState())
+    val uiState: StateFlow<MyPageRunState> = _uiState.asStateFlow()
 
     private val _courseSaveSuccess = MutableSharedFlow<Unit>()
     val courseSaveSuccess = _courseSaveSuccess.asSharedFlow()
+
+    init {
+        loadUserGoal()
+    }
 
     // 초기 데이터 로드 (유저 정보 + 첫 5개 기록)
     fun initData() {
@@ -65,9 +75,9 @@ class MyPageViewModel @Inject constructor(
 
     // 1. 필터 업데이트 로직 수정
     fun updateFilter(filter: RunFilter) {
-        if ((_runState.value.selectedFilter == filter)) return // 이미 선택된 필터면 무시
+        if ((_uiState.value.selectedFilter == filter)) return // 이미 선택된 필터면 무시
 
-        _runState.update { it.copy(selectedFilter = filter) }
+        _uiState.update { it.copy(selectedFilter = filter) }
         loadMoreRuns(isRefresh = true)
     }
 
@@ -75,19 +85,19 @@ class MyPageViewModel @Inject constructor(
     // MyPageViewModel.kt
 
     fun loadMoreRuns(isRefresh: Boolean = false) {
-        val currentState = _runState.value
+        val currentState = _uiState.value
 
         if (!isRefresh && (!currentState.hasMore || currentState.isLoadingMore)) return
 
         viewModelScope.launch {
-            _runState.update { it.copy(isLoadingMore = true) }
+            _uiState.update { it.copy(isLoadingMore = true) }
 
             val lastDate = if (isRefresh) null else currentState.lastDate
 
             // 화면엔 5개를 보여줄 거지만 서버엔 6개를 요청
             val PAGE_SIZE = 5
             val result = userRepository.getRunsPaged(
-                filter = _runState.value.selectedFilter,
+                filter = _uiState.value.selectedFilter,
                 lastDate = lastDate,
                 pageSize = (PAGE_SIZE + 1).toLong() // 6개 요청
             )
@@ -101,14 +111,14 @@ class MyPageViewModel @Inject constructor(
                 // 2. 실제 UI에 보여줄 데이터는 최대 5개까지만 자름
                 val displayRuns = if (hasMoreData) fetchedRuns.take(PAGE_SIZE) else fetchedRuns
 
-                _runState.update { it.copy(
+                _uiState.update { it.copy(
                     pagedRuns = if (isRefresh) displayRuns else it.pagedRuns + displayRuns,
                     hasMore = hasMoreData, // 👈 6개가 왔을 때만 true
                     lastDate = displayRuns.lastOrNull()?.recordDate ?: it.lastDate,
                     isLoadingMore = false
                 ) }
             } else {
-                _runState.update { it.copy(isLoadingMore = false) }
+                _uiState.update { it.copy(isLoadingMore = false) }
             }
         }
     }
@@ -160,7 +170,7 @@ class MyPageViewModel @Inject constructor(
             val result = userRepository.deleteRunRecord(courseId)
             if (result is AuthResult.Success) {
                 // 1. UI 리스트에서 즉시 제거 (pagedRuns)
-                _runState.update { currentState ->
+                _uiState.update { currentState ->
                     currentState.copy(
                         pagedRuns = currentState.pagedRuns.filterNot { it.course.id == courseId }
                     )
@@ -215,6 +225,73 @@ class MyPageViewModel @Inject constructor(
                 is AuthResult.Fail -> {
                     Log.e("MyPageViewModel", "코스 추가 실패: ${result.message}")
                 }
+            }
+        }
+    }
+
+    // =====================================
+    // 목표 설정 함수들
+    // =====================================
+    private fun loadUserGoal() {
+        viewModelScope.launch {
+            getUserGoalUseCase().collectLatest { goal ->
+                goal?.let { (distance, pace) ->
+                    _uiState.update {
+                        it.copy(
+                            goalDistance = distance,
+                            goalPace = pace
+                        )
+                    }
+                }
+            }
+        }
+    }
+    fun openDistanceDialog() {
+        _uiState.update { it.copy(showDistanceDialog = true) }
+    }
+    fun closeDistanceDialog() {
+        _uiState.update { it.copy(showDistanceDialog = false) }
+    }
+
+    fun openPaceDialog() {
+        _uiState.update { it.copy(showPaceDialog = true) }
+    }
+    fun closePaceDialog() {
+        _uiState.update { it.copy(showPaceDialog = false) }
+    }
+
+    fun confirmDistance(distanceKm: Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
+        val distanceMeter:Int = distanceKm*100
+        _uiState.update {
+            it.copy(showDistanceDialog = false)
+        }
+        viewModelScope.launch {
+            when (val result = goalsettingUseCase(distanceMeter, _uiState.value.goalPace)) {
+                is AuthResult.Success -> {
+
+                }
+                is AuthResult.Fail -> {
+
+                }
+
+            }
+        }
+    }
+
+    fun confirmPace(paceMinute: Int, paceSecond:Int) {  //이 함수에서 db에 목표거리 저장 (distanceMeter)
+        val paceTotal:Int = paceMinute*60 + paceSecond
+        _uiState.update {
+            it.copy(showPaceDialog = false)
+        }
+        viewModelScope.launch {
+            when (val result = goalsettingUseCase(_uiState.value.goalDistance, paceTotal)) {
+                is AuthResult.Success -> {
+
+                }
+                is AuthResult.Fail -> {
+
+                }
+
             }
         }
     }

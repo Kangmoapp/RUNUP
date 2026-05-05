@@ -100,8 +100,6 @@ fun RunUpApp(
                 // AppViewModel에 저장된 UID를 전달
                 targetUid = viewModel.selectedTargetUid,
                 onBackClick = {
-                    // 🔹 이전 화면이 마이페이지였을 수도, 커뮤니티였을 수도 있으므로
-                    // 상황에 맞게 popBackStack 처럼 동작하게 하거나 특정 화면을 지정합니다.
                     viewModel.popBackStack()
                 },
                 onFollowClick = {viewModel.navigateTo(Screen.HOME)},
@@ -111,8 +109,16 @@ fun RunUpApp(
             )
 
             Screen.SETTINGS -> SettingsScreen(
-                onBackClick = { viewModel.navigateTo(Screen.HOME) },
+                onBackClick = { viewModel.popBackStack() },
                 onLogoutClick = { viewModel.navigateTo(Screen.START) },
+                onTermsClick = { termsType ->
+                    viewModel.updateTermsType(termsType)
+                    viewModel.navigateTo(Screen.TERM)
+                }
+            )
+            Screen.TERM -> TermsScreen (
+                termsType = viewModel.termsType,
+                onBackClick = { viewModel.popBackStack() }
             )
 
             else -> {}

@@ -105,7 +105,7 @@ import com.example.runup.viewmodel.CourseRecommendationUiState
 @Composable
 private fun Preview_HomeContent() {
     HomeContent(
-        homeUiState = HomeUiState(homeUi = HomeUi.HOME, selectedTab = HomeTab.RECOMMEND),
+        homeUiState = HomeUiState(homeUi = HomeUi.HOME, selectedTab = HomeTab.RUNNING),
         runningUiState = RunningUiState(),
         guideUiState = GuideUiState(),
         aiPostureUiState = AiPostureUiState(),
@@ -148,7 +148,7 @@ private fun Preview_HomeContent() {
         onConfirmMaxDistance = {},
         onCloseMaxDistanceDialog = {},
 
-        helpStep = HelpStep.RECOMMEND_1
+        helpStep = HelpStep.NONE
     )
 }
 
@@ -242,7 +242,10 @@ private enum class HelpStep {
     HOME_4,
     RECOMMEND_1,
     RECOMMEND_2,
-    RECOMMEND_3
+    RECOMMEND_3,
+    RECOMMEND_4,
+    RECOMMEND_5,
+    RECOMMEND_6,
 }
 
 @Composable
@@ -595,7 +598,7 @@ private fun HomeContent(
                             imageVector = Icons.Default.MyLocation,
                             contentDescription = null,
                             // ── 🔹 요청하신 색상 조건: Target(노란색), Free(흰색) 📍 ──
-                            tint = if (isManualMode) Color.White else PointColor,
+                            tint = if (!isManualMode or (homeUiState.homeUi == HomeUi.RUN)) PointColor else Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -971,6 +974,7 @@ private fun HomeContent(
                                                         .clip(RoundedCornerShape(12.dp))
                                                 ) {
                                                     if (canSearch) {
+                                                        isManualMode = false
                                                         onSearchClick()
                                                     }
                                                 }
@@ -1135,7 +1139,10 @@ private fun HomeContent(
 
                         HelpStep.RECOMMEND_1 -> HelpStep.RECOMMEND_2
                         HelpStep.RECOMMEND_2 -> HelpStep.RECOMMEND_3
-                        HelpStep.RECOMMEND_3 -> HelpStep.NONE
+                        HelpStep.RECOMMEND_3 -> HelpStep.RECOMMEND_4
+                        HelpStep.RECOMMEND_4 -> HelpStep.RECOMMEND_5
+                        HelpStep.RECOMMEND_5 -> HelpStep.RECOMMEND_6
+                        HelpStep.RECOMMEND_6 -> HelpStep.NONE
 
                         HelpStep.NONE -> HelpStep.NONE
                     }
@@ -1191,7 +1198,10 @@ private fun HelpOverlay(
 
         HelpStep.RECOMMEND_1 -> "여기는 코스 추천 탭입니다"
         HelpStep.RECOMMEND_2 -> "추천 받을 방법을 선택해 주세요"
-        HelpStep.RECOMMEND_3 -> "추천 도움말 3"
+        HelpStep.RECOMMEND_3 -> "원하는 코스 특징을 입력해\n추천 받을 수 있어요"
+        HelpStep.RECOMMEND_4 -> "코스 거리, 방법, 코스까지의 거리를\n선택할 수 있어요"
+        HelpStep.RECOMMEND_5 -> "이 버튼을 눌러 내 위치로\n화면을 고정해 주세요"
+        HelpStep.RECOMMEND_6 -> "버튼을 눌러 코스를 추천 받아요"
 
         HelpStep.NONE -> ""
     }
@@ -1254,14 +1264,14 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 194.dp, end = 14.dp)
+                        .padding(bottom = 190.dp, end = 10.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
                 ){
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(54.dp)
                             .border(
                                 width = 3.dp,
                                 color = Color.Red
@@ -1273,7 +1283,65 @@ private fun HelpOverlay(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(bottom = 98 .dp, end = 14.dp)
+                        .padding(bottom = 94 .dp, end = 10.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .size(width = 96.dp, height = 46.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+
+            HelpStep.RECOMMEND_1 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(80.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.RECOMMEND_2 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 97.dp, start = 10.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                ){
+                    Box(
+                        modifier = Modifier
+                            .width(235.dp)
+                            .height(43.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.RECOMMEND_3 -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 200.dp, end = 10.dp)
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.Bottom,
                     horizontalAlignment = Alignment.End
@@ -1288,12 +1356,67 @@ private fun HelpOverlay(
                     )
                 }
             }
+            HelpStep.RECOMMEND_4 ->{
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 148.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(47.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.RECOMMEND_5 ->{
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 290.dp, end = 10.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
 
-            HelpStep.RECOMMEND_1 -> "추천 도움말 1"
-            HelpStep.RECOMMEND_2 -> "추천 도움말 2"
-            HelpStep.RECOMMEND_3 -> "추천 도움말 3"
-
-            HelpStep.NONE -> ""
+            }
+            HelpStep.RECOMMEND_6 ->{
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(bottom = 95.dp, end = 10.dp)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Bottom,
+                    horizontalAlignment = Alignment.End
+                ){
+                    Box(
+                        modifier = Modifier
+                            .size(width = 84.dp, height = 50.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.Red
+                            )
+                    )
+                }
+            }
+            HelpStep.NONE -> {}
         }
         Box(
             modifier = Modifier

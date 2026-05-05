@@ -3,6 +3,7 @@ package com.example.runup.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,11 +46,13 @@ import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
 import com.example.runup.viewmodel.SettingsViewModel
+import com.example.runup.ui.navigation.TermsType
 
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
     onLogoutClick: () -> Unit,
+    onTermsClick: (TermsType) -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -65,7 +68,9 @@ fun SettingsScreen(
             restartApp(context)
         }
     }
-
+    BackHandler {
+        onBackClick()
+    }
     // 로그아웃 확인 다이얼로그
     if (showLogoutDialog) {
         AlertDialog(
@@ -145,15 +150,13 @@ fun SettingsScreen(
             SettingsItem(
                 title = "개인정보처리방침",
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://your-domain.com/privacy"))
-                    context.startActivity(intent)
+                    onTermsClick(TermsType.PRIVACY)
                 }
             )
             SettingsItem(
                 title = "이용약관",
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://your-domain.com/terms"))
-                    context.startActivity(intent)
+                    onTermsClick(TermsType.SERVICE)
                 }
             )
             SettingsVersionItem()

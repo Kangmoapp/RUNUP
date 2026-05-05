@@ -1,5 +1,6 @@
 package com.example.runup.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.TextBlack
 import com.example.runup.ui.theme.TextGray
+import com.example.runup.ui.theme.White
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 
@@ -35,7 +37,7 @@ fun RunupLazyColumn(
     onSelectedNumberChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val adjustedStart = (startNumber - range.first).coerceAtLeast(0)
+    val adjustedStart = (startNumber-1 - range.first).coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = adjustedStart)
     val snapFlingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
@@ -44,7 +46,7 @@ fun RunupLazyColumn(
         snapshotFlow { listState.layoutInfo.viewportSize.height }
             .filter { it > 0 }
             .first()
-        listState.scrollToItem(adjustedStart + 1)
+        listState.scrollToItem(adjustedStart)
         android.util.Log.d("PICKER", "scrollToItem 완료: ${listState.firstVisibleItemIndex}")
     }
 
