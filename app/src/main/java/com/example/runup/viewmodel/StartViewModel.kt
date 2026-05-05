@@ -45,7 +45,6 @@ class StartViewModel @Inject constructor(
                     signInWithGoogle(idToken, onSuccess)
                 }
             )
-            syncUserGoalServerToRoomUseCase.invoke()
         }
     }
 
