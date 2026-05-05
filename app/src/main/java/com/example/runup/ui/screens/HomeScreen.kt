@@ -149,7 +149,7 @@ private fun Preview_HomeContent() {
         onConfirmMaxDistance = {},
         onCloseMaxDistanceDialog = {},
 
-        helpStep = HelpStep.NONE
+        helpStep = HelpStep.HOME_2
     )
 }
 
@@ -1177,7 +1177,7 @@ private fun HomeContent(
                 "최대 코스 추천 범위",
                 range = 1..20, // 0.1km ~ 10.0km 범위
                 // 500m인 경우 5가 선택되어 0.5km로 표시되도록 계산
-                startNumber = (courseRecommendationUiState.maxSearchDistance / 100),
+                startNumber = (courseRecommendationUiState.maxSearchDistance / 100 + 1),
                 onConfirm = { kmUnit ->
                     // 다이얼로그에서 선택한 숫자(예: 5)를 받아 500m로 변환하여 저장
                     onConfirmMaxDistance(kmUnit)

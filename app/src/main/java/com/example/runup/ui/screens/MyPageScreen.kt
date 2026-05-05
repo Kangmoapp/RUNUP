@@ -111,6 +111,7 @@ import com.example.runup.ui.util.calculatePace
 import com.example.runup.ui.util.latLngToPixel
 import com.example.runup.ui.util.mapper.DistanceMapper
 import com.example.runup.ui.util.mapper.TimeMapper.formatDuration
+import com.example.runup.ui.util.mapper.TimeMapper.formatDurationMmSs
 import com.example.runup.ui.util.mapper.TimeMapper.formatSeconds
 import com.example.runup.viewmodel.CommunityViewModel
 import kotlinx.coroutines.delay
@@ -430,7 +431,7 @@ fun MyPageScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("목표 페이스", color = Color.Gray, fontSize = 12.sp)
-                                Text(formatSeconds(uiState.goalPace), color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text(formatDurationMmSs(uiState.goalPace.toLong()), color = WhiteTextColor, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
