@@ -117,14 +117,33 @@ fun CourseInfoCard(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Text(
-                    text = course.originCourse.landmark.ifEmpty { "정보 없음" },
-                    fontSize = 11.sp,
-                    color = TextBlack,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+
+                // 쉼표(,)를 기준으로 문자열을 나누고 공백을 제거한 리스트 생성
+                val landmarkList = course.originCourse.landmark
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+
+                if (landmarkList.isEmpty()) {
+                    Text(
+                        text = "정보 없음",
+                        fontSize = 11.sp,
+                        color = TextBlack,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    // 각 장소명을 순회하며 별도의 Text로 출력 (Column 안이므로 세로로 쌓임)
+                    landmarkList.forEach { name ->
+                        Text(
+                            text = name,
+                            fontSize = 11.sp,
+                            color = TextBlack,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
 
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Gray.copy(0.1f)))
@@ -135,8 +154,8 @@ fun CourseInfoCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactTextScore("밝음", course.originCourse.scores.brightScore)
-                CompactTextScore("붐빔", course.originCourse.scores.crowdedScore)
+                CompactTextScore("밝기", course.originCourse.scores.brightScore)
+                CompactTextScore("유동인구", course.originCourse.scores.crowdedScore)
                 CompactTextScore("난이도", course.originCourse.scores.hardScore)
             }
         }

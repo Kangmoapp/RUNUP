@@ -3,9 +3,11 @@ package com.example.runup.domain.usecase
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.CoursePathGroup
 import com.example.runup.domain.model.CourseRecommendation
+import com.example.runup.domain.model.SortDirection
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
 import com.google.firebase.firestore.GeoPoint
+import okhttp3.Address
 import javax.inject.Inject
 
 class GetRecommendedCourseUseCase @Inject constructor(
@@ -17,12 +19,14 @@ class GetRecommendedCourseUseCase @Inject constructor(
         currentLocation: GeoPoint,
         isLoop: Boolean,
         sortType: SortType,
-        count: Int
+        count: Int,
+        maxSearchDistance: Int, // 📍 추가
+        sortDirection: SortDirection // 📍 추가
     ): AuthResult<List<CourseRecommendation>> {
-        val result = courseRepository.getCourse(courseDistance, currentLocation, isLoop, sortType)
+        val result = courseRepository.getCourse(courseDistance, currentLocation, isLoop, sortType, maxSearchDistance, sortDirection)
 
         return when (result) {
-            is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))
+            is AuthResult.Success -> AuthResult.Success(flattenCourses(result.data, count))
             is AuthResult.Fail -> AuthResult.Fail(result.message)
         }
     }
@@ -31,11 +35,13 @@ class GetRecommendedCourseUseCase @Inject constructor(
     suspend operator fun invoke(
         courseDistance: Int,
         currentLocation: GeoPoint,
+        currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
-        count: Int
+        count: Int,
+        maxSearchDistance: Int
     ): AuthResult<List<CourseRecommendation>> {
-        val result = courseRepository.getCourseFromAI(courseDistance, currentLocation, isLoop, userPrompt)
+        val result = courseRepository.getCourseFromAI(courseDistance, currentLocation, currentAddress, isLoop, userPrompt, maxSearchDistance)
 
         return when (result) {
             is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))
@@ -76,5 +82,21 @@ class GetRecommendedCourseUseCase @Inject constructor(
         }
 
         return resultList
+    }
+
+    private fun flattenCourses(
+        groups: List<CoursePathGroup>,
+        targetCount: Int
+    ): List<CourseRecommendation> {
+        return groups.flatMap { group ->
+            // 각 그룹(originCourse)에서 생성된 갈래 중 '최대 2개'만 선택 📍
+            group.generatedPaths.take(2).map { path ->
+                CourseRecommendation(
+                    originCourse = group.originCourse,
+                    reason = group.reason,
+                    path = path
+                )
+            }
+        }.take(targetCount) // 전체 결과 중 최종적으로 필요한 개수(3개)만큼만 반환
     }
 }

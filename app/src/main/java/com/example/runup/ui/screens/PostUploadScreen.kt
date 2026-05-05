@@ -39,10 +39,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.runup.ui.components.SelectableExpandableRunItem
 import com.example.runup.ui.components.TopBar
 import com.example.runup.ui.theme.BackGroudColor
 import com.example.runup.ui.theme.PointColor
 import com.example.runup.ui.theme.WhiteTextColor
+import com.example.runup.ui.util.mapper.TimeMapper.formatDuration
 import com.example.runup.ui.util.mapper.TimeMapper.formatTimestamp
 import com.example.runup.viewmodel.CommunityViewModel
 
@@ -50,6 +52,7 @@ import com.example.runup.viewmodel.CommunityViewModel
 @Composable
 fun PostUploadScreen(
     onBackClick: () -> Unit,
+    onBackHandlerClick: () -> Unit,
     onUploadSuccess: () -> Unit,
     viewModel: CommunityViewModel = hiltViewModel<CommunityViewModel>()
 ) {
@@ -59,6 +62,11 @@ fun PostUploadScreen(
 
     // 추가된 상태 관찰
     val uiState by viewModel.postUploadUiState.collectAsState()
+    // 시트 상태 정의 (맨 위 확장 상태로 고정하기 위함)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { newValue ->
+        // 여기서는 기본적으로 true를 반환하되, 스와이프 시 너무 민감하게 반응하지 않도록 skipPartiallyExpanded가 이미 돕고 있습니다.
+        true
+    })
 
     // 미디어 위치 권한 요청 런처 추가
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -71,10 +79,15 @@ fun PostUploadScreen(
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.resetUploadState()
+        }
+    }
+
     // 화면 진입 시 권한 체크 및 요청
     LaunchedEffect(Unit) {
         Log.d("Exif", "LaunchedEffect 시작")
-        viewModel.clearSelectedImages()
         viewModel.fetchMyRunRecords()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -82,8 +95,6 @@ fun PostUploadScreen(
             Log.d("Exif", "권한 요청 시도: $permission")
             permissionLauncher.launch(permission)
         }
-
-
     }
 
     // PickMultipleVisualMedia 대신 GetMultipleContents 사용
@@ -105,21 +116,25 @@ fun PostUploadScreen(
 
     BackHandler { // 안드로이드 뒤로가기 버튼
         viewModel.clearSelectedImages()
-        onBackClick()
+        onBackHandlerClick()
     }
 
     // --- 러닝 기록 선택 바텀 시트 ---
     if (uiState.isSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { viewModel.setSheetOpen(false) },
-            containerColor = Color(0xFF1C1C1C)
+            sheetState = sheetState,
+            containerColor = Color(0xFF1C1C1C),
+            // ── 🔹 [추가] 시트가 화면의 일정 비율을 항상 차지하도록 설정 📍 ──
+            dragHandle = { BottomSheetDefaults.DragHandle() },
         ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .fillMaxHeight(0.8f)
+                    .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp)
-                    .heightIn(max = 500.dp)
+                    .heightIn(min = 500.dp, max = 600.dp)
             ) {
                 item {
                     Text("내 러닝 기록", color = WhiteTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -134,17 +149,13 @@ fun PostUploadScreen(
                     }
                 } else {
                     items(uiState.runRecords) { record ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectRunRecord(record) }
-                                .padding(vertical = 12.dp)
-                        ) {
-                            // 🔹 날짜 포맷팅 적용 (TimeMapper 사용 추천)
-                            Text(formatTimestamp(record.recordDate), color = Color.Gray, fontSize = 12.sp)
-                            Text("${String.format("%.2f", record.course.distance / 1000.0)}km 러닝", color = WhiteTextColor, fontWeight = FontWeight.Bold)
-                        }
-                        HorizontalDivider(color = Color.DarkGray)
+                        SelectableExpandableRunItem(
+                            run = record,
+                            onSelect = {
+                                viewModel.selectRunRecord(record)
+                                viewModel.setSheetOpen(false) // 선택 후 시트 닫기
+                            }
+                        )
                     }
 
                     // 🔹 [추가] 더 보기 버튼 섹션
@@ -153,6 +164,7 @@ fun PostUploadScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .height(80.dp)
                                     .padding(vertical = 16.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -185,6 +197,8 @@ fun PostUploadScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                // ── 🔹 키보드가 올라오면 하단에 여백을 자동으로 추가 📍 ──
+                .imePadding()
                 .padding(horizontal = 20.dp) // 여백을 살짝 넓혀서 고급스럽게 🔹
                 .verticalScroll(rememberScrollState())
         ) {
@@ -221,31 +235,64 @@ fun PostUploadScreen(
                     onClick = { viewModel.setSheetOpen(true) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2C2C))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)) // MyPage와 통일
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        // ── 🔹 [상단] 강조 라벨 (노란 점 + 선택된 기록) ──
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(PointColor)
+                                    .background(PointColor) // RUNUP 포인트 컬러
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("선택된 기록", color = PointColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "선택된 기록",
+                                color = PointColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${formatTimestamp(selected.recordDate)} 러닝",
-                            color = WhiteTextColor,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "${String.format("%.2f", selected.course.distance / 1000.0)}km | ${selected.time}",
-                            color = Color.Gray,
-                            fontSize = 14.sp
-                        )
+
+                        Spacer(modifier = Modifier.height(12.dp)) // 라벨과 데이터 사이 간격
+
+                        // ── 🔹 [하단] 상세 데이터 영역 (좌우 정렬) ──
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom // 날짜와 시간이 바닥 선에 맞게 정렬
+                        ) {
+                            // [왼쪽] 날짜 및 코스 ID
+                            Column {
+                                Text(
+                                    text = formatTimestamp(selected.recordDate),
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = selected.course.id,
+                                    color = WhiteTextColor,
+                                    fontWeight = FontWeight.ExtraBold, // 조금 더 강조
+                                    fontSize = 18.sp
+                                )
+                            }
+
+                            // [오른쪽] 거리 및 시간 (우측 정렬)
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "${selected.course.distance}m",
+                                    color = PointColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                                Text(
+                                    text = formatDuration(selected.time),
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
                     }
                 }
             }

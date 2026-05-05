@@ -21,10 +21,9 @@ object GeminiModule {
     fun provideGeminiHelper(
         embeddingHelper: EmbeddingHelper,
         courseBox: Box<CourseEntity>,
-        gson: Gson,
-        courseMapper: CourseMapper
+        courseMapper: CourseMapper,
     ): GeminiHelper {
         // 이제 GemmaHelper를 만들 때 모든 재료를 다 던져줍니다.
-        return GeminiHelper(embeddingHelper, courseBox, gson, courseMapper)
+        return GeminiHelper(embeddingHelper, courseBox,  courseMapper)
     }
 }

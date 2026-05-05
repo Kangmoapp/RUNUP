@@ -8,6 +8,7 @@ import com.example.runup.domain.model.Course
 import com.example.runup.ui.util.mapper.CourseMapper
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig
+import com.google.firebase.firestore.GeoPoint
 import com.google.gson.Gson
 import io.objectbox.Box
 import io.objectbox.kotlin.query
@@ -16,7 +17,6 @@ import io.objectbox.query.QueryBuilder
 class GeminiHelper(
     private val embeddingHelper: EmbeddingHelper, // 검색을 위해 필요
     private val courseBox: Box<CourseEntity>,
-    private val gson: Gson = Gson(),
     private val courseMapper: CourseMapper,
 ) {
     private val TAG = "RUNUP_GEMINI_SEARCH"
@@ -32,37 +32,82 @@ class GeminiHelper(
         }
     )
 
-    private fun getSearchResult(queryText: String, userCity: String): List<CourseEntity> {
-        // 문장을 384차원 벡터로 변환
+    private fun getSearchResult(
+        queryText: String,
+        userCity: String,
+        userLoc: GeoPoint,
+        maxSearchDistance: Int,
+        targetDist: Double
+    ): List<CourseEntity> {
+
         val userQueryVector = embeddingHelper.getEmbedding(queryText)
+        val maxRadius = maxSearchDistance * 0.00001
+        val minCourseDistance = targetDist.toDouble()
 
-        val resultsWithScores = courseBox.query {
-            // 1. 지역 필터링 추가 (매개변수 순서 주의!)
+        // 1단계: 주변 코스 필터링
+        val localCandidates = courseBox.query {
+            greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
             contains(CourseEntity_.address, userCity, QueryBuilder.StringOrder.CASE_INSENSITIVE)
-            // 2. 기존 벡터 검색 로직
-            nearestNeighbors(CourseEntity_.vector, userQueryVector, 3)
-        }.findWithScores()
 
-        // 로그 출력 (디버깅용 - 기존 유지)
-        Log.d("RUNUP_SEARCH_DEBUG", "🔎 검색 결과 개수: ${resultsWithScores.size} | 검색어: '$queryText'")
+            greaterOrEqual(CourseEntity_.distance, minCourseDistance)
+        }.find()
 
-        resultsWithScores.forEachIndexed { index, scoreObject ->
-            val entity = scoreObject.get()
-            Log.d("RUNUP_SEARCH_DEBUG", "   [$index] ID: ${entity.firebaseId} | 점수: ${scoreObject.score}")
+        if (localCandidates.isEmpty()) {
+            Log.d(TAG, "📍 [검색 결과] 주변에 조건에 맞는 코스가 하나도 없습니다.")
+            return emptyList()
         }
 
-        // UI에는 검색 결과 순서대로 Course 객체 리스트 반환
-        return resultsWithScores.map { it.get() }
+        // 2단계: 필터링된 후보군 내에서 벡터 검색
+        val finalResults = courseBox.query {
+            greater(CourseEntity_.maxLat, userLoc.latitude - maxRadius)
+            less(CourseEntity_.minLat, userLoc.latitude + maxRadius)
+            greater(CourseEntity_.maxLng, userLoc.longitude - maxRadius)
+            less(CourseEntity_.minLng, userLoc.longitude + maxRadius)
+            contains(CourseEntity_.address, userCity, QueryBuilder.StringOrder.CASE_INSENSITIVE)
+            // 📍 2단계 쿼리에도 동일하게 거리 필터 적용
+            greaterOrEqual(CourseEntity_.distance, minCourseDistance)
+            nearestNeighbors(CourseEntity_.vector, userQueryVector, localCandidates.size)
+        }.findWithScores()
+
+        // ── 🔹 3단계: 로그 출력 및 최종 5개 반환 📍 ──
+        val topResults = finalResults.take(5)
+
+        Log.d(TAG, "==========================================================")
+        Log.d(TAG, "🚀 AI 코스 추천 최종 결과 (Top ${topResults.size})")
+        Log.d(TAG, "🔍 검색어: $queryText")
+        Log.d(TAG, "----------------------------------------------------------")
+
+        topResults.forEachIndexed { index, scoreObject ->
+            val entity = scoreObject.get()
+            val score = scoreObject.score
+
+            Log.d(TAG, "[$index] ID: ${entity.firebaseId}")
+            Log.d(TAG, "    - 유사도 점수: $score")
+            Log.d(TAG, "    - 임베딩 텍스트: ${entity.embeddingText}")
+            Log.d(TAG, "----------------------------------------------------------")
+        }
+        Log.d(TAG, "==========================================================")
+
+        return topResults.map { it.get() }
     }
     /**
      * 최종 AI 검색 통합 함수
      */
-    suspend fun performAiSearch(userPrompt: String): List<Pair<Course, String>> {
+    suspend fun performAiSearch(
+        userPrompt: String,
+        userCity : String,
+        userLoc: GeoPoint,
+        maxSearchDistance: Int,
+        targetDist: Double,
+    ): List<Pair<Course, String>> {
         Log.d(TAG, "🚀 Gemini AI 검색 시작 | 입력: '$userPrompt'")
 
         return try {
             // 1. 벡터 검색으로 후보군 가져오기
-            val topEntities = getSearchResult(userPrompt, "대구")
+            val topEntities = getSearchResult(userPrompt, userCity, userLoc, maxSearchDistance, targetDist)
             if (topEntities.isEmpty()) return emptyList()
 
             val contextText = topEntities.mapIndexed { index, entity ->
@@ -119,7 +164,8 @@ class GeminiHelper(
      */
     private suspend fun fetchGeminiResponse(userPrompt: String, contextText: String): String? {
         val finalPrompt = """
-        너는 러닝 코스 추천 전문가야. [Context]의 후보들 중 [Query]에 가장 적합한 **단 하나의 코스**를 선정해.
+        당신은 러닝 코스 추천 전문가입니다. 
+        제공된 [Context]의 후보들 중 사용자의 요청([Query])에 가장 적합한 코스를 **최대 3개** 선정하여 우선순위가 높은 순서대로 나열하세요.
 
         [Context]
         $contextText
@@ -128,16 +174,21 @@ class GeminiHelper(
         "$userPrompt"
 
         [Writing Rules (경우의 수)]
-        1. **모든 조건 만족 시**: "[해당하는 특징]을 모두 만족하여 이 코스가 가장 적절해요!"라고 작성할 것.
-        2. **일부 조건 불일치 시**: "[일치하는 특징]은 만족하지만 [일치하지 않는 특징]인데 괜찮으실까요?"라고 질문할 것.
-        3. **적절한 코스/장소 없을 시**: "[Query의 장소명] 주변의 코스는 없는 것 같아요..."라고 작성하고 ID는 'None'으로 표기할 것.
-        4. [Query] 에 장소에 대한 얘기가 없을 시 - [일치하는 특징] 이 존재하면 2번과 같이 출력 / [일치하는 특징] 이 존재하지 않으면 "적절한 장소가 없는 것 같아요..." 로 출력
+        1. **모든 조건 만족 시**: "[해당하는 특징]을 만족하여 이 코스가 가장 적절해요!"라고 작성할 것.
+        2. **장소 관련 얘기만 있을시**: "[Query의 장소명] 주변의 코스에요!" 라고 간결하게 대답. 
+        3. **일부 조건 불일치 시**: "[일치하는 특징]은 만족하지만 [일치하지 않는 특징]인데 괜찮으실까요?"라고 질문할 것.
+        4. **적절한 코스/장소 없을 시**: "[Query의 장소명] 주변의 코스는 없는 것 같아요..."라고 작성하고 ID는 'None'으로 표기할 것.
+        5. [Query] 에 장소에 대한 얘기가 없을 시 - [일치하는 특징] 이 존재하면 3번과 같이 출력 / [일치하는 특징] 이 존재하지 않으면 "적절한 장소가 없는 것 같아요..." 로 출력
 
         [Constraint]
-        - 반드시 한 문장으로 간결하게 작성할 것.
+        - Reason은 반드시 한 문장으로 간결하게 작성할 것.
         - 불필요한 인사나 부연 설명은 절대 금지.
+        - 적합한 코스가 3개 미만이라면 찾은 만큼만 결과물에 포함하세요.
+        - 사용자의 요청과 핵심 특징(밝기, 유동인구, 난이도)이 완전히 정반대인 코스(예: 밝은 곳 요청 시 '매우 어두움')는 후보군에서 즉시 제외하고 절대 추천하지 마세요.
 
         [Output Format]
+        ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
+        ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
         ID: [선택한 코스의 ID] | Reason: [Writing Rules를 참고하여 작성]
         """.trimIndent()
 

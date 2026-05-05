@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.example.runup.data.districtMap
 import com.example.runup.data.source.remote.community.CommunityDataSourceImpl
 import com.example.runup.domain.model.AddressModel
 import com.example.runup.domain.model.AdmVO
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.collections.map
 import kotlin.text.ifEmpty
 
 data class UserTotalStats(
@@ -491,10 +493,6 @@ class UserPostViewModel @Inject constructor(
         }
     }
 
-
-
-
-
     fun setFilter(type: FilterType, city: String = "", district: String = "", dong: String = "") {
         viewModelScope.launch {
             _communityUiState.update { currentState ->
@@ -527,34 +525,23 @@ class UserPostViewModel @Inject constructor(
 
 
     // ViewModel
-    fun loadDistricts(cityCode: String, cityName: String) {  // 🔹 이름 추가
-        viewModelScope.launch {
-            _isLoadingDistrict.value = true
-            _districtLocations.value = emptyList()
-            _dongLocations.value = emptyList()
-            try {
-                val result = locationRepository.fetchLocations(
-                    parentCode = cityCode,
-                    locationName = cityName  // 🔹 "서울특별시" 넘김
-                )
-                _districtLocations.value = result
-            } catch (e: Exception) {
-                Log.e("LocationAPI", "구/군 로드 실패: ${e.localizedMessage}")
-            } finally {
-                _isLoadingDistrict.value = false
-            }
-        }
+    fun loadDistricts(cityCode: String) {
+        // 🔹 API 호출 없이 하드코딩 데이터에서 바로 가져옴
+        val list = districtMap[cityCode]?.map { (name, code) ->
+            AdmVO(admCode = code, lowestAdmName = name, locathighCd = cityCode, fullAddress = "")
+        } ?: emptyList()
+
+        _districtLocations.value = list
     }
 
-    fun loadDongs(districtCode: String, cityName: String, districtName: String) {  // 🔹 이름 추가
+    fun loadDongs(districtCode: String, districtName: String) {  // 🔹 cityName 제거
         viewModelScope.launch {
             _isLoadingDong.value = true
             _dongLocations.value = emptyList()
             try {
-                val combinedName = "$cityName $districtName"
                 val result = locationRepository.fetchLocations(
                     parentCode = districtCode,
-                    locationName = combinedName  // 🔹 "수성구" 이렇게 넘김
+                    locationName = districtName  // 🔹 "강남구", "수성구" 등 구/군 이름만
                 )
                 _dongLocations.value = result
             } catch (e: Exception) {

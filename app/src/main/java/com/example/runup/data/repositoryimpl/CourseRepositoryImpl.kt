@@ -4,6 +4,7 @@ import com.example.runup.data.source.remote.course.CourseDataSource
 import com.example.runup.domain.model.AuthResult
 import com.example.runup.domain.model.Course
 import com.example.runup.domain.model.CoursePathGroup
+import com.example.runup.domain.model.SortDirection
 import com.example.runup.domain.model.SortType
 import com.example.runup.domain.repository.CourseRepository
 import com.google.firebase.firestore.GeoPoint
@@ -20,17 +21,21 @@ class CourseRepositoryImpl @Inject constructor (
         courseDistance: Int,
         currentLocation: GeoPoint,
         isLoop: Boolean,
-        sortType: SortType
+        sortType: SortType,
+        maxSearchDistance: Int, // 📍 추가
+        sortDirection: SortDirection // 📍 추가
     ): AuthResult<List<CoursePathGroup>>{
-        return courseDataSource.getCourse(courseDistance, currentLocation, isLoop, sortType)
+        return courseDataSource.getCourse(courseDistance, currentLocation, isLoop, sortType, maxSearchDistance, sortDirection )
     }
 
     override suspend fun getCourseFromAI(
         courseDistance: Int, // 몇 m 뛸껀지
         currentLocation: GeoPoint, //
+        currentAddress: String,
         isLoop: Boolean,
         userPrompt: String,
+        maxSearchDistance: Int
     ): AuthResult<List<CoursePathGroup>>{
-        return courseDataSource.getCourseFromAI(courseDistance, currentLocation, isLoop, userPrompt)
+        return courseDataSource.getCourseFromAI(courseDistance, currentLocation, currentAddress, isLoop, userPrompt, maxSearchDistance)
     }
 }
