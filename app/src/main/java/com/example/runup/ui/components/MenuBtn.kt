@@ -19,13 +19,13 @@ import com.example.runup.ui.theme.WhiteTextColor
 
 @Composable
 fun MenuBtn(    // 우측 상단 메튜 버튼
-    modifier:Modifier,
+    modifier:Modifier = Modifier
+        .padding(top = 35.dp, end = 18.dp),
     onMenuClick:()->Unit
 ){
     Box(
         modifier = modifier
             .wrapContentSize()
-            .padding(top = 35.dp, end = 18.dp)
     ){
         Box(
             modifier = Modifier

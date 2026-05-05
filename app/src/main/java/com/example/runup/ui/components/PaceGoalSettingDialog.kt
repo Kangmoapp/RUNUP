@@ -80,7 +80,7 @@ fun PaceGoalSettingDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
+                        .height(168.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {

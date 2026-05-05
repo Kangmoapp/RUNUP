@@ -81,7 +81,7 @@ fun DistanceGoalSettingDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
+                        .wrapContentHeight(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center // 👈 전체 묶음을 가로 중앙으로!
                 ) {
