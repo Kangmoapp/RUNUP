@@ -49,6 +49,10 @@ class UserRepositoryImpl @Inject constructor(
         return userdatasource.uploadUserProfileImage(imageUri)
     }
 
+    override suspend fun deleteUserProfileImage(): AuthResult<Boolean> {
+        return userdatasource.deleteUserProfileImage()
+    }
+
     // 달리기 목표 저장
     override suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean> {
         return userdatasource.updateUserGoal(goaldistance, goaltime)

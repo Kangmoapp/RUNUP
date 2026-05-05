@@ -176,8 +176,8 @@ class UserPostViewModel @Inject constructor(
             )
 
             if (result is AuthResult.Success) {
-                val (newPosts, lastSnapshot) = result.data
-                if (newPosts.size < 4) isLastPage = true
+                val (newPosts, lastSnapshot, hasMore) = result.data
+                isLastPage = !hasMore
                 lastVisibleSnapshot = lastSnapshot
 
                 _communityUiState.update { state ->

@@ -43,17 +43,31 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteAccount() {
         viewModelScope.launch {
+            // 1. 로딩 시작
             _uiState.update { it.copy(isLoading = true) }
-            updateUserLoginStatusUseCase.invoke(false)
-            val result = deleteUserAccountUseCase.invoke()
-            if (result is AuthResult.Success) {
-                userStateManager.clear()
+            try {
+                // 2. 🚨 서버(Firebase) 계정 및 데이터 삭제를 '먼저' 실행해야 권한 에러가 안 납니다!
+                val result = deleteUserAccountUseCase.invoke()
+
+                if (result is AuthResult.Success) {
+                    // 3. 서버 삭제가 성공했을 때만 로컬 로그인 상태를 해제하고 찌꺼기를 지웁니다.
+                    updateUserLoginStatusUseCase.invoke(false)
+                    userStateManager.clear()
+                }
+
+                // 4. 로딩 종료 및 결과 업데이트
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    deleteResult = result
+                )}
+
+            } catch (e: Exception) {
+                // 5. 만약 예상치 못한 에러로 앱이 터지려 해도 여기서 잡아서 로딩을 꺼줍니다.
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    deleteResult = AuthResult.Fail(e.message ?: "탈퇴 중 알 수 없는 오류 발생")
+                )}
             }
-            // 삭제 완전히 끝난 후에 상태 업데이트
-            _uiState.update { it.copy(
-                isLoading = false,
-                deleteResult = result
-            )}
         }
     }
 

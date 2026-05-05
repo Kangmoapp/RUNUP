@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -35,7 +37,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -72,6 +77,8 @@ fun MenuScreen(
 ) {
     val context = LocalContext.current
 
+    var logoutLoading by remember { mutableStateOf(false) }
+
     // 데이터 프리로드는 백그라운드에서 계속 진행 (마이페이지 등을 위해 유지)
     LaunchedEffect(Unit) {
         viewModel.initPreload(context)
@@ -95,7 +102,7 @@ fun MenuScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // 1. 주요 활동 및 커뮤니티 섹션
-            MenuSectionTitle("코스 탐색")
+            MenuSectionTitle("메뉴")
 
             // 핵심 메뉴는 PointColor 아이콘으로 강조
             MainMenuItem(
@@ -110,9 +117,8 @@ fun MenuScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            MenuSectionTitle("나의 기록")
             MainMenuItem(
                 icon = Icons.Default.Person,
                 onClick = onMypageClick
@@ -126,24 +132,60 @@ fun MenuScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 2. 관리 및 설정 섹션
-            MenuSectionTitle("앱 관리")
+            MainMenuItem(
+                icon = Icons.Default.Settings,
+                onClick = onOptionClick
+            ) {
+                Text(
+                    text = "설정",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
-            // 보조 메뉴는 흰색 아이콘으로 깔끔하게
-            SubMenuItem(text = "설정", icon = Icons.Default.Settings, onClick = onOptionClick)
-            SubMenuItem(text = "도움말", icon = Icons.Default.HelpOutline, onClick = onHelpClick)
+            /*
             SubMenuItem(text = "로컬 데이터", icon = Icons.Default.Storage, onClick = onLocalDBClick)
-
+            */
             Spacer(modifier = Modifier.weight(1f)) // 로그아웃을 하단으로 밀어냄
 
             // 3. 로그아웃 (별도 버튼 디자인)
             LogoutButton {
-                viewModel.signOutWithGoogle(context) { onLogoutClick() }
+                logoutLoading = true
+                viewModel.signOutWithGoogle(context) {
+                    logoutLoading = false
+                    onLogoutClick() }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+
+    // ── 🔹 [추가] 로그아웃 로딩 화면 오버레이 📍 ──
+    if (logoutLoading) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Black.copy(alpha = 0.5f) // 반투명 배경으로 뒤쪽 터치 방지
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    color = PointColor,
+                    strokeWidth = 4.dp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "로그아웃 진행 중...",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }

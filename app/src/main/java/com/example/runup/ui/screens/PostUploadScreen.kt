@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -301,7 +302,7 @@ fun PostUploadScreen(
 
             // ── [2] 코스 사진 선택 (Location Images) ──
             SectionTitle("코스 추천 사진", Icons.Default.PhotoCamera)
-            Text("코스의 특징이 잘 나타난 사진을 올려주세요 (최대 4장)", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            Text("코스의 특징이 잘 나타난 사진을 올려주세요!", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -321,7 +322,7 @@ fun PostUploadScreen(
 
             ImageSelectionRow(
                 uris = selectedCommonImageUris,
-                maxCount = 10, // 여유 있게 설정
+                maxCount = 4, // 여유 있게 설정
                 onAddClick = { commonGalleryLauncher.launch("image/*") },
                 onRemoveClick = { viewModel.removeCommonImage(it) }
             )
@@ -335,7 +336,11 @@ fun PostUploadScreen(
 
             TextField(
                 value = content,
-                onValueChange = { content = it },
+                onValueChange = { newValue ->
+                    if (newValue.length <= 30) {
+                        content = newValue
+                    }
+                },
                 placeholder = { Text("오늘의 러닝은 어떠셨나요?", color = Color.DarkGray) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -349,7 +354,15 @@ fun PostUploadScreen(
                     focusedIndicatorColor = PointColor,
                     unfocusedIndicatorColor = Color.Transparent
                 ),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                supportingText = {
+                    Text(
+                        text = "${content.length}/30",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.End, // 우측 정렬
+                        fontSize = 11.sp
+                    )
+                }
             )
 
             Spacer(modifier = Modifier.height(40.dp))

@@ -209,6 +209,18 @@ class MyPageViewModel @Inject constructor(
         }
     }
 
+    fun deleteProfileImage() {
+        viewModelScope.launch {
+            // 필요하다면 로딩 상태(_isLoading.value = true) 추가 가능
+            val result = userRepository.deleteUserProfileImage()
+            if (result is AuthResult.Success) {
+                fetchMyUserData() // 🔹 성공 시 서버 데이터를 다시 불러와 UserStateManager(UI)를 갱신
+            } else if (result is AuthResult.Fail) {
+                Log.e("MyPageViewModel", "프로필 삭제 실패: ${result.message}")
+            }
+        }
+    }
+
     fun addCourseFromRecord(runRecord: RunRecord) {
         viewModelScope.launch {
             // 1. RunRecord 안의 Course 객체 추출

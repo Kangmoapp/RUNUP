@@ -34,6 +34,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
 import java.util.Locale.filter
@@ -133,7 +134,7 @@ class CommunityDataSourceImpl @Inject constructor(
         filter: FilterState,
         lastVisibleSnapshot: DocumentSnapshot? = null,
         limit: Long = 4L
-    ): AuthResult<Pair<List<Post>, DocumentSnapshot?>> {
+    ): AuthResult<Triple<List<Post>, DocumentSnapshot?, Boolean>> {
         return try {
             var query: Query = firestore.collection("Posts")
             val myUid = auth.currentUser?.uid ?: ""
@@ -155,17 +156,22 @@ class CommunityDataSourceImpl @Inject constructor(
             }
 
             // ── [3단계] 정렬 및 페이징 ──
-            query = query.orderBy("timestamp", Query.Direction.DESCENDING).limit(limit)
+            query = query.orderBy("timestamp", Query.Direction.DESCENDING).limit(limit + 1)
 
             if (lastVisibleSnapshot != null) {
                 query = query.startAfter(lastVisibleSnapshot)
             }
 
             val snapshot = query.get().await()
-            val lastSnapshot = snapshot.documents.lastOrNull()
+            val documents = snapshot.documents
+
+            // ── 🔹 [핵심] 5개가 왔다면 다음 페이지가 있는 것! 📍 ──
+            val hasMore = documents.size > limit
+            val displayDocs = if (hasMore) documents.take(limit.toInt()) else documents
+            val lastSnapshot = displayDocs.lastOrNull()
 
             // 🔹 데이터 매핑 (기존과 동일)
-            val postList = snapshot.documents.mapNotNull { doc ->
+            val postList = displayDocs.mapNotNull { doc ->
                 val post = doc.toObject(Post::class.java)
                 val locationImages = doc.get("locationImages") as? List<Map<String, Any>> ?: emptyList()
                 val commonImages = doc.get("commonImages") as? List<Map<String, Any>> ?: emptyList()
@@ -199,7 +205,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 )
             }
 
-            AuthResult.Success(Pair(postList, lastSnapshot))
+            AuthResult.Success(Triple(postList, lastSnapshot, hasMore))
         } catch (e: Exception) {
             Log.e("DataSource", "TargetUser Query Error: ${e.message}")
             AuthResult.Fail(e.localizedMessage ?: "데이터 로드 실패")
@@ -396,7 +402,6 @@ class CommunityDataSourceImpl @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-    // 6. 게시글 업로드 (이미지 압축 포함)
     suspend fun uploadPost(
         content: String,
         LocaitonimageUris: List<Uri>,
@@ -410,100 +415,105 @@ class CommunityDataSourceImpl @Inject constructor(
             val realUserName = userDoc.getString("userName") ?: "Runner"
             val profileMiniUrl = userDoc.getString("userProfileUrlMini") ?: ""
 
-            // 🔹 내 활동 통계 문서 참조
             val myStatsRef = firestore.collection("UserData").document(uid)
                 .collection("PostStats").document("info")
 
-            // --- [수정 시작] 트랜잭션을 통한 Post ID 생성 로직 ---
             val metadataRef = firestore.collection("Metadata").document("postInfo")
 
             val customPostId = firestore.runTransaction { transaction ->
                 val snapshot = transaction.get(metadataRef)
-
-                // lastPostNumber 필드에서 현재 번호를 가져옴 (없으면 0)
                 val currentNumber = snapshot.getLong("lastPostNumber")?.toInt() ?: 0
                 val nextNumber = currentNumber + 1
 
-                // 번호 업데이트 (Int 형태로 다시 저장)
                 transaction.update(metadataRef, "lastPostNumber", nextNumber)
 
-                // ── [핵심 수정] 내 업로드 리스트에 ID 추가 (중복 방지) ──
                 val generatedId = "post$nextNumber"
                 transaction.set(
                     myStatsRef,
                     mapOf("uploadPostIds" to FieldValue.arrayUnion(generatedId)),
                     SetOptions.merge()
                 )
-
-
                 generatedId
             }.await()
 
             val postRef = firestore.collection("Posts").document(customPostId)
 
+            // ── 🌟 [1] 위치 기반 이미지 병렬 처리 ──
             val locaitonUploadTasks = LocaitonimageUris.mapIndexed { index, uri ->
-                async {
-                    var geoPoint: GeoPoint? = null
+                // 👈 핵심 1: Dispatchers.IO 명시 (멀티코어를 적극적으로 활용해 동시에 압축/업로드)
+                async(Dispatchers.IO) {
                     try {
-                        // Photo Picker URI는 setRequireOriginal을 지원하지 않으므로
-                        // 권한이 있는 상태에서 원본 uri를 그대로 사용합니다.
-                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                            val exif = ExifInterface(inputStream)
-                            val latLong = FloatArray(2)
+                        var geoPoint: GeoPoint? = null
+                        try {
+                            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                val exif = ExifInterface(inputStream)
+                                val latLong = FloatArray(2)
 
-                            if (exif.getLatLong(latLong)) {
-                                if (latLong[0] != 0f || latLong[1] != 0f) {
-                                    geoPoint = GeoPoint(latLong[0].toDouble(), latLong[1].toDouble())
-                                    Log.d("ExifCheck", "좌표 추출 성공: ${geoPoint.latitude}, ${geoPoint.longitude}")
+                                if (exif.getLatLong(latLong)) {
+                                    if (latLong[0] != 0f || latLong[1] != 0f) {
+                                        geoPoint = GeoPoint(latLong[0].toDouble(), latLong[1].toDouble())
+                                    }
                                 }
-                            } else {
-                                Log.d("ExifCheck", "Exif 데이터가 없거나 접근이 제한됨")
                             }
+                        } catch (e: Exception) {
+                            Log.e("Exif", "스트림 읽기 실패: ${e.localizedMessage}")
                         }
+
+                        val originalData = compressImage(uri, quality = 80)
+                            ?: return@async null // 압축 실패 시 이 사진만 건너뜀
+
+                        val originalFileName = "${customPostId}_L_${index}_orig.jpg"
+                        val originalRef = storage.reference.child("posts/$uid/$originalFileName")
+                        originalRef.putBytes(originalData).await()
+                        val originalUrl = originalRef.downloadUrl.await().toString()
+
+                        // 썸네일 압축 및 업로드
+                        val thumbData = resizeAndCompressImage(uri, width = 150, height = 150)
+                            ?: return@async null
+
+                        val thumbFileName = "${customPostId}_L_${index}_thumb.jpg"
+                        val thumbRef = storage.reference.child("posts/$uid/$thumbFileName")
+                        thumbRef.putBytes(thumbData).await()
+                        val thumbUrl = thumbRef.downloadUrl.await().toString()
+
+                        mapOf(
+                            "url" to originalUrl,
+                            "thumbnailUrl" to thumbUrl,
+                            "location" to geoPoint
+                        )
                     } catch (e: Exception) {
-                        Log.e("Exif", "스트림 읽기 실패: ${e.localizedMessage}")
+                        // 👈 핵심 3: 사진 하나 올리다 실패해도 전체 코루틴이 터지지 않게 방어
+                        Log.e("Upload", "위치 사진 업로드 실패", e)
+                        null
                     }
-
-                    // 원본 이미지 업로드
-                    val originalFileName = "${customPostId}_L_${index}_orig.jpg"
-                    val originalRef = storage.reference.child("posts/$uid/$originalFileName")
-                    val originalData = compressImage(uri, quality = 80) // 일반 압축
-                    originalRef.putBytes(originalData!!).await()
-                    val originalUrl = originalRef.downloadUrl.await().toString()
-
-
-                    // 마커용 초소형 썸네일 생성 및 업로드
-                    val thumbFileName = "${customPostId}_L_${index}_thumb.jpg"
-                    val thumbRef = storage.reference.child("posts/$uid/$thumbFileName")
-                    // 150px 사이즈로 아주 작게 리사이징 (이게 로딩 속도를 결정함)
-                    val thumbData = resizeAndCompressImage(uri, width = 150, height = 150)
-                    thumbRef.putBytes(thumbData!!).await()
-                    val thumbUrl = thumbRef.downloadUrl.await().toString()
-
-                    mapOf(
-                        "url" to originalUrl,
-                        "thumbnailUrl" to thumbUrl, // 썸네일 주소 추가
-                        "location" to geoPoint
-                    )
                 }
             }
             val locationImageUrls = locaitonUploadTasks.awaitAll().filterNotNull()
 
+            // ── 🌟 [2] 일반 이미지 병렬 처리 ──
             val commonUploadTasks = CommonimageUris.mapIndexed { index, uri ->
-                async {
-                    val originalFileName = "${customPostId}_C_${index}_orig.jpg"
-                    val originalRef = storage.reference.child("posts/$uid/$originalFileName")
-                    val originalData = compressImage(uri, quality = 80)
-                    originalRef.putBytes(originalData!!).await()
-                    val originalUrl = originalRef.downloadUrl.await().toString()
+                // 👈 핵심 1: 여기도 Dispatchers.IO 명시
+                async(Dispatchers.IO) {
+                    try {
+                        val originalFileName = "${customPostId}_C_${index}_orig.jpg"
+                        val originalRef = storage.reference.child("posts/$uid/$originalFileName")
 
-                    mapOf(
-                        "url" to originalUrl,
-                    )
+                        val originalData = compressImage(uri, quality = 80) // 👈 퀄리티 70
+                            ?: return@async null
+
+                        originalRef.putBytes(originalData).await()
+                        val originalUrl = originalRef.downloadUrl.await().toString()
+
+                        mapOf("url" to originalUrl)
+                    } catch (e: Exception) {
+                        Log.e("Upload", "일반 사진 업로드 실패", e)
+                        null
+                    }
                 }
             }
             val commonImageUrls = commonUploadTasks.awaitAll().filterNotNull()
 
+            // ── [3] Firestore 최종 저장 ──
             val postMap = mapOf(
                 "postId" to customPostId,
                 "authorId" to uid,
@@ -516,7 +526,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 "likes" to 0,
                 "commentCount" to 0,
                 "runRecord" to runRecord,
-                "city" to (address?.city ?: ""),      // 🔹 주소 추가
+                "city" to (address?.city ?: ""),
                 "district" to (address?.district ?: ""),
                 "dong" to (address?.dong ?: ""),
                 "isOfficialCourse" to false,
@@ -524,6 +534,7 @@ class CommunityDataSourceImpl @Inject constructor(
 
             postRef.set(postMap).await()
             AuthResult.Success(true)
+
         } catch (e: Exception) {
             AuthResult.Fail(e.localizedMessage ?: "업로드 실패")
         }
@@ -536,32 +547,6 @@ class CommunityDataSourceImpl @Inject constructor(
 
             val postRef = firestore.collection("Posts").document(post.postId)
             val commentsRef = postRef.collection("Comments")
-
-            // ── 🔹 [1] 이미지 삭제 로직 복구 (Storage) ── 📍
-            val allImageUrls = mutableListOf<String>()
-
-            // 위치 이미지 (원본 + 썸네일)
-            post.locationImages.forEach {
-                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
-                if (it.thumbnailUrl.isNotEmpty()) allImageUrls.add(it.thumbnailUrl)
-            }
-            // 일반 이미지
-            post.commonImages.forEach {
-                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
-            }
-
-            // 비동기로 모든 이미지 삭제 실행
-            val deleteTasks = allImageUrls.distinct().map { url ->
-                async(Dispatchers.IO) {
-                    try {
-                        storage.getReferenceFromUrl(url).delete().await()
-                    } catch (e: Exception) {
-                        // 이미 삭제되었거나 없는 경우를 대비해 로그만 찍고 진행
-                        Log.e("DeleteError", "이미지 삭제 실패 ($url): ${e.message}")
-                    }
-                }
-            }
-            deleteTasks.awaitAll()
 
             // 댓글 데이터 미리 가져오기
             val commentsSnapshot = commentsRef.get().await()
@@ -605,6 +590,23 @@ class CommunityDataSourceImpl @Inject constructor(
                 }
             }.await()
 
+
+            //  Storage는 별도로 fire-and-forget (실패해도 흐름 안 막음)
+            val allImageUrls = mutableListOf<String>()
+            post.locationImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+                if (it.thumbnailUrl.isNotEmpty()) allImageUrls.add(it.thumbnailUrl)
+            }
+            post.commonImages.forEach {
+                if (it.url.isNotEmpty()) allImageUrls.add(it.url)
+            }
+            allImageUrls.distinct().forEach { url ->
+                launch(Dispatchers.IO) { // await() 없이 그냥 실행
+                    try { storage.getReferenceFromUrl(url).delete().await() }
+                    catch (e: Exception) { Log.e("DeleteError", "이미지 삭제 실패: ${e.message}") }
+                }
+            }
+
             AuthResult.Success(true)
         } catch (e: Exception) {
             Log.e("DeleteError", "삭제 전체 공정 실패: ${e.localizedMessage}")
@@ -612,17 +614,62 @@ class CommunityDataSourceImpl @Inject constructor(
         }
     }
 
-    // 1. 원본 압축 함수 (기존 quality 80 용)
-    private fun compressImage(uri: Uri, quality: Int): ByteArray? {
-        val inputStream = context.contentResolver.openInputStream(uri)
-        val bitmap = BitmapFactory.decodeStream(inputStream) ?: return null
+    private fun compressImage(uri: Uri, quality: Int, maxWidth: Int = 1080): ByteArray? {
+        val resolver = context.contentResolver
 
-        // 사진 회전 각도 보정 (카메라로 찍은 사진이 누워있을 수 있음)
-        val rotatedBitmap = rotateImageIfRequired(bitmap, uri)
+        // 1. 🌟 원본 이미지의 크기만 먼저 확인 (메모리에 안 올림, 0.01초 컷!)
+        val options = BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        resolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, options)
+        }
 
+        // 2. 얼마나 줄일지 비율(inSampleSize) 계산
+        options.inSampleSize = calculateInSampleSize(options, maxWidth)
+
+        // 3. 🌟 계산된 비율만큼 이미 작게 축소된 상태로 메모리에 로드 (여기서 속도 10배 차이 발생!)
+        options.inJustDecodeBounds = false
+        val sampledBitmap = resolver.openInputStream(uri)?.use { inputStream ->
+            BitmapFactory.decodeStream(inputStream, null, options)
+        } ?: return null
+
+        // 4. 사진 회전 각도 보정
+        val rotatedBitmap = rotateImageIfRequired(sampledBitmap, uri)
+
+        // 5. 정확한 maxWidth로 미세 조정 (inSampleSize는 2의 배수로만 뭉텅이로 줄이기 때문)
+        val finalBitmap = if (rotatedBitmap.width > maxWidth) {
+            val scale = maxWidth.toFloat() / rotatedBitmap.width
+            val newHeight = (rotatedBitmap.height * scale).toInt()
+            Bitmap.createScaledBitmap(rotatedBitmap, maxWidth, newHeight, true)
+        } else {
+            rotatedBitmap
+        }
+
+        // 6. JPEG 압축 진행
         val outputStream = ByteArrayOutputStream()
-        rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+        finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+
+        // 7. 메모리 누수 방지
+        if (sampledBitmap != rotatedBitmap) sampledBitmap.recycle()
+        if (rotatedBitmap != finalBitmap) rotatedBitmap.recycle()
+        finalBitmap.recycle()
+
         return outputStream.toByteArray()
+    }
+
+    // ── 🔹 메모리 낭비를 막아주는 마법의 계산 함수 📍 ──
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int): Int {
+        val width = options.outWidth
+        var inSampleSize = 1
+
+        if (width > reqWidth) {
+            val halfWidth: Int = width / 2
+            // 원본을 1/2, 1/4, 1/8... 로 계속 나누면서 요구 사이즈에 맞춤
+            while (halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     private fun resizeAndCompressImage(uri: Uri, width: Int, height: Int): ByteArray? {
@@ -723,7 +770,9 @@ class CommunityDataSourceImpl @Inject constructor(
         commentPostIds: List<String>,
         followPostIds: List<String>
     ) = coroutineScope {
-        // 1. 내가 쓴 게시글 일괄 삭제 (기존 deletePost 활용)
+
+        cleanupUserInteractions(uid, likePostIds, commentPostIds, followPostIds)
+
         uploadPostIds.forEach { postId ->
             try {
                 val postDoc = firestore.collection("Posts").document(postId).get().await()
@@ -735,9 +784,6 @@ class CommunityDataSourceImpl @Inject constructor(
                 Log.e("CommunityDelete", "게시글($postId) 삭제 실패: ${e.message}")
             }
         }
-
-        // 2. 남의 게시글에 남긴 흔적(좋아요, 팔로우, 댓글) 청소
-        cleanupUserInteractions(uid, likePostIds, commentPostIds, followPostIds)
     }
 
     /**

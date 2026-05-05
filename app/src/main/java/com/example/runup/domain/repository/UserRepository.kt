@@ -25,6 +25,8 @@ interface UserRepository {
 
     suspend fun uploadUserProfileImage(imageUri: Uri): AuthResult<String>
 
+    suspend fun deleteUserProfileImage(): AuthResult<Boolean>
+
     // 나의 달리기 목표 저장
     suspend fun updateUserGoal(goaldistance: Int, goaltime: Int): AuthResult<Boolean>
 

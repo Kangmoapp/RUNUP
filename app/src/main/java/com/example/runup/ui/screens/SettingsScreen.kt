@@ -69,8 +69,8 @@ fun SettingsScreen(
     var versionClickCount by remember { mutableIntStateOf(0) }
     var lastVersionClickTime by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(uiState.isLoading, uiState.deleteResult) {
-        if (!uiState.isLoading && uiState.deleteResult is AuthResult.Success) {
+    LaunchedEffect( uiState.deleteResult) {
+        if ( uiState.deleteResult is AuthResult.Success) {
             restartApp(context)
         }
     }

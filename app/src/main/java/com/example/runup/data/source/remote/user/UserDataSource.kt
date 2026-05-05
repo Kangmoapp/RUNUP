@@ -26,6 +26,8 @@ interface UserDataSource {
     // 유저 프로필 이미지 업데이트
     suspend fun uploadUserProfileImage(imageUri: android.net.Uri): AuthResult<String>
 
+    suspend fun deleteUserProfileImage(): AuthResult<Boolean>
+
     // 현재 로그인된 사용자 목표(거리, 시간) 추가
     suspend fun updateUserGoal(goalDistance: Int, goalTime: Int): AuthResult<Boolean>
 

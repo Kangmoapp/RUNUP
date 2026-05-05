@@ -367,7 +367,13 @@ class CommunityViewModel @Inject constructor(
     }
 
     fun addSelectedCommonImages(newUris: List<Uri>) {
-        selectedCommonImageUris = (selectedCommonImageUris + newUris).distinct()
+        val currentSize = selectedCommonImageUris.size
+        val availableSpace = 4 - currentSize
+        if (availableSpace > 0) {
+            // 남은 공간만큼만 잘라서 추가 (예: 이미 2장 있는데 5장 선택하면 2장만 더 추가)
+            val imagesToAdd = newUris.take(availableSpace)
+            selectedCommonImageUris = (selectedCommonImageUris + imagesToAdd).distinct()
+        }
     }
 
     fun removeCommonImage(uri: Uri) {

@@ -40,6 +40,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -155,6 +158,8 @@ fun MyPageScreen(
     ) { uri: Uri? ->
         uri?.let { viewModel.uploadProfileImage(it) }
     }
+
+    var showProfileMenu by remember { mutableStateOf(false) } // 프로필 메뉴 상태
 
     // 이름 수정을 위한 상태값
     var showEditDialog by remember { mutableStateOf(false) }
@@ -319,36 +324,109 @@ fun MyPageScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 좌측 프로필 이미지
-                        Box(
-                            modifier = Modifier
-                                .size(72.dp) // 약간 줄여서 더 컴팩트하게 🔹
-                                .clip(CircleShape)
-                                .background(Color(0xFF2C2C2C))
-                                .clickable { profileGalleryLauncher.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (myBitmap != null) {
-                                Image(
-                                    bitmap = myBitmap.asImageBitmap(),
-                                    contentDescription = "Profile Image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else if (myProfileUrl.isNotEmpty()) {
-                                SubcomposeAsyncImage(
-                                    model = myProfileUrl,
-                                    contentDescription = "Profile Image",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                    loading = {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PointColor, strokeWidth = 2.dp)
+                        Box(contentAlignment = Alignment.Center) {
+                            // 1. 기존 좌측 프로필 이미지 UI
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF2C2C2C))
+                                    .clickable { showProfileMenu = true }, // 👈 클릭 시 드롭다운 메뉴 열기
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (myBitmap != null) {
+                                    Image(
+                                        bitmap = myBitmap.asImageBitmap(),
+                                        contentDescription = "Profile Image",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else if (myProfileUrl.isNotEmpty()) {
+                                    SubcomposeAsyncImage(
+                                        model = myProfileUrl,
+                                        contentDescription = "Profile Image",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                        loading = {
+                                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = PointColor, strokeWidth = 2.dp)
+                                            }
                                         }
-                                    }
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "기본 프로필",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                }
+                            }
+
+                            // 2. ── 🔹 팝업 드롭다운 메뉴 📍 ──
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = showProfileMenu,
+                                onDismissRequest = { showProfileMenu = false },
+                                modifier = Modifier.background(Color(0xFF1E1E1E)) // 기존 2C2C2C보다 살짝 더 깊은 색으로 모던함 강조
+                            ) {
+                                // [1] 사진 선택 메뉴
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.PhotoLibrary, // 🔹 갤러리 느낌의 라인 아이콘
+                                                contentDescription = null,
+                                                tint = PointColor,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                text = "앨범에서 사진 선택",
+                                                color = WhiteTextColor, // 글자는 흰색으로, 아이콘은 포인트 컬러로 시선 분산 방지
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        profileGalleryLauncher.launch("image/*")
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp) // 🔹 터치 영역을 쾌적하게 넓힘
                                 )
-                            } else {
-                                Text("👤", fontSize = 36.sp)
+
+                                // ── 🔹 은은한 구분선 ──
+                                androidx.compose.material3.HorizontalDivider(
+                                    color = Color.White.copy(alpha = 0.08f), // 아주 연한 선으로 세련된 분리감 제공
+                                    thickness = 0.5.dp,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+
+                                // [2] 사진 삭제 메뉴
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Delete, // 🔹 휴지통 라인 아이콘
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF5252),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(
+                                                text = "기본 이미지로 변경",
+                                                color = Color(0xFFFF5252),
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        viewModel.deleteProfileImage()
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                                )
                             }
                         }
 
@@ -856,7 +934,7 @@ fun ExpandableRunItem(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 ScoreIndicator(label = "밝기", score = run.course.scores.brightScore)
-                                ScoreIndicator(label = "붐빔", score = run.course.scores.crowdedScore)
+                                ScoreIndicator(label = "유동인구", score = run.course.scores.crowdedScore)
                                 ScoreIndicator(label = "난이도", score = run.course.scores.hardScore)
                             }
                         } else {
@@ -914,11 +992,13 @@ fun ExpandableRunItem(
                     onUploadClick(run)
                     onToggleActions() // 작업 후 닫기
                 }
+                /*
                 // 2. 코스 추가 버튼
                 QuickActionButton(Icons.Default.AddLocation, PointColor) {
                     onAddCourseClick(run)
                     onToggleActions() // 작업 후 닫기
                 }
+                */
                 // 3. 삭제 버튼
                 QuickActionButton(Icons.Default.Delete, Color.Red) {
                     showDeleteDialog = true

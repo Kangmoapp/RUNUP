@@ -179,6 +179,37 @@ class UserDataSourceImpl @Inject constructor(
         }
     }
 
+    override suspend fun deleteUserProfileImage(): AuthResult<Boolean> {
+        return try {
+            val uid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인 필요")
+
+            // 1. Storage 참조 (업로드 함수와 완벽히 동일한 경로 사용 📍)
+            val profileMainRef = storage.reference.child("userProfileImages/$uid/profile_main.jpg")
+            val profileMiniRef = storage.reference.child("userProfileImages/$uid/profile_mini.jpg")
+
+            // 2. Storage에서 이미지 두 장 모두 삭제
+            try {
+                profileMainRef.delete().await()
+                profileMiniRef.delete().await()
+            } catch (e: Exception) {
+                Log.w("ProfileDelete", "스토리지에 삭제할 이미지가 없음: ${e.message}")
+            }
+
+            // 3. Firestore에서 두 URL 필드를 모두 빈 문자열로 초기화 (업로드 함수와 동일한 mapOf 구조 📍)
+            firestore.collection("UserData").document(uid)
+                .update(
+                    mapOf(
+                        "userProfileUrl" to "",
+                        "userProfileUrlMini" to ""
+                    )
+                ).await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            Log.e("ProfileDelete", "프로필 삭제 실패: ${e.localizedMessage}")
+            AuthResult.Fail(e.localizedMessage ?: "프로필 삭제에 실패했습니다.")
+        }
+    }
+
     private fun resizeAndCompressImage(uri: Uri, width: Int, height: Int): ByteArray? {
         val inputStream = context.contentResolver.openInputStream(uri)
         val originalBitmap = BitmapFactory.decodeStream(inputStream)
@@ -456,6 +487,8 @@ class UserDataSourceImpl @Inject constructor(
             AuthResult.Fail(e.localizedMessage ?: "정보 로드 실패")
         }
     }
+
+
 
     //---------------------------------------------------------------------------------------------//
     //친구 기능
