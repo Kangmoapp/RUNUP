@@ -257,13 +257,19 @@ class CommunityViewModel @Inject constructor(
                 viewModelScope.launch(Dispatchers.IO) {
                     val targetUrl = img.thumbnailUrl.ifEmpty { img.url }
                     val bitmap = imagePreloader.loadBitmap(targetUrl, 150)
-                    bitmap?.let { b ->
-                        // 🔹 핵심: 저장 키는 반드시 원본 img.url 사용!
-                        _locationMarkerCache.update { it + (img.url to b) }
+
+                    if (bitmap != null) {
+                        // 1. 캐시에 먼저 확실히 저장
+                        _locationMarkerCache.update { it + (img.url to bitmap) }
                     }
+
+                    // 2. Main 스레드로 전환하여 카운트 증가 (반드시 update 이후에 수행)
                     launch(Dispatchers.Main) {
                         essentialLoadedCount++
-                        if (essentialLoadedCount >= totalEssential) onComplete()
+                        if (essentialLoadedCount >= totalEssential) {
+                            // 미세한 딜레이를 주어 Compose가 Recomposition을 마칠 시간을 벌어줌 (선택 사항)
+                            onComplete()
+                        }
                     }
                 }
             }

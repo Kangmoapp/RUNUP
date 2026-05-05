@@ -520,6 +520,13 @@ private fun MapSection(
     val markerSizePx = with(density) { 64.dp.toPx() }
     var isMapLoaded by remember(post.postId) { mutableStateOf(false) }
 
+    // ── 🔹 [추가] 부드러운 등장을 위한 투명도 애니메이션 📍 ──
+    val mapAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isMapLoaded && mapSnapShots != null) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 500),
+        label = "MapFadeIn"
+    )
+
     // ── 🔹 [계산 로직] Screen에서 받은 maxWidthPx를 기준으로 딱 한 번만 수행 ──
     LaunchedEffect(post.postId, maxWidthPx) {
         if (mapSnapShots == null && post.runRecord != null) {
@@ -577,6 +584,21 @@ private fun MapSection(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
+        // ── 🔹 [추가] 지도가 준비되지 않았거나 로딩 중일 때 노란색 인디케이터 표시 📍 ──
+        if (!isMapLoaded || mapSnapShots == null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                // PointColor가 노란색 계열이라면 이를 사용하여 인디케이터 표시
+                androidx.compose.material3.CircularProgressIndicator(
+                    color = PointColor,
+                    modifier = Modifier.size(36.dp),
+                    strokeWidth = 3.dp
+                )
+            }
+        }
+
         // Static Map 이미지
         AsyncImage(
             model = ImageRequest.Builder(context)
