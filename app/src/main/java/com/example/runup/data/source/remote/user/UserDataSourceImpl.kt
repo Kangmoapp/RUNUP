@@ -369,7 +369,6 @@ class UserDataSourceImpl @Inject constructor(
     override suspend fun getUserGoal(): AuthResult<Pair<Int,Int>>{
         return try {
             val userid = auth.currentUser?.uid ?: return AuthResult.Fail("로그인이 필요합니다.")
-
             // Firestore에서 사용자 문서 가져오기
             val document = firestore.collection("UserData").document(userid).get().await()
 
