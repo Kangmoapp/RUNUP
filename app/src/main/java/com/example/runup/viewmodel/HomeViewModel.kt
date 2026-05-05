@@ -22,7 +22,6 @@ import com.example.runup.domain.usecase.RecordRunningUseCase
 import com.example.runup.service.BleConnectionManager
 import com.example.runup.service.BleSensorManager
 import com.example.runup.service.LocationService
-import com.example.runup.service.NaverMapApiService
 import com.example.runup.service.PostureAnalyzer
 import com.example.runup.service.TMapApiService
 import com.example.runup.service.TMapRouteRequest
@@ -207,7 +206,7 @@ class HomeViewModel @Inject constructor(
                 locationRepository.currentLocation.collect { geoPoint ->
                     _homeUiState.update { it.copy(currentLocation = geoPoint) }
 
-                    // 🔹 초기 로딩 중이고, 첫 좌표(geoPoint)가 null이 아니면 로딩 해제!
+                    // 초기 로딩 중이고, 첫 좌표(geoPoint)가 null이 아니면 로딩 해제!
                     if (_homeUiState.value.isInitialLoading && geoPoint != null) {
                         _homeUiState.update { it.copy(isInitialLoading = false) }
                     }

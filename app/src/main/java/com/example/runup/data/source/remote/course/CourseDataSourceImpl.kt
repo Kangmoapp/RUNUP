@@ -30,7 +30,7 @@ class CourseDataSourceImpl @Inject constructor(
     private val geminiHelper: GeminiHelper,
     private val courseMapper: CourseMapper
 ) : CourseDataSource {
-    // #1. [코스 병합 및 저장하는 함수]
+    // [코스 병합 및 저장하는 함수]
     override suspend fun saveCourse(course: Course): AuthResult<Boolean> {
         return try {
             mergeAndSaveCourse(course)
@@ -41,7 +41,7 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private suspend fun mergeAndSaveCourse(newCourse: Course){
-        val eps = 0.0008 // 10m
+        val eps = 0.00008 // 8m
         val margin = eps
         val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
 
@@ -228,12 +228,6 @@ class CourseDataSourceImpl @Inject constructor(
         )
     }
 
-    /**
-     * 인자에 따라 거리순 또는 특징 점수순으로 코스를 탐색하여 반환합니다.
-     * @param courseDistance 목표 거리
-     * @param currentLocation 현재 위치
-     * @param featureIndex 0: 가까운 순서, 1: 밝기순, 2: 혼잡도순, 3: 난이도순
-     */
     // #2. [조건에 맞게 코스 가져오는 함수]
     override suspend fun getCourse(
         courseDistance: Int,
@@ -448,12 +442,7 @@ class CourseDataSourceImpl @Inject constructor(
     ): List<CoursePathGroup> {
         val allGroupsResult = mutableListOf<CoursePathGroup>()
 
-        Log.d("RUNUP_DFS", "─── 🔍 경로 생성 시작 ───")
-        Log.d("RUNUP_DFS", "목표 거리: ${targetDist}m | 소스(코스) 개수: ${sources.size}")
-
         sources.forEachIndexed { index, (course, startPoint, reason) ->
-            Log.d("RUNUP_DFS", "[소스 $index] 코스ID: ${course.id} | 시작점: ${startPoint.latitude}, ${startPoint.longitude}")
-            Log.d("RUNUP_DFS", "   -> 보유한 좌표(pointsPool) 개수: ${course.locationPoints.size}")
 
             val courseResults = mutableListOf<Pair<Double, List<GeoPoint>>>()
             val visited = mutableSetOf<Pair<Double, Double>>()
@@ -464,8 +453,7 @@ class CourseDataSourceImpl @Inject constructor(
                 Log.e("RUNUP_DFS", "   ⚠️ 에러: 코스에 좌표 데이터가 없어 탐색을 건너뜁니다.")
             }
 
-            // 각 코스(소스)마다 DFS 탐색 수행
-            searchRecursive(
+            searchRecursive( // 각 코스(소스)마다 DFS 탐색 수행
                 currentPath = mutableListOf(startPoint),
                 currentDist = 0.0,
                 targetDist = targetDist,
@@ -475,22 +463,10 @@ class CourseDataSourceImpl @Inject constructor(
                 maxPerSource = 3
             )
 
-            // ── 🔹 탐색 결과 분석 📍
-            Log.d("RUNUP_DFS", "   -> 탐색 종료: 발견된 경로 ${courseResults.size}개")
-
             if (courseResults.isNotEmpty()) {
                 val subGroup = courseResults.mapIndexed { pathIndex, (dist, path) ->
                     val distanceInt = dist.toInt()
                     val centerPoint = calculateCenterPoint(path, currentLocation)
-
-                    Log.d("RUNUP_DFS", "      [$pathIndex] 생성된 거리: ${distanceInt}m | 좌표수: ${path.size}")
-
-                    saveToTestCollection(
-                        distance = distanceInt,
-                        path = path,
-                        originId = course.id,
-                        subIndex = pathIndex + 1
-                    )
 
                     Path(
                         distance = distanceInt,
@@ -503,8 +479,6 @@ class CourseDataSourceImpl @Inject constructor(
                 Log.w("RUNUP_DFS", "   ❌ 해당 소스에서는 조건을 만족하는 경로를 찾지 못함 (거리 미달 혹은 끊김)")
             }
         }
-
-        Log.d("RUNUP_DFS", "─── ✅ 최종 생성된 그룹 수: ${allGroupsResult.size} ───")
         return allGroupsResult
     }
 
@@ -519,10 +493,7 @@ class CourseDataSourceImpl @Inject constructor(
         results: MutableList<Pair<Double, List<GeoPoint>>>, // Double(거리) 와 좌표 목록 을 리스트로 담음
         maxPerSource: Int // 추가된 인자
     ) {
-        // 해당 코스에서 이미 충분한 갈래(예: 3개)를 찾았다면 중단
-        if (results.size >= maxPerSource) return
-
-        Log.v("RUNUP_DFS", "현재거리: ${currentDist.roundToInt()}m | 경로수: ${currentPath.size}")
+        if (results.size >= maxPerSource) return // 해당 코스에서 이미 충분한 갈래(예: 3개)를 찾았다면 중단
 
         if (currentDist >= targetDist) {
             // 도달 시점의 누적 거리(currentDist)를 경로와 함께 저장
@@ -533,12 +504,11 @@ class CourseDataSourceImpl @Inject constructor(
         val lastPt = currentPath.last() // 현재 위치
         val parentPt = if (currentPath.size >= 2) currentPath[currentPath.size - 2] else null // 부모 위치
 
-        // 주변 이웃 찾기
         val allNeighbors = pointsPool.filter { pt ->
             val key = pt.locationPoint.latitude to pt.locationPoint.longitude
             if (key in visited) return@filter false
             val d = calculateDistance(lastPt, pt.locationPoint)
-            d in 1.0..10.0// 1미터에서 8미터 사이의 이웃 좌표들 탐색
+            d in 1.0..10.0// 1미터에서 10미터 사이의 이웃 좌표들 탐색
         }.map { it to calculateDistance(lastPt, it.locationPoint) }
 
         if (allNeighbors.isEmpty()) {
@@ -577,7 +547,7 @@ class CourseDataSourceImpl @Inject constructor(
                         if (nNextKey in visited || nNextKey == (lastPt.latitude to lastPt.longitude)) false
                         else {
                             val dNext = calculateDistance(pt.locationPoint, nNext.locationPoint)
-                            dNext in 1.0..7.9 && calculateAngleDiff(lastPt, pt.locationPoint, nNext.locationPoint) < 30.0
+                            dNext in 1.0..10.0 && calculateAngleDiff(lastPt, pt.locationPoint, nNext.locationPoint) < 30.0
                         }
                     }
                     if (hasContinuingPath) {
@@ -592,14 +562,13 @@ class CourseDataSourceImpl @Inject constructor(
             }
         }
 
-        // 비슷한 각도(±10도) 내에서 가장 가까운 점 하나만 남기기
-        val filteredNeighbors = mutableListOf<NeighborCandidate>()
+        val filteredNeighbors = mutableListOf<NeighborCandidate>() // 비슷한 각도(±20도) 내에서 가장 가까운 점 하나만 남기기
 
         // 각도가 작은 순서(직선에 가까운 순)로 정렬해서 비교하거나, 그룹화 처리
         candidates.sortBy { it.distance } // 일단 거리순 정렬
 
         for (candidate in candidates) {
-            // 이미 결과 리스트에 비슷한 각도(±10도)를 가진 더 짧은 거리의 점이 있는지 확인
+            // 이미 결과 리스트에 비슷한 각도(±20도)를 가진 더 짧은 거리의 점이 있는지 확인
             val isDuplicateDirection = filteredNeighbors.any { existing ->
                 Math.abs(existing.angle - candidate.angle) <= 20.0
             }
@@ -627,8 +596,7 @@ class CourseDataSourceImpl @Inject constructor(
         }
     }
 
-    // --- 유틸리티 함수 ---
-
+/*
     // [수정] 파이어베이스 저장 함수
     private suspend fun saveToTestCollection(
         distance: Int,
@@ -647,7 +615,7 @@ class CourseDataSourceImpl @Inject constructor(
         val docName = "test_${originId}_P${subIndex}"
         firestore.collection("test").document(docName).set(testData).await()
     }
-
+*/
 
     // 3좌표의 각도 차이 계산
     private fun calculateAngleDiff(p1: GeoPoint, p2: GeoPoint, p3: GeoPoint): Double {

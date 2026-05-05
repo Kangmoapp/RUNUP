@@ -3,6 +3,8 @@ package com.example.runup.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,11 +63,19 @@ fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    var showAiFeature by remember { mutableStateOf(false) } // 평소에는 숨김
+    var versionClickCount by remember { mutableIntStateOf(0) }
+    var lastVersionClickTime by remember { mutableLongStateOf(0L) }
+
     LaunchedEffect(uiState.deleteResult) {
         if (uiState.deleteResult is AuthResult.Success) {
             // 별도 파일(예: AppUtils.kt)에 빼둔 restartApp을 호출
             restartApp(context)
         }
+    }
+
+    BackHandler {
+        onBackClick()
     }
 
     // 로그아웃 확인 다이얼로그
@@ -122,13 +134,15 @@ fun SettingsScreen(
                 .padding(padding)
         ) {
             // 계정 섹션
-            SettingsSectionHeader("기능")
-            SettingsSwitchItem(
-                title = "AI 자세 교정",
-                subtitle = "홈 화면에서 AI 상태 오버레이를 표시합니다. (인솔 필요)",
-                checked = uiState.isAiPostureVisible,
-                onCheckedChange = { viewModel.toggleAiPostureVisible(it) }
-            )
+            if (showAiFeature) {
+                SettingsSectionHeader("기능")
+                SettingsSwitchItem(
+                    title = "AI 자세 교정",
+                    subtitle = "홈 화면에서 AI 상태 오버레이를 표시합니다. (인솔 필요)",
+                    checked = uiState.isAiPostureVisible,
+                    onCheckedChange = { viewModel.toggleAiPostureVisible(it) }
+                )
+            }
 
             // 알림 섹션
             SettingsSectionHeader("알림")
@@ -156,7 +170,32 @@ fun SettingsScreen(
                     context.startActivity(intent)
                 }
             )
-            SettingsVersionItem()
+            // ── 🔹 [수정] 클릭 이벤트를 넘겨주도록 변경 📍 ──
+            SettingsVersionItem(
+                onClick = {
+                    val currentTime = System.currentTimeMillis()
+                    // 500ms(0.5초) 이내에 다시 클릭했을 때만 카운트 증가
+                    if (currentTime - lastVersionClickTime < 500) {
+                        versionClickCount++
+                    } else {
+                        versionClickCount = 1 // 시간이 지나면 리셋하고 1부터 다시 시작
+                    }
+                    lastVersionClickTime = currentTime
+
+                    // 6번 연속 클릭 달성 시
+                    if (versionClickCount >= 6) {
+                        showAiFeature = !showAiFeature // 상태 토글 (보임 <-> 숨김)
+                        versionClickCount = 0 // 카운트 초기화
+
+                        // 현재 상태를 토스트 메시지로 알려줌
+                        Toast.makeText(
+                            context,
+                            if (showAiFeature) "AI 기능 설정이 활성화되었습니다." else "AI 기능 설정이 숨겨졌습니다.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            )
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -289,7 +328,7 @@ private fun SettingsSwitchItem(
 }
 
 @Composable
-private fun SettingsVersionItem() {
+private fun SettingsVersionItem(onClick: () -> Unit) { // 👈 파라미터 추가
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
@@ -302,6 +341,7 @@ private fun SettingsVersionItem() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable { onClick() } // 👈 클릭 이벤트 추가
                     .padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -316,7 +356,6 @@ private fun SettingsVersionItem() {
         }
     }
 }
-
 private fun restartApp(context: Context) {
     // 1. 앱의 런처 인텐트를 가져옵니다 (보통 MainActivity)
     val packageManager = context.packageManager

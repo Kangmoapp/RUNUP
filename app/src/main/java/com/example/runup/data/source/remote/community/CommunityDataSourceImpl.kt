@@ -194,7 +194,8 @@ class CommunityDataSourceImpl @Inject constructor(
                     followedBy = doc.get("followedBy") as? List<String> ?: emptyList(),
                     city = doc.getString("city") ?: "",
                     district = doc.getString("district") ?: "",
-                    dong = doc.getString("dong") ?: ""
+                    dong = doc.getString("dong") ?: "",
+                    isOfficialCourse = doc.getBoolean("isOfficialCourse") ?: false,
                 )
             }
 
@@ -518,6 +519,7 @@ class CommunityDataSourceImpl @Inject constructor(
                 "city" to (address?.city ?: ""),      // 🔹 주소 추가
                 "district" to (address?.district ?: ""),
                 "dong" to (address?.dong ?: ""),
+                "isOfficialCourse" to false,
             )
 
             postRef.set(postMap).await()
@@ -680,8 +682,7 @@ class CommunityDataSourceImpl @Inject constructor(
 
                 val followedBy = postSnapshot.get("followedBy") as? List<String> ?: emptyList()
 
-                // ── [방어 로직] 이미 팔로우했는지 확인 ── 🔹
-                if (!followedBy.contains(myUid)) {
+                if (!followedBy.contains(myUid)) { // 이미 팔로우했는지 확인
                     // 처음 클릭한 경우에만 숫자 증가 및 ID 추가
                     transaction.update(postRef, "followCount", FieldValue.increment(1))
                     transaction.update(postRef, "followedBy", FieldValue.arrayUnion(myUid))
@@ -697,6 +698,18 @@ class CommunityDataSourceImpl @Inject constructor(
             AuthResult.Success(true)
         } catch (e: Exception) {
             AuthResult.Fail(e.localizedMessage ?: "팔로우 실패")
+        }
+    }
+
+    suspend fun promoteToOfficialCourse(postId: String): AuthResult<Boolean> {
+        return try {
+            firestore.collection("Posts").document(postId)
+                .update("isOfficialCourse", true)
+                .await()
+            AuthResult.Success(true)
+        } catch (e: Exception) {
+            Log.e("CommunityDataSource", "공식 코스 등록 실패: ${e.message}")
+            AuthResult.Fail(e.localizedMessage ?: "업데이트 실패")
         }
     }
 

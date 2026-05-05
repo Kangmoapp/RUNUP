@@ -65,6 +65,8 @@ interface UserRepository {
 
     suspend fun getUserActivityStats(uid: String): AuthResult<UserActivityStats>
 
+    suspend fun syncUserGoalFromServer(): AuthResult<Boolean>
+
     // --------------------------------------------------------------------------------//
     //친구 기능
 

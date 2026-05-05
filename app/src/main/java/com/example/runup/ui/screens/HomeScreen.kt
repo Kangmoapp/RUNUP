@@ -280,10 +280,10 @@ private fun HomeContent(
     val navBarHeightPx = with(density) { 80.dp.toPx() } // 네비게이션 바 높이 (px)
 
     val hiddenHeightPx = with(density) { 60.dp.toPx() }
-    val collapsedHeightPx = with(density) { 100.dp.toPx() }
+    val collapsedHeightPx = with(density) { 110.dp.toPx() }
     val selectedCourseTabHeightPx = with(density) { 135.dp.toPx() }
     val recommendTabHeightPx = with(density) { 200.dp.toPx() } // 추천 탭 기본 (조금 더 높게) 🚀
-    val expandedHeightPx = with(density) { 550.dp.toPx() }
+    val expandedHeightPx = with(density) { 500.dp.toPx() }
 
     var sheetHeightPx by remember { mutableFloatStateOf(hiddenHeightPx) } // 시트 높이 상태
 

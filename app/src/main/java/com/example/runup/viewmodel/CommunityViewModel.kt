@@ -51,7 +51,7 @@ data class CommunityUiState(
     val isRefreshing: Boolean = false,
     val filterState: FilterState = FilterState(),
     val isFilterDialogOpen: Boolean = false,
-    val isLastPage: Boolean = false // 🔹 추가
+    val isLastPage: Boolean = false
 )
 
 data class PostUploadUiState(
@@ -67,8 +67,8 @@ data class PostUploadUiState(
 data class MapSnapshot(
     val staticMapUrl: String, // 네이버 API 요청한 지도 StaticImage Url
     val pathPoints: List<Pair<Offset, Boolean>>,
-    val startPoint: Offset?,             // 🔹 시작점 픽셀
-    val endPoint: Offset?,               // 🔹 종료점 픽셀
+    val startPoint: Offset?,             // 시작점 픽셀
+    val endPoint: Offset?,               // 종료점 픽셀
     val markerPositions: Map<String, Offset>, // 마커 처음 위치
     val closerOffsets: Map<String, Offset>,   // 마커의 최종 위치
     val courseBounds: androidx.compose.ui.geometry.Rect // 코스 경계 픽셀
@@ -80,13 +80,12 @@ private var isLastPage = false
 
 @HiltViewModel
 class CommunityViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val dataSource: CommunityDataSourceImpl,
     private val locationRepository: LocationRepository,
     private val userRepository: UserRepository,
     private val refreshManager: CommunityRefreshManager,
     private val imagePreloader: ImagePreloader,
-    private val courseRepository: CourseRepository, // 🔹 추가
+    private val courseRepository: CourseRepository,
 ) : ViewModel() {
 
     // 커뮤니티 스크린 상태 관련
@@ -632,21 +631,16 @@ class CommunityViewModel @Inject constructor(
                     state.copy(posts = updatedPosts)
                 }
 
-                // ── 🔹 2. [핵심] 따라뛰기 5회 달성 시 공식 코스로 등록 ── 📍
-                targetPost?.let { post ->
-                    // followCount가 딱 5가 된 순간 + 코스 데이터가 실재할 때 실행
-                    if (post.followCount == 5 && post.runRecord != null) {
+                targetPost?.let { post -> // 따라뛰기 3회 달성 시 공식 코스로 등록 + 코스 데이터가 실재할 때 실행
+                    if (post.followCount == 3 && post.runRecord != null && !post.isOfficialCourse) {
                         val saveResult = courseRepository.saveCourse(post.runRecord.course)
-
                         if (saveResult is AuthResult.Success) {
-                            Log.d("CoursePromotion", "축하합니다! 인기가 많아 공식 코스로 등록되었습니다: ${post.postId}")
-                        } else {
-                            Log.e("CoursePromotion", "공식 코스 등록 실패")
+                            dataSource.promoteToOfficialCourse(post.postId)
+                            Log.d("CoursePromotion", "공식 코스 등록 완료: ${post.postId}")
                         }
                     }
                 }
 
-                // 3. 메인으로 코스 데이터 전달 🏃‍♂️
                 targetPost?.let { onCourseReady(it) }
             }
         }
