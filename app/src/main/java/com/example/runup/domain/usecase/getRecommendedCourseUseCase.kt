@@ -26,7 +26,7 @@ class GetRecommendedCourseUseCase @Inject constructor(
         val result = courseRepository.getCourse(courseDistance, currentLocation, isLoop, sortType, maxSearchDistance, sortDirection)
 
         return when (result) {
-            is AuthResult.Success -> AuthResult.Success(flattenCourses(result.data, count))
+            is AuthResult.Success -> AuthResult.Success(distributeCourses(result.data, count))
             is AuthResult.Fail -> AuthResult.Fail(result.message)
         }
     }
