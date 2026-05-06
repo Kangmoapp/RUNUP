@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -520,12 +521,15 @@ private fun MapSection(
     val markerSizePx = with(density) { 64.dp.toPx() }
     var isMapLoaded by remember(post.postId) { mutableStateOf(false) }
 
-    // ── 🔹 [추가] 부드러운 등장을 위한 투명도 애니메이션 📍 ──
-    val mapAlpha by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isMapLoaded && mapSnapShots != null) 1f else 0f,
-        animationSpec = androidx.compose.animation.core.tween(durationMillis = 500),
-        label = "MapFadeIn"
-    )
+    val areLocationMarkersReady = remember(post.locationImages, locationMarkerCache) {
+        // location이 있는 모든 이미지 URL이 캐시에 존재하는지 확인
+        post.locationImages
+            .filter { it.location != null }
+            .all { locationMarkerCache.containsKey(it.url) }
+    }
+
+    val isEverythingReady = mapSnapShots != null && isMapLoaded && areLocationMarkersReady
+
 
     // ── 🔹 [계산 로직] Screen에서 받은 maxWidthPx를 기준으로 딱 한 번만 수행 ──
     LaunchedEffect(post.postId, maxWidthPx) {
@@ -585,7 +589,7 @@ private fun MapSection(
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
         // ── 🔹 [추가] 지도가 준비되지 않았거나 로딩 중일 때 노란색 인디케이터 표시 📍 ──
-        if (!isMapLoaded || mapSnapShots == null) {
+        if (!isEverythingReady) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -608,12 +612,12 @@ private fun MapSection(
                 .crossfade(true)
                 .build(),
             contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (isEverythingReady) 1f else 0f },
             contentScale = ContentScale.FillBounds,
             onSuccess = { isMapLoaded = true }
         )
 
-        if (isMapLoaded && mapSnapShots != null) {
+        if (isEverythingReady) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val snapshot = mapSnapShots ?: return@Canvas
 

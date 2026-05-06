@@ -603,7 +603,6 @@ class HomeViewModel @Inject constructor(
             viewModelScope.launch {
                 val result = getRecommendedCourseUseCase.invoke(
                     _courseRecommendationUiState.value.goalDistance,
-                     //GeoPoint(35.88544455378175, 128.61535052161116),
                     location,
                     _courseRecommendationUiState.value.isLoop,
                     _courseRecommendationUiState.value.currentSort,
@@ -671,8 +670,8 @@ class HomeViewModel @Inject constructor(
         if (userPrompt.isBlank()) return // 빈 값 방어
 
         val currentCount = userPreferenceDataSource.getAiSearchCount()
-        if (currentCount >= 4) {
-            updateRecommendState { it.copy(isFailSearchCourse = "오늘의 AI 추천 횟수를 모두 사용했습니다. (4/4)") }
+        if (currentCount >= 5) {
+            updateRecommendState { it.copy(isFailSearchCourse = "오늘의 AI 추천 횟수를 모두 사용했습니다. (5/5)") }
             return
         }
 

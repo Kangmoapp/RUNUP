@@ -176,8 +176,8 @@ fun SelectableExpandableRunItem(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(staticMapUrl)
                             .crossfade(true) // 부드러운 전환 효과
-                            .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
-                            .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                            .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY_MW)
+                            .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY_MW)
                             .build(),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),

@@ -786,8 +786,8 @@ private fun HomeContent(
                                                 // 카운트 (AI 모드일 때만)
                                                 if (isAiMode) {
                                                     Text(
-                                                        text = "(${courseRecommendationUiState.aiSearchCount}/4)",
-                                                        color = if (courseRecommendationUiState.aiSearchCount >= 4) Color(0xFFE57373) else PointColor, // 👈 요청하신 PointColor 반영
+                                                        text = "(${courseRecommendationUiState.aiSearchCount}/5)",
+                                                        color = if (courseRecommendationUiState.aiSearchCount >= 5) Color(0xFFE57373) else PointColor, // 👈 요청하신 PointColor 반영
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Medium,
                                                         modifier = Modifier.padding(top = 1.dp)

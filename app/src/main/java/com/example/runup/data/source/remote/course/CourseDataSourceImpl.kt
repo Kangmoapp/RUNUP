@@ -40,67 +40,115 @@ class CourseDataSourceImpl @Inject constructor(
         }
     }
 
-    private suspend fun mergeAndSaveCourse(newCourse: Course){
+    private suspend fun mergeAndSaveCourse(newCourse: Course) {
         val eps = 0.00008 // 8m
-        val margin = eps
-        val minSamples = 2 // 그룹이 이루어질 수 있는 최소 노드 개수
+        val minSamples = 2
 
-        // Bounding Box 계산 및 1차/2차 필터링
+        // 빈 코스 방어 코드 (앱 크래시 방지)
+        if (newCourse.locationPoints.isEmpty()) {
+            Log.e("CourseSave", "좌표가 없는 코스는 저장할 수 없습니다.")
+            return
+        }
+
+        // 1. 새 코스의 Bounding Box 및 넓이 계산
         val newMinLat = newCourse.locationPoints.minOf { it.locationPoint.latitude }
         val newMaxLat = newCourse.locationPoints.maxOf { it.locationPoint.latitude }
         val newMinLng = newCourse.locationPoints.minOf { it.locationPoint.longitude }
         val newMaxLng = newCourse.locationPoints.maxOf { it.locationPoint.longitude }
 
-        //위도로 1차필터링
+        val newArea = maxOf((newMaxLat - newMinLat) * (newMaxLng - newMinLng), 0.00000001)
+
+        // 🌟 [원상 복구] 복합 색인이 설정되어 있으므로 DB 단에서 완벽하게 위도를 걸러냅니다! (최고의 속도)
         val candidates = firestore.collection("Course")
-            .whereGreaterThanOrEqualTo("maxLat", newMinLat - margin)
-            .whereLessThanOrEqualTo("minLat", newMaxLat + margin)
+            .whereGreaterThanOrEqualTo("maxLat", newMinLat)
+            .whereLessThanOrEqualTo("minLat", newMaxLat)
             .get().await().toObjects(Course::class.java)
-        //경도로 2차필터링
+
+        // 3. [핵심 변경] 경도 및 Bounding Box "겹치는 비율(Overlap Ratio)" 검사
         val targetClusters = candidates.filter { existing ->
-            existing.maxLng >= (newMinLng - margin) && existing.minLng <= (newMaxLng + margin)
+
+            // ── [1단계 필터] 경도가 아예 안 겹치는 코스 컷오프 ──
+            if (existing.maxLng < newMinLng || existing.minLng > newMaxLng) {
+                return@filter false
+            }
+
+            // ── [2단계 필터: Broad-Phase] Bounding Box 넓이 겹침 검사 ──
+            val overlapMinLat = maxOf(newMinLat, existing.minLat)
+            val overlapMaxLat = minOf(newMaxLat, existing.maxLat)
+            val overlapMinLng = maxOf(newMinLng, existing.minLng)
+            val overlapMaxLng = minOf(newMaxLng, existing.maxLng)
+
+            val overlapArea = if (overlapMinLat < overlapMaxLat && overlapMinLng < overlapMaxLng) {
+                (overlapMaxLat - overlapMinLat) * (overlapMaxLng - overlapMinLng)
+            } else {
+                0.0
+            }
+
+            val existingArea = maxOf((existing.maxLat - existing.minLat) * (existing.maxLng - existing.minLng), 0.00000001)
+            val smallerArea = minOf(newArea, existingArea)
+            val bboxOverlapRatio = overlapArea / smallerArea
+
+            if (bboxOverlapRatio < 0.6) {
+                return@filter false
+            }
+
+            // ── [3단계 필터: Narrow-Phase] 대각선 함정 방어용 "실제 좌표 정밀 매칭" ──
+            val thresholdMeters = 15.0
+
+            val (smallerCourse, largerCourse) = if (newCourse.locationPoints.size <= existing.locationPoints.size) {
+                newCourse.locationPoints to existing.locationPoints
+            } else {
+                existing.locationPoints to newCourse.locationPoints
+            }
+
+            // 💨 [유지] 성능 누수 방지: 반복문 '밖'에서 샘플링을 미리 완료
+            val sampledSmallerCourse = smallerCourse.filterIndexed { index, _ -> index % 3 == 0 }
+            val sampledLargerCourse = largerCourse.filterIndexed { index, _ -> index % 2 == 0 }
+
+            var matchCount = 0
+            for (smallPt in sampledSmallerCourse) {
+                // 미리 만들어둔 sampledLargerCourse에서 바로 탐색 (연산 속도 극대화)
+                val isMatched = sampledLargerCourse.any { largePt ->
+                    calculateDistance(smallPt.locationPoint, largePt.locationPoint) <= thresholdMeters
+                }
+                if (isMatched) matchCount++
+            }
+
+            val overlapRatio = matchCount.toDouble() / sampledSmallerCourse.size
+
+            overlapRatio >= 0.70
         }
 
-        // 모든 좌표를 하나로 모아 클러스터링 준비
+        // 4. 병합 대상들만 모아서 DBSCAN 실행
         val allNodes = mutableListOf<Node>().apply {
             addAll(newCourse.locationPoints)
             targetClusters.forEach { addAll(it.locationPoints) }
         }
 
-        // DBSCAN 실행
         val clusters = performDBSCAN(allNodes, eps, minSamples)
 
-        // Firestore 업데이트 (클러스터 단위로 문서 생성/삭제)
+        // 5. Firestore 업데이트
         firestore.runTransaction { transaction ->
-            // 카운터 문서 참조 및 현재 번호 읽기
             val metaRef = firestore.collection("Metadata").document("courseInfo")
             val metaSnap = transaction.get(metaRef)
-
-            // 문서가 없으면 0부터 시작
             var lastNum = if (metaSnap.exists()) metaSnap.getLong("lastCourseNumber") ?: 0L else 0L
 
-            // 기존 병합 대상 문서 삭제
             targetClusters.forEach { oldCourse ->
                 transaction.delete(firestore.collection("Course").document(oldCourse.id))
             }
 
-            // DBSCAN 결과로 나온 각 그룹을 새 번호로 저장
             clusters.forEach { clusterPoints ->
                 if (clusterPoints.isNotEmpty()) {
-                    lastNum++ // 번호 증가
-                    val customId = "course$lastNum" // 예: course3
+                    lastNum++
+                    val customId = "course$lastNum"
 
-                    val simplifiedPoints = gridSimplify(clusterPoints, 0.00002) // 2미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
-                    val finalSimplifiedPoints = gridSimplify(simplifiedPoints, 0.00005) // 5미터 정사각형 격자 안에 들어온 점들은 평균내서 하나의 점으로 합침
+                    val finalSimplifiedPoints = gridSimplify(clusterPoints, 0.00005)
                     val newDocRef = firestore.collection("Course").document(customId)
 
-                    // finalCourse 객체 생성 시 id도 customId로 전달
                     val finalCourse = createCourseFromPoints(customId, finalSimplifiedPoints)
                     transaction.set(newDocRef, finalCourse)
                 }
             }
-
-            // 업데이트된 마지막 번호를 다시 저장
             transaction.set(metaRef, mapOf("lastCourseNumber" to lastNum))
         }.await()
     }
@@ -181,9 +229,9 @@ class CourseDataSourceImpl @Inject constructor(
     }
 
     private fun createCourseFromPoints(id: String, nodes: List<Node>): Course {
-        if (nodes.isEmpty()) return Course(id = id, locationPoints = emptyList()) // 예외 처리
+        if (nodes.isEmpty()) return Course(id = id, locationPoints = emptyList())
 
-        // 1. [순서 정렬] 가장 가까운 점을 찾아가며 경로 순서 재구성 (Greedy 정렬)
+        // 1. [순서 정렬] 가장 가까운 점을 찾아가며 경로 순서 재구성
         val sortedPoints = mutableListOf<Node>()
         val remaining = nodes.toMutableList()
         var current = remaining.removeAt(0)
@@ -191,40 +239,36 @@ class CourseDataSourceImpl @Inject constructor(
 
         var totalDistance = 0.0
 
-        // 2. 모든 노드의 각 점수들을 합산한 뒤 평균을 내어 코스의 대표 점수로 설정합니다.
+        // 2. 🌟 원래 방식대로 단순 평균 적용
         val avgBright = nodes.map { it.score.brightScore }.average()
         val avgCrowded = nodes.map { it.score.crowdedScore }.average()
         val avgHard = nodes.map { it.score.hardScore }.average()
+
         val courseScores = Scores(avgBright, avgCrowded, avgHard)
 
+        // 3. 거리 계산 및 좌표 잇기
         while (remaining.isNotEmpty()) {
-            // 현재 점(current)에서 가장 가까운 다음 점 찾기
             val next = remaining.minByOrNull { p ->
                 val dLat = Math.toRadians(p.locationPoint.latitude - current.locationPoint.latitude)
                 val dLon = Math.toRadians(p.locationPoint.longitude - current.locationPoint.longitude)
-                // 성능을 위해 여기서는 단순 피타고라스 근사치로 비교 (정렬용)
                 Math.pow(dLat, 2.0) + Math.pow(dLon, 2.0)
             }!!
 
-            // [거리 계산] 찾은 '다음 점'과의 하버사인 거리 계산 (실제 거리용)
             totalDistance += calculateDistance(current.locationPoint, next.locationPoint)
-
-            // 다음 스텝 준비
             remaining.remove(next)
             sortedPoints.add(next)
             current = next
         }
 
-        // 3. 최종 객체 반환
         return Course(
             id = id,
-            locationPoints = sortedPoints, // 정렬된 좌표 저장
+            locationPoints = sortedPoints,
             minLat = sortedPoints.minOf { it.locationPoint.latitude },
             maxLat = sortedPoints.maxOf { it.locationPoint.latitude},
             minLng = sortedPoints.minOf { it.locationPoint.longitude },
             maxLng = sortedPoints.maxOf { it.locationPoint.longitude },
             distance = Math.round(totalDistance).toInt(),
-            scores = courseScores // 코스 전체 평균 점수 저장
+            scores = courseScores
         )
     }
 
@@ -384,26 +428,24 @@ class CourseDataSourceImpl @Inject constructor(
         val featurePoints = mutableListOf<Triple<Course, GeoPoint, Double>>()
 
         candidates.forEach { entity ->
-            // CourseMapper를 사용하여 DB 엔티티를 도메인 모델(Course)로 복원
             val course = courseMapper.toDomain(entity)
+            if (course.distance < targetDist) return@forEach
 
-            if (course.distance < targetDist) {
-                return@forEach
-            }
+            // 1. 해당 코스의 점들 중 사용자와 가장 가까운 지점(Best Entry Point)을 찾습니다.
+            val nearestNode = course.locationPoints
+                .map { node -> node to calculateDistance(userLoc, node.locationPoint) }
+                .filter { it.second <= maxSearchDistance.toDouble() }
+                .minByOrNull { it.second } // 내 위치와 가장 가까운 지점 선택
 
-            val targetScore = when (sortType) { // 해당 코스의 점수 확인 (SortType에 따라 선택)
-                SortType.BRIGHT -> course.scores.brightScore
-                SortType.PEOPLE -> course.scores.crowdedScore
-                SortType.DIFFICULTY -> course.scores.hardScore
-                else -> 0.0
-            }
-
-            // 코스 내의 모든 포인트를 확인하여 사용자 위치와 500m 이내인 것들 수집
-            course.locationPoints.forEach { node ->
-                val dist = calculateDistance(userLoc, node.locationPoint)
-                if (dist <= maxSearchDistance.toDouble()) {
-                    featurePoints.add(Triple(course, node.locationPoint, targetScore))
+            if (nearestNode != null) {
+                val targetScore = when (sortType) {
+                    SortType.BRIGHT -> course.scores.brightScore
+                    SortType.PEOPLE -> course.scores.crowdedScore
+                    SortType.DIFFICULTY -> course.scores.hardScore
+                    else -> 0.0
                 }
+                // 코스당 딱 하나의 '최적 진입점'만 담깁니다.
+                featurePoints.add(Triple(course, nearestNode.first.locationPoint, targetScore))
             }
         }
 
@@ -570,7 +612,7 @@ class CourseDataSourceImpl @Inject constructor(
         for (candidate in candidates) {
             // 이미 결과 리스트에 비슷한 각도(±20도)를 가진 더 짧은 거리의 점이 있는지 확인
             val isDuplicateDirection = filteredNeighbors.any { existing ->
-                Math.abs(existing.angle - candidate.angle) <= 20.0
+                Math.abs(existing.angle - candidate.angle) <= 40.0
             }
 
             if (!isDuplicateDirection) {

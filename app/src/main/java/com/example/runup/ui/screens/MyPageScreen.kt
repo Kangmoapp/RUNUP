@@ -856,8 +856,8 @@ fun ExpandableRunItem(
                             model = ImageRequest.Builder(LocalContext.current)
                                 .data(staticMapUrl)
                                 .crossfade(true) // 부드러운 전환 효과
-                                .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY)
-                                .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY)
+                                .addHeader("X-NCP-APIGW-API-KEY-ID", BuildConfig.NAVER_API_KEY_MW)
+                                .addHeader("X-NCP-APIGW-API-KEY", BuildConfig.NAVER_API_SECRET_KEY_MW)
                                 .build(),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
@@ -992,13 +992,13 @@ fun ExpandableRunItem(
                     onUploadClick(run)
                     onToggleActions() // 작업 후 닫기
                 }
-                /*
+/*
                 // 2. 코스 추가 버튼
                 QuickActionButton(Icons.Default.AddLocation, PointColor) {
                     onAddCourseClick(run)
                     onToggleActions() // 작업 후 닫기
                 }
-                */
+*/
                 // 3. 삭제 버튼
                 QuickActionButton(Icons.Default.Delete, Color.Red) {
                     showDeleteDialog = true

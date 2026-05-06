@@ -418,29 +418,17 @@ class CommunityDataSourceImpl @Inject constructor(
             val myStatsRef = firestore.collection("UserData").document(uid)
                 .collection("PostStats").document("info")
 
-            val metadataRef = firestore.collection("Metadata").document("postInfo")
+            val postRef = firestore.collection("Posts").document()
+            val customPostId = postRef.id
 
-            val customPostId = firestore.runTransaction { transaction ->
-                val snapshot = transaction.get(metadataRef)
-                val currentNumber = snapshot.getLong("lastPostNumber")?.toInt() ?: 0
-                val nextNumber = currentNumber + 1
+            myStatsRef.set( // 내 활동 통계(내가 쓴 글 목록)에 방금 만든 ID 추가
+                mapOf("uploadPostIds" to FieldValue.arrayUnion(customPostId)),
+                SetOptions.merge()
+            ).await()
 
-                transaction.update(metadataRef, "lastPostNumber", nextNumber)
-
-                val generatedId = "post$nextNumber"
-                transaction.set(
-                    myStatsRef,
-                    mapOf("uploadPostIds" to FieldValue.arrayUnion(generatedId)),
-                    SetOptions.merge()
-                )
-                generatedId
-            }.await()
-
-            val postRef = firestore.collection("Posts").document(customPostId)
-
-            // ── 🌟 [1] 위치 기반 이미지 병렬 처리 ──
+            // 위치 기반 이미지 병렬 처리
             val locaitonUploadTasks = LocaitonimageUris.mapIndexed { index, uri ->
-                // 👈 핵심 1: Dispatchers.IO 명시 (멀티코어를 적극적으로 활용해 동시에 압축/업로드)
+                // Dispatchers.IO 명시 (멀티코어를 적극적으로 활용해 동시에 압축/업로드)
                 async(Dispatchers.IO) {
                     try {
                         var geoPoint: GeoPoint? = null
