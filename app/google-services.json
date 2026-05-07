@@ -22,6 +22,22 @@
           }
         },
         {
+          "client_id": "119763044034-44folcja5c9d3nubj7nf766j9klovk7b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.runup",
+            "certificate_hash": "d5526ca5794b8142304172cd461f86938d57e205"
+          }
+        },
+        {
+          "client_id": "119763044034-78td7q46ngpfe3oh5r4qo5qh9bvc8195.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.runup",
+            "certificate_hash": "5d47a87d2755dfb69eb93c6ac022733aa67c1cad"
+          }
+        },
+        {
           "client_id": "119763044034-cd5l6apsk85tbfb2u99cso8skgjiqom8.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -35,6 +51,43 @@
           "android_info": {
             "package_name": "com.example.runup",
             "certificate_hash": "cd5c7cd34f3bb28cdb2a3579f8c0fb958eda2a66"
+          }
+        },
+        {
+          "client_id": "119763044034-7fmna97qp33hgoke2a7f0ogpm2i8ssj3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmbkreo5S9kiAI20tLIUKFvSKC5RBIhQI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "119763044034-7fmna97qp33hgoke2a7f0ogpm2i8ssj3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:119763044034:android:47134227bbe712ea799d5b",
+        "android_client_info": {
+          "package_name": "com.runit.runup"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "119763044034-habss1jpjeq47o9v24p4o9jushp6eu45.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.runit.runup",
+            "certificate_hash": "81f9ab6b4093d6a21ff8b228524eb6d141a6d111"
           }
         },
         {

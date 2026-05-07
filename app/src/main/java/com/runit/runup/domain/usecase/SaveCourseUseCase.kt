@@ -1,0 +1,46 @@
+package com.runit.runup.domain.usecase
+
+import com.runit.runup.domain.model.AuthResult
+import com.runit.runup.domain.model.Course
+import com.runit.runup.domain.model.Node
+import com.runit.runup.domain.model.Scores
+import com.runit.runup.domain.repository.CourseRepository // 해당 인터페이스가 있다고 가정
+import javax.inject.Inject
+
+class SaveCourseUseCase @Inject constructor(
+    private val courseRepository: CourseRepository
+) {
+    // 인자에 totalDistance를 추가로 받습니다.
+    suspend operator fun invoke(
+        recordedNodes: List<Node>,
+        totalDistance: Int // 리포지토리에서 넘어온 누적 거리
+    ): AuthResult<Boolean> {
+        if (recordedNodes.isEmpty()) {
+            return AuthResult.Fail("기록된 위치 정보가 없습니다.")
+        }
+
+        val newCourse = Course(
+            id = "",
+            distance = totalDistance, // 이미 계산된 값을 그대로 사용
+            locationPoints = recordedNodes,
+            minLat = recordedNodes.minOf { it.locationPoint.latitude },
+            maxLat = recordedNodes.maxOf { it.locationPoint.latitude },
+            minLng = recordedNodes.minOf { it.locationPoint.longitude },
+            maxLng = recordedNodes.maxOf { it.locationPoint.longitude },
+            scores = Scores(0.0, 0.0, 0.0)
+        )
+
+        return courseRepository.saveCourse(newCourse)
+    }
+
+    // ── 🔹 [새로 추가된 로직]: MyPage 등에서 이미 만들어진 Course를 저장할 때 사용 📍 ──
+    suspend operator fun invoke(course: Course): AuthResult<Boolean> {
+        // 이미 구성된 코스 데이터 검증
+        if (course.locationPoints.isEmpty()) {
+            return AuthResult.Fail("기록된 위치 정보가 없습니다.")
+        }
+
+        // Repository에 저장 요청
+        return courseRepository.saveCourse(course)
+    }
+}

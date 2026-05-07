@@ -10,11 +10,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.runup"
+    namespace = "com.runit.runup"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.runup"
+        applicationId = "com.runit.runup"
         minSdk = 33
         targetSdk = 36
         versionCode = 1
